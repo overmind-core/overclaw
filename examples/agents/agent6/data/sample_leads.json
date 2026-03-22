@@ -1,0 +1,317 @@
+[
+  {
+    "input": {
+      "account_id": "acc_001_chicago_retail",
+      "transaction_amount": 8742.5,
+      "merchant_name": "Foreign Pharmacy Online",
+      "merchant_category": "pharmacy",
+      "transaction_location": { "city": "Lagos", "country": "Nigeria" },
+      "timestamp": "2025-03-20T03:15:00Z",
+      "card_present": false
+    },
+    "expected_output": {
+      "fraud_score": 92,
+      "risk_level": "critical",
+      "is_fraudulent": true,
+      "fraud_indicators": [
+        "very_large_amount",
+        "card_not_present",
+        "location_mismatch_non_traveler",
+        "high_risk_merchant"
+      ],
+      "recommended_action": "block",
+      "reasoning": "Account is US-local only; transaction is very large CNP from Nigeria at a watchlist pharmacy merchant."
+    }
+  },
+  {
+    "input": {
+      "account_id": "acc_009_premium_legit",
+      "transaction_amount": 3299.0,
+      "merchant_name": "Apple Store",
+      "merchant_category": "electronics_retail",
+      "transaction_location": { "city": "San Francisco", "country": "USA" },
+      "timestamp": "2025-03-19T18:40:00Z",
+      "card_present": true
+    },
+    "expected_output": {
+      "fraud_score": 18,
+      "risk_level": "low",
+      "is_fraudulent": false,
+      "fraud_indicators": ["none"],
+      "recommended_action": "allow",
+      "reasoning": "Known premium account history; top-tier merchant; location matches home city with card present."
+    }
+  },
+  {
+    "input": {
+      "account_id": "acc_006_card_testing",
+      "transaction_amount": 1.0,
+      "merchant_name": "QuickMart Gas",
+      "merchant_category": "gas_convenience",
+      "transaction_location": { "city": "Phoenix", "country": "USA" },
+      "timestamp": "2025-03-20T11:58:00Z",
+      "card_present": false
+    },
+    "expected_output": {
+      "fraud_score": 88,
+      "risk_level": "critical",
+      "is_fraudulent": true,
+      "fraud_indicators": [
+        "card_testing_micro_charges",
+        "high_velocity_small_amounts",
+        "cnp_gas_pattern"
+      ],
+      "recommended_action": "block",
+      "reasoning": "Velocity profile shows repeated $1 charges; classic card-testing pattern at gas/CNP."
+    }
+  },
+  {
+    "input": {
+      "account_id": "acc_007_takeover_pattern",
+      "transaction_amount": 1299.99,
+      "merchant_name": "Amazon Retail",
+      "merchant_category": "retail",
+      "transaction_location": { "city": "Manila", "country": "Philippines" },
+      "timestamp": "2025-03-20T09:05:00Z",
+      "card_present": false
+    },
+    "expected_output": {
+      "fraud_score": 86,
+      "risk_level": "high",
+      "is_fraudulent": true,
+      "fraud_indicators": [
+        "geolocation_anomaly",
+        "spending_spike_vs_history",
+        "cnp_cross_border"
+      ],
+      "recommended_action": "request_verification",
+      "reasoning": "Non-traveler Seattle account shows sudden large CNP spend in Philippines; inconsistent with known locations."
+    }
+  },
+  {
+    "input": {
+      "account_id": "acc_008_velocity_abuse",
+      "transaction_amount": 44.5,
+      "merchant_name": "Amazon Retail",
+      "merchant_category": "retail",
+      "transaction_location": { "city": "Atlanta", "country": "USA" },
+      "timestamp": "2025-03-20T11:55:00Z",
+      "card_present": false
+    },
+    "expected_output": {
+      "fraud_score": 81,
+      "risk_level": "high",
+      "is_fraudulent": true,
+      "fraud_indicators": [
+        "burst_velocity",
+        "many_transactions_short_window",
+        "repeated_cnp_same_merchant"
+      ],
+      "recommended_action": "flag_for_review",
+      "reasoning": "Velocity check shows burst pattern with many Amazon CNP transactions in a short period."
+    }
+  },
+  {
+    "input": {
+      "account_id": "acc_001_chicago_retail",
+      "transaction_amount": 189.0,
+      "merchant_name": "DarkWeb Electronics",
+      "merchant_category": "electronics",
+      "transaction_location": { "city": "Chicago", "country": "USA" },
+      "timestamp": "2025-03-18T22:10:00Z",
+      "card_present": false
+    },
+    "expected_output": {
+      "fraud_score": 78,
+      "risk_level": "high",
+      "is_fraudulent": true,
+      "fraud_indicators": [
+        "watchlist_merchant",
+        "cnp_electronics_high_risk"
+      ],
+      "recommended_action": "block",
+      "reasoning": "Merchant is on watchlist with very low reputation; CNP electronics purchase is high risk even domestically."
+    }
+  },
+  {
+    "input": {
+      "account_id": "acc_001_chicago_retail",
+      "transaction_amount": 23.75,
+      "merchant_name": "City Grocery Co",
+      "merchant_category": "grocery",
+      "transaction_location": { "city": "Chicago", "country": "USA" },
+      "timestamp": "2025-03-20T07:30:00Z",
+      "card_present": true
+    },
+    "expected_output": {
+      "fraud_score": 12,
+      "risk_level": "low",
+      "is_fraudulent": false,
+      "fraud_indicators": ["none"],
+      "recommended_action": "allow",
+      "reasoning": "Typical grocery amount at trusted merchant; location matches; card present; history is normal."
+    }
+  },
+  {
+    "input": {
+      "account_id": "acc_002_frequent_traveler",
+      "transaction_amount": 118.0,
+      "merchant_name": "Boutique Coffee",
+      "merchant_category": "food_beverage",
+      "transaction_location": { "city": "Tokyo", "country": "Japan" },
+      "timestamp": "2025-03-19T01:20:00Z",
+      "card_present": false
+    },
+    "expected_output": {
+      "fraud_score": 38,
+      "risk_level": "medium",
+      "is_fraudulent": false,
+      "fraud_indicators": ["first_time_country_for_account"],
+      "recommended_action": "flag_for_review",
+      "reasoning": "Frequent traveler profile: new country (Japan) not in usual set but traveler flag suggests plausible trip; moderate CNP coffee charge."
+    }
+  },
+  {
+    "input": {
+      "account_id": "acc_003_prior_fraud",
+      "transaction_amount": 31.2,
+      "merchant_name": "City Grocery Co",
+      "merchant_category": "grocery",
+      "transaction_location": { "city": "Miami", "country": "USA" },
+      "timestamp": "2025-03-20T08:00:00Z",
+      "card_present": true
+    },
+    "expected_output": {
+      "fraud_score": 52,
+      "risk_level": "medium",
+      "is_fraudulent": false,
+      "fraud_indicators": ["prior_disputed_activity_on_file"],
+      "recommended_action": "flag_for_review",
+      "reasoning": "Transaction itself looks ordinary and local, but account has prior fraud-related history; elevated monitoring warranted."
+    }
+  },
+  {
+    "input": {
+      "account_id": "acc_010_refund_pattern",
+      "transaction_amount": 200.0,
+      "merchant_name": "FlyByNight Tickets",
+      "merchant_category": "ticketing",
+      "transaction_location": { "city": "Las Vegas", "country": "USA" },
+      "timestamp": "2025-03-20T10:00:00Z",
+      "card_present": false
+    },
+    "expected_output": {
+      "fraud_score": 79,
+      "risk_level": "high",
+      "is_fraudulent": true,
+      "fraud_indicators": [
+        "refund_chargeback_cycle_in_history",
+        "high_risk_ticketing_merchant",
+        "cnp"
+      ],
+      "recommended_action": "request_verification",
+      "reasoning": "Account shows refund/chargeback cycling with this merchant; merchant is high-risk; repeat CNP purchase is suspicious."
+    }
+  },
+  {
+    "input": {
+      "account_id": "acc_004_brand_new",
+      "transaction_amount": 9.99,
+      "merchant_name": "Steam Games",
+      "merchant_category": "digital_goods",
+      "transaction_location": { "city": "Austin", "country": "USA" },
+      "timestamp": "2025-03-20T10:30:00Z",
+      "card_present": false
+    },
+    "expected_output": {
+      "fraud_score": 45,
+      "risk_level": "medium",
+      "is_fraudulent": false,
+      "fraud_indicators": ["new_account_limited_history"],
+      "recommended_action": "allow",
+      "reasoning": "Brand-new account but small digital purchase at reputable merchant in home city; low amount limits loss exposure."
+    }
+  },
+  {
+    "input": {
+      "account_id": "acc_005_dormant_reactivated",
+      "transaction_amount": 749.0,
+      "merchant_name": "ElectroMart Online",
+      "merchant_category": "electronics",
+      "transaction_location": { "city": "Portland", "country": "USA" },
+      "timestamp": "2025-03-20T06:00:00Z",
+      "card_present": false
+    },
+    "expected_output": {
+      "fraud_score": 72,
+      "risk_level": "high",
+      "is_fraudulent": true,
+      "fraud_indicators": [
+        "dormant_account_sudden_activity",
+        "large_cnp_electronics"
+      ],
+      "recommended_action": "request_verification",
+      "reasoning": "History shows long inactivity then sudden large CNP electronics spend; consistent with account takeover or testing."
+    }
+  },
+  {
+    "input": {
+      "account_id": "acc_001_chicago_retail",
+      "transaction_amount": 55.0,
+      "merchant_name": "Unknown Merchant XYZ",
+      "merchant_category": "unknown",
+      "transaction_location": { "city": "Chicago", "country": "USA" },
+      "timestamp": "2025-03-19T19:45:00Z",
+      "card_present": false
+    },
+    "expected_output": {
+      "fraud_score": 74,
+      "risk_level": "high",
+      "is_fraudulent": true,
+      "fraud_indicators": [
+        "unlisted_high_risk_merchant",
+        "cnp_unknown_counterparty"
+      ],
+      "recommended_action": "flag_for_review",
+      "reasoning": "Merchant directory flags unknown counterparty as high risk; CNP despite domestic location."
+    }
+  },
+  {
+    "input": {
+      "account_id": "acc_002_frequent_traveler",
+      "transaction_amount": 34.0,
+      "merchant_name": "United Airlines",
+      "merchant_category": "travel",
+      "transaction_location": { "city": "Denver", "country": "USA" },
+      "timestamp": "2025-03-18T14:00:00Z",
+      "card_present": false
+    },
+    "expected_output": {
+      "fraud_score": 22,
+      "risk_level": "low",
+      "is_fraudulent": false,
+      "fraud_indicators": ["none"],
+      "recommended_action": "allow",
+      "reasoning": "Traveler account with airline charge in a known city; merchant is reputable; pattern matches profile."
+    }
+  },
+  {
+    "input": {
+      "account_id": "acc_009_premium_legit",
+      "transaction_amount": 42.8,
+      "merchant_name": "Shell Station",
+      "merchant_category": "gas_convenience",
+      "transaction_location": { "city": "San Francisco", "country": "USA" },
+      "timestamp": "2025-03-20T07:15:00Z",
+      "card_present": true
+    },
+    "expected_output": {
+      "fraud_score": 10,
+      "risk_level": "low",
+      "is_fraudulent": false,
+      "fraud_indicators": ["none"],
+      "recommended_action": "allow",
+      "reasoning": "Routine fuel purchase at major chain; card present; home city; established good-standing account."
+    }
+  }
+]

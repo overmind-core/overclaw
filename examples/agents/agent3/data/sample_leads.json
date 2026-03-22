@@ -1,0 +1,417 @@
+[
+  {
+    "input": {
+      "contract_type": "NDA",
+      "jurisdiction": "US-CA",
+      "party_role": "drafter",
+      "contract_text": "UNILATERAL CONFIDENTIALITY AGREEMENT\n\nDiscloser: Vertex Analytics, Inc. Recipient: _________________\n\n1. Confidential Information. All information disclosed by Discloser to Recipient, whether or not marked confidential, including all notes, analyses, compilations, studies, summaries, records, or extracts prepared by Recipient that contain or reflect such information.\n\n2. No Reverse Disclosure. Discloser makes no commitment to keep confidential any information disclosed by Recipient. Discloser may use Recipient's information for any purpose without restriction.\n\n3. Restrictions on Recipient. Recipient shall not disclose any Confidential Information to any person except employees with a strict need to know who are bound in writing — provided that Discloser may withhold consent to any recipient in Discloser's sole discretion. Recipient shall not analyze, benchmark, or test Discloser's products except as expressly authorized in writing in advance for each activity.\n\n4. No Public Statements. Recipient shall not issue press releases or public statements referencing Discloser or the existence of discussions without Discloser's prior written consent.\n\n5. Term. Recipient's obligations continue for ten (10) years after last disclosure. Discloser may terminate discussions at any time without liability.\n\n6. Remedies. Recipient agrees that Discloser may seek immediate injunctive relief without bond, and that Recipient shall pay Discloser's reasonable attorneys' fees and costs in any action to enforce this Agreement, whether or not Discloser prevails in full.\n\n7. Assignment. Recipient may not assign this Agreement; Discloser may assign freely.\n\n8. Governing Law. California law, exclusive venue in Santa Clara County."
+    },
+    "expected_output": {
+      "risk_level": "medium",
+      "issues_found": [
+        "Fully unilateral: no reciprocal confidentiality for Recipient's disclosures",
+        "Sole discretion to withhold consent to Recipient's delegates may be commercially unreasonable",
+        "Attorneys' fees clause shifting fees even if Discloser does not fully prevail may be challenged as unconscionable in some contexts"
+      ],
+      "missing_clauses": [
+        "Standard exceptions (public domain, independently developed, residual knowledge)",
+        "Recipient carve-out for legally compelled disclosure procedure"
+      ],
+      "favorable_terms": [
+        "Long protection period and broad definition favor Discloser",
+        "Injunctive relief and assignment restrictions protect Discloser's control"
+      ],
+      "unfavorable_terms": [],
+      "overall_recommendation": "negotiate",
+      "reasoning": "As drafter the agreement strongly favors Discloser; it may accomplish business goals but risks pushback, enforceability scrutiny, and reputational cost — tighten exceptions and reciprocity if counterpart is sophisticated."
+    }
+  },
+  {
+    "input": {
+      "contract_type": "NDA",
+      "jurisdiction": "US-NY",
+      "party_role": "signee",
+      "contract_text": "UNILATERAL CONFIDENTIALITY UNDERTAKING\n\nEffective as of the date of last signature (\"Effective Date\"), Recipient agrees to the following with respect to information disclosed by Acme Corp (\"Discloser\").\n\n1. Scope. Recipient shall protect all information disclosed by Discloser, whether or not marked confidential, including information learned by observation, inference, or conversation.\n\n2. No Use. Recipient shall not use Discloser's information for any purpose except as specifically authorized in writing by Discloser in advance of each use.\n\n3. Residuals. Recipient shall have no obligation with respect to information retained in the unaided memory of its personnel, and may use such information for any purpose without restriction.\n\n4. Assignment of Improvements. Recipient hereby assigns to Discloser all right, title, and interest in any invention, work product, or improvement conceived or reduced to practice by Recipient that relates to Discloser's business or that results from access to Discloser's information.\n\n5. No Challenge. Recipient shall not challenge the validity or enforceability of any of Discloser's intellectual property rights during or after the term of this undertaking.\n\n6. Term. This undertaking continues until Discloser releases Recipient in writing. Discloser may withhold release in its sole discretion.\n\n7. Remedies. Recipient waives any requirement that Discloser prove damages or post bond for injunctive relief. Recipient consents to jurisdiction in courts located in New York County, New York."
+    },
+    "expected_output": {
+      "risk_level": "high",
+      "issues_found": [
+        "Unilateral NDA with no reciprocal obligations",
+        "Residuals clause effectively nullifies confidentiality for memorized information",
+        "Broad IP assignment tied to 'relates to' Discloser's business",
+        "Perpetual term unless Discloser releases — one-sided exit",
+        "No-challenge covenant is unusual in a confidentiality context"
+      ],
+      "missing_clauses": [
+        "Mutual confidentiality or carve-outs limiting IP assignment to work-for-hire scope",
+        "Standard exceptions (public domain, independently developed with documentation)",
+        "Limitation of liability or cap on obligations"
+      ],
+      "favorable_terms": [],
+      "unfavorable_terms": [
+        "Perpetual confidentiality and sole release discretion for Discloser",
+        "Residuals and broad assignment favor Discloser heavily"
+      ],
+      "overall_recommendation": "reject",
+      "reasoning": "As signee under NY law this draft is heavily one-sided: residuals gut confidentiality, IP assignment is overbroad, and term is indefinite — not a standard protective NDA."
+    }
+  },
+  {
+    "input": {
+      "contract_type": "SaaS",
+      "jurisdiction": "EU",
+      "party_role": "reviewer",
+      "contract_text": "CLOUD SERVICES SUBSCRIPTION AGREEMENT — EXCERPT\n\n1. Services. Provider will make the Subscription Services available to Customer in accordance with the Service Description and SLA published at provider.example/legal as updated from time to time. Material SLA changes that reduce availability will not apply until the next renewal unless required by law.\n\n2. Data Processing. The parties agree that Provider processes personal data only as a processor on Customer's documented instructions as set forth in the Data Processing Agreement (DPA) incorporated by reference. Customer represents it has all rights necessary to submit personal data. Sub-processors are listed in the DPA; Provider will give 30 days' notice of new sub-processor categories and Customer may object on reasonable data protection grounds.\n\n3. Security. Provider maintains ISO 27001-certified controls and will implement technical and organizational measures described in Annex II of the DPA.\n\n4. Fees and Term. Fees are as stated in the Order Form. Initial term is twelve (12) months and renews automatically for successive one-year terms unless either party gives ninety (90) days' written notice before renewal.\n\n5. Termination. Either party may terminate for material breach not cured within thirty (30) days of notice. Upon termination, Customer may export its data for sixty (60) days; thereafter Provider may delete data in accordance with its retention schedule.\n\n6. Liability. Except for death, personal injury, fraud, or willful misconduct, each party's aggregate liability arising out of this Agreement shall not exceed the fees paid by Customer in the twelve (12) months preceding the claim. Neither party is liable for indirect or consequential damages.\n\n7. Law. This Agreement is governed by the laws of Ireland. Courts of Dublin have exclusive jurisdiction, subject to mandatory provisions of Customer's country of establishment where applicable."
+    },
+    "expected_output": {
+      "risk_level": "low",
+      "issues_found": [],
+      "missing_clauses": [
+        "Full DPA text should be reviewed for SCCs and transfer mechanisms"
+      ],
+      "favorable_terms": [
+        "Balanced liability cap and exclusion of consequential damages",
+        "DPA, sub-processor notice, and export window on termination",
+        "SLA change protection and ISO 27001 reference"
+      ],
+      "unfavorable_terms": [
+        "Auto-renewal with 90-day notice is manageable but requires calendar discipline"
+      ],
+      "overall_recommendation": "approve",
+      "reasoning": "For EU reviewer the excerpt shows GDPR-aligned processing roles, reasonable liability allocation, and clear renewal/termination — typical enterprise SaaS with no glaring imbalance in the clauses shown."
+    }
+  },
+  {
+    "input": {
+      "contract_type": "employment",
+      "jurisdiction": "US-CA",
+      "party_role": "signee",
+      "contract_text": "OFFER OF EMPLOYMENT — KEY TERMS\n\nPosition: Senior Software Engineer. At-will employment. Start date as agreed.\n\nCompensation. Base salary payable semi-monthly, subject to standard withholdings. Annual bonus eligible per company plan; bonus is discretionary and not guaranteed.\n\nInventions and IP. Employee assigns to Company all inventions, works of authorship, and improvements (whether or not patentable) conceived, developed, or reduced to practice during employment that relate to Company's business or use Company's equipment, time, or materials. Employee waives moral rights to the extent permitted by law.\n\nConfidentiality. Employee will not use or disclose Company confidential information during or after employment, subject to applicable law.\n\nNon-Solicitation. For twelve (12) months after termination, Employee will not solicit Company's employees or customers with whom Employee had material contact.\n\nNon-Compete. Employee acknowledges the reasonableness of restrictions necessary to protect Company's goodwill; Employee agrees not to engage in competitive activities that harm Company's legitimate business interests for twelve (12) months within the State of California following termination.\n\nDispute Resolution. Claims arising out of employment are subject to confidential binding arbitration under AAA rules; Employee waives jury trial.\n\nAt-Will. Either party may terminate employment at any time with or without cause or notice."
+    },
+    "expected_output": {
+      "risk_level": "high",
+      "issues_found": [
+        "Post-employment non-compete covering California is likely void or unenforceable under Cal. Bus. & Prof. Code § 16600 except narrow statutory exceptions",
+        "IP assignment breadth may capture personal side projects — needs carve-out",
+        "Arbitration and jury waiver materially affect enforcement forum"
+      ],
+      "missing_clauses": [
+        "California-specific invention assignment exception (Lab. Code § 2870) acknowledgment",
+        "Clear exclusion of non-compete if employer intends compliance with CA law"
+      ],
+      "favorable_terms": [
+        "At-will and salary terms are standard",
+        "Non-solicit may be enforceable if narrowly drafted"
+      ],
+      "unfavorable_terms": [
+        "Non-compete clause as drafted is problematic for CA employees",
+        "Broad IP assignment without § 2870 carve-out language"
+      ],
+      "overall_recommendation": "negotiate",
+      "reasoning": "As signee in US-CA the non-compete language is a red flag; IP and arbitration need tightening. Not pure rejection because other terms are common, but material fixes are required."
+    }
+  },
+  {
+    "input": {
+      "contract_type": "lease",
+      "jurisdiction": "US-TX",
+      "party_role": "signee",
+      "contract_text": "COMMERCIAL LEASE AGREEMENT — EXCERPTS\n\nPremises: Suite 400, 100 Commerce Drive, Austin, Texas.\n\nTerm: Thirty-six (36) months commencing on the Rent Commencement Date.\n\nBase Rent: $8,500 per month, due on the first of each month.\n\nAdditional Rent. Tenant shall pay as additional rent: (a) Tenant's pro rata share of Operating Expenses (defined as all costs of operating the Building including management fees, capital improvements amortized over Landlord's reasonable period, insurance, taxes, utilities, and reserves); (b) a five percent (5%) administrative fee on all pass-throughs; (c) any fines or penalties assessed against the Building to the extent attributable to Tenant's use.\n\nMaintenance and Surrender. Tenant accepts Premises \"as-is.\" Tenant shall maintain the Premises in good order and at Tenant's cost shall replace any worn items including HVAC components serving the Premises regardless of age. Upon expiration or earlier termination, Tenant shall surrender the Premises in \"like-new\" condition, ordinary wear and tear excepted; provided that Landlord may elect, in its sole discretion, to require repainting, new carpet, and restoration of all alterations at Tenant's expense.\n\nLate Fees. Rent not received within three (3) days of the due date shall incur a late fee of fifteen percent (15%) of the monthly installment, plus interest at eighteen percent (18%) per annum, compounded monthly, and a $250 administrative charge per occurrence.\n\nRenewal. Lease shall automatically renew for successive one-year terms unless Tenant provides not less than one hundred eighty (180) days' prior written notice of non-renewal."
+    },
+    "expected_output": {
+      "risk_level": "high",
+      "issues_found": [
+        "Operating expense definition may pass through capital improvements and reserves opaquely",
+        "HVAC replacement regardless of age shifts capital burden to tenant",
+        "Late fee and 18% compounded interest may be scrutinized as penalties under TX law",
+        "180-day non-renewal notice for auto-renewal is onerous"
+      ],
+      "missing_clauses": [
+        "Cap or base year on operating expenses",
+        "Clear CAM audit rights",
+        "Landlord repair obligations for structural elements"
+      ],
+      "favorable_terms": [
+        "Wear and tear exception mentioned (though narrowed by repainting election)"
+      ],
+      "unfavorable_terms": [
+        "Landlord sole discretion on surrender condition",
+        "Aggressive late fees and interest",
+        "Auto-renewal with long notice window"
+      ],
+      "overall_recommendation": "negotiate",
+      "reasoning": "As tenant signee in US-TX the pass-throughs, maintenance allocation, penalty-like late charges, and renewal trap create material commercial and legal risk."
+    }
+  },
+  {
+    "input": {
+      "contract_type": "services",
+      "jurisdiction": "UK",
+      "party_role": "signee",
+      "contract_text": "MASTER SERVICES AGREEMENT — STATEMENT OF WORK FRAMEWORK\n\n1. Services. Supplier will perform the professional services described in each Statement of Work (\"SOW\") agreed by the parties. Unless otherwise stated in a SOW, Supplier will use commercially reasonable efforts to meet any timelines referenced in discussions between the parties.\n\n2. Change Control. Either party may propose changes. No changes are binding unless documented in a written change order signed by both parties.\n\n3. Deliverables. Supplier will provide the deliverables identified in each SOW. Where deliverables are described at a high level, Supplier will exercise professional judgment to interpret requirements, and Customer accepts that interim formats may vary.\n\n4. Acceptance. Deliverables are deemed accepted if Customer does not provide written notice of rejection within a reasonable period after delivery.\n\n5. Fees. Time and materials at the rates in the SOW. Expenses are reimbursable if pre-approved. Supplier may invoice monthly in arrears.\n\n6. Warranties. Supplier warrants services will be performed in a professional manner consistent with industry standards. EXCEPT AS EXPRESSLY STATED, SUPPLIER DISCLAIMS ALL WARRANTIES INCLUDING MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.\n\n7. Liability. Supplier's total liability under this Agreement and all SOWs shall not exceed the fees paid by Customer in the three (3) months preceding the claim. Supplier is not liable for loss of profits, loss of data, or indirect or consequential loss. These limitations do not apply to death or personal injury caused by negligence, fraud, or liability that cannot be limited by law.\n\n8. IP. Customer owns all pre-existing IP. Supplier assigns to Customer all right, title, and interest in deliverables paid for in full, except Supplier retains background IP and tools. To the extent deliverables incorporate Supplier background IP, Customer receives a perpetual license to use such deliverables for its internal business purposes.\n\n9. Law. Governed by the laws of England and Wales. Courts of London have exclusive jurisdiction."
+    },
+    "expected_output": {
+      "risk_level": "medium",
+      "issues_found": [
+        "'Commercially reasonable efforts' and vague timelines weaken schedule accountability",
+        "Deemed acceptance on undefined 'reasonable period' creates ambiguity",
+        "Professional judgment clause may excuse scope gaps"
+      ],
+      "missing_clauses": [
+        "Objective acceptance criteria and cure period",
+        "Explicit SOW deliverable specifications and milestones"
+      ],
+      "favorable_terms": [
+        "Change control in writing",
+        "IP assignment on payment with background IP carve-out",
+        "Liability cap familiar for UK B2B services"
+      ],
+      "unfavorable_terms": [
+        "Broad disclaimer of implied warranties",
+        "Short look-back for liability cap (3 months)"
+      ],
+      "overall_recommendation": "negotiate",
+      "reasoning": "As customer signee under English law the framework is workable but scope and acceptance are under-specified; tighten SOWs and acceptance mechanics before signing."
+    }
+  },
+  {
+    "input": {
+      "contract_type": "SaaS",
+      "jurisdiction": "US-NY",
+      "party_role": "signee",
+      "contract_text": "SOFTWARE AS A SERVICE AGREEMENT — EXCERPT\n\nLicense. Subject to payment, Provider grants Customer a non-exclusive, non-transferable right to access and use the Platform during the Subscription Term for Customer's internal business purposes.\n\nCustomer Data. Customer retains all rights to Customer Data. Customer grants Provider a worldwide, royalty-free license to host, copy, process, and display Customer Data as necessary to provide the Services and to improve and develop Provider's products and services, including to train and fine-tune machine learning models, unless Customer opts out in the admin console where available.\n\nIP. Provider owns the Platform and all enhancements. Feedback provided by Customer may be used by Provider without restriction or compensation.\n\nIndemnity by Customer. Customer will defend, indemnify, and hold harmless Provider and its affiliates from any third-party claim arising out of Customer Data, Customer's use of the Services in violation of law, or Customer's breach of this Agreement. Customer shall pay all settlements approved in writing by Customer or damages awarded, and Provider may select counsel.\n\nIndemnity by Provider. Provider will defend Customer against a claim that the Platform infringes a U.S. patent or copyright, and will pay damages finally awarded, provided Customer promptly notifies Provider and cooperates. Provider's sole remedy obligation if infringement is alleged is to modify the Platform, obtain a license, or terminate and refund prepaid fees for the unused portion of the term.\n\nLimitation of Liability. EXCEPT FOR INDEMNITY OBLIGATIONS AND AMOUNTS DUE UNDER THE AGREEMENT, NEITHER PARTY'S LIABILITY SHALL EXCEED THE GREATER OF AMOUNTS PAID IN THE PRIOR TWELVE MONTHS OR ONE HUNDRED DOLLARS. NEITHER PARTY IS LIABLE FOR INDIRECT DAMAGES.\n\nTerm and Renewal. Initial term one (1) year. This Agreement automatically renews for successive one-year periods unless Customer provides written notice of non-renewal at least thirty (30) days before the end of the then-current term."
+    },
+    "expected_output": {
+      "risk_level": "high",
+      "issues_found": [
+        "Broad license for ML training on Customer Data may conflict with confidentiality and regulatory duties",
+        "Customer indemnity is broad; uncapped indemnity may interact badly with liability cap carve-out",
+        "Infringement remedy limited to modify/license/terminate — no uncapped exposure for Provider"
+      ],
+      "missing_clauses": [
+        "Data processing addendum and subprocessors for regulated data",
+        "Narrowing ML use to aggregated/de-identified data or explicit consent"
+      ],
+      "favorable_terms": [
+        "Provider IP indemnity with standard remedy ladder",
+        "30-day auto-renewal notice is relatively short"
+      ],
+      "unfavorable_terms": [
+        "Feedback assignment without compensation",
+        "Customer indemnity scope and interaction with liability cap",
+        "Training rights on Customer Data"
+      ],
+      "overall_recommendation": "negotiate",
+      "reasoning": "As signee in US-NY the data/ML license and indemnity asymmetry are material; liability cap exceptions need careful review with privacy posture."
+    }
+  },
+  {
+    "input": {
+      "contract_type": "services",
+      "jurisdiction": "EU",
+      "party_role": "drafter",
+      "contract_text": "CONSULTING SERVICES AGREEMENT (VENDOR-FRIENDLY DRAFT) — EXCERPT\n\n1. Services. Consultant shall perform the services set forth in Exhibit A (\"Services\") in a professional and workmanlike manner.\n\n2. Compensation. Client shall pay fees within forty-five (45) days of invoice. Late payments accrue interest at 1.5% per month.\n\n3. Independent Contractor. Consultant is an independent contractor. Consultant is responsible for taxes and benefits. Nothing herein creates a partnership or employment relationship.\n\n4. Indemnification. Client shall indemnify, defend, and hold harmless Consultant from any claim arising out of Client's business, Client materials, or Client's instructions, except to the extent finally judicially determined to result from Consultant's gross negligence or willful misconduct.\n\n5. Limitation of Liability. Except for either party's indemnity obligations or breach of confidentiality, each party's aggregate liability shall not exceed the fees paid or payable in the twelve (12) months preceding the claim. Neither party is liable for indirect or consequential damages.\n\n6. Confidentiality. Each party shall protect the other's confidential information for five (5) years using reasonable care.\n\n7. Governing Law. Laws of Germany. Venue in Frankfurt am Main."
+    },
+    "expected_output": {
+      "risk_level": "low",
+      "issues_found": [],
+      "missing_clauses": [
+        "GDPR/DPA if Consultant processes personal data on behalf of Client"
+      ],
+      "favorable_terms": [
+        "Client indemnity protects Consultant from Client-directed risk",
+        "Balanced liability cap and confidentiality term"
+      ],
+      "unfavorable_terms": [],
+      "overall_recommendation": "approve",
+      "reasoning": "As drafter (Consultant) under EU choice of law, the indemnity and liability structure favor the service provider appropriately for a B2B consulting engagement, subject to adding a DPA if personal data is processed."
+    }
+  },
+  {
+    "input": {
+      "contract_type": "NDA",
+      "jurisdiction": "UK",
+      "party_role": "reviewer",
+      "contract_text": "MUTUAL NON-DISCLOSURE AGREEMENT\n\nParties: Alpha Ltd and Beta Ltd (each a \"Party\").\n\n1. Confidential Information means information disclosed by a Party (\"Discloser\") to the other (\"Recipient\") that is marked confidential or which should reasonably be understood as confidential given the nature of the information and circumstances of disclosure.\n\n2. Recipient shall use Confidential Information solely for the Purpose (joint evaluation of a commercial partnership) and shall not disclose Confidential Information to any person except to those of its employees and professional advisers who need to know and who are bound by confidentiality obligations no less protective than this Agreement.\n\n3. Exceptions. Confidential Information does not include information which Recipient can show is public, was lawfully known without restriction, is independently developed, or is disclosed by lawful third-party disclosure without breach.\n\n4. Term. This Agreement lasts two (2) years from the date of last signature. Confidentiality obligations survive for five (5) years from disclosure.\n\n5. Return. On request, Recipient shall return or destroy materials and, upon request, confirm destruction in writing.\n\n6. Remedies. Each Party acknowledges breach may cause irreparable harm and that the other may seek injunctive relief.\n\n7. Personal Data. Where disclosures include personal data, the parties will comply with applicable data protection law and execute appropriate processing terms if required.\n\n8. Law and Jurisdiction. This Agreement is governed by the laws of England and Wales. The courts of England have exclusive jurisdiction."
+    },
+    "expected_output": {
+      "risk_level": "low",
+      "issues_found": [],
+      "missing_clauses": [
+        "Specific UK GDPR processor/controller wording if personal data flows are significant"
+      ],
+      "favorable_terms": [
+        "Mutual obligations and reasonable exceptions",
+        "Injunctive relief and return/destruction",
+        "Data protection hook for GDPR compliance"
+      ],
+      "unfavorable_terms": [],
+      "overall_recommendation": "approve",
+      "reasoning": "Reviewer sees a conventional mutual UK NDA with clear scope, exceptions, survival, and jurisdiction — suitable for typical disclosure scenarios."
+    }
+  },
+  {
+    "input": {
+      "contract_type": "employment",
+      "jurisdiction": "US-TX",
+      "party_role": "signee",
+      "contract_text": "PROPRIETARY INFORMATION AND INVENTIONS AGREEMENT\n\nEmployee acknowledges access to Employer confidential information. Employee shall not disclose or use such information except for Employer business.\n\nInventions. Employee hereby assigns to Employer all right, title, and interest in and to any and all inventions, original works of authorship, developments, concepts, improvements, designs, discoveries, ideas, and trade secrets, whether or not patentable or copyrightable, which Employee may solely or jointly conceive, develop, or reduce to practice during the period of Employee's employment with Employer (\"Employment Period\"), whether or not during working hours or on Employer premises, except inventions listed on Exhibit A.\n\nExhibit A. Employee lists no inventions on Exhibit A.\n\nFurther Assurances. Employee agrees to execute documents and cooperate in prosecuting rights at Employer's expense.\n\nNon-Solicit. For twelve (12) months after termination, Employee will not solicit Employer's employees.\n\nAcknowledgment. Employee has read this agreement and signs voluntarily. Employee had opportunity to consult independent counsel."
+    },
+    "expected_output": {
+      "risk_level": "high",
+      "issues_found": [
+        "Assignment covers inventions whether or not on premises or working hours with empty Exhibit A — high risk to personal projects without Texas § 15.001 carve-outs and prior invention disclosure",
+        "No explicit carve-out for inventions developed entirely on own time without Employer resources beyond statutory minima"
+      ],
+      "missing_clauses": [
+        "Texas Labor Code Chapter 15 limitations on assignment of employee inventions where applicable",
+        "Detailed prior invention list and procedure"
+      ],
+      "favorable_terms": [
+        "Non-solicit duration is defined",
+        "Counsel acknowledgment clause"
+      ],
+      "unfavorable_terms": [
+        "Broad invention assignment with blank Exhibit A",
+        "Further assurances without scope limit"
+      ],
+      "overall_recommendation": "negotiate",
+      "reasoning": "As signee in US-TX the IP assignment is aggressively broad; Texas has specific employee invention protections that should be reflected — needs revision before execution."
+    }
+  },
+  {
+    "input": {
+      "contract_type": "SaaS",
+      "jurisdiction": "US-CA",
+      "party_role": "signee",
+      "contract_text": "AGREEMENT\n\nCustomer may use the software. Customer must pay fees when invoiced. Provider is not responsible for any problems. Provider may change the software anytime. This agreement renews every year unless Customer cancels in writing exactly sixty (60) days before renewal; if Customer misses the window, the agreement renews for three (3) additional years at Provider's then-current list price, which may increase without notice."
+    },
+    "expected_output": {
+      "risk_level": "high",
+      "issues_found": [
+        "Extreme ambiguity: no SLA, scope, data rights, or limitation of liability",
+        "One-sided change rights and harsh renewal lock-in with price increases without notice",
+        "Disclaimer of responsibility may be unconscionable or violate implied terms depending on context"
+      ],
+      "missing_clauses": [
+        "Service description, availability, security, data ownership, termination, and liability allocation",
+        "Privacy compliance for personal information"
+      ],
+      "favorable_terms": [],
+      "unfavorable_terms": [
+        "Auto-renewal trap with three-year extension and unilateral pricing",
+        "Broad disclaimer of responsibility"
+      ],
+      "overall_recommendation": "reject",
+      "reasoning": "As signee this is an edge-case vague agreement with predatory renewal mechanics — not acceptable without a full standard enterprise terms rewrite."
+    }
+  },
+  {
+    "input": {
+      "contract_type": "lease",
+      "jurisdiction": "EU",
+      "party_role": "reviewer",
+      "contract_text": "COMMERCIAL LEASE — SCHEDULE AND KEY CLAUSES (EXCERPT FROM 45-PAGE LEASE)\n\nArticle 4 — Rent and Service Charges\n\n4.1 Base Rent shall be payable monthly in advance on the first business day of each month to the Landlord's designated account.\n\n4.2 Service Charge. Tenant shall pay its proportionate share of the total costs of management, maintenance, insurance, utilities, and common area services for the Building (\"Service Charge\"). The Service Charge shall be reconciled annually within ninety (90) days following each Service Charge Year; if Tenant's payments exceed actual costs, Landlord shall credit the following year's Service Charge or refund if the Lease has ended.\n\n4.3 Cap. The Service Charge in any Service Charge Year shall not increase by more than one hundred and five percent (105%) of the Service Charge for the first Service Charge Year, compounded annually (\"Service Charge Cap\").\n\nArticle 8 — Repairs\n\n8.1 Landlord shall keep the structural elements of the Building including roof, foundations, and external walls in repair, except where damage is caused by Tenant.\n\n8.2 Tenant shall keep the Premises in good repair and condition, including internal non-structural elements and fixtures and fittings.\n\nArticle 12 — Insurance and Mutual Waiver\n\n12.1 Landlord shall insure the Building for reinstatement value. Tenant shall not do anything that invalidates such insurance.\n\n12.2 To the extent permitted by applicable law, each party waives subrogation rights against the other for insured losses.\n\nArticle 15 — Termination\n\n15.1 Either party may terminate if the other commits a material breach and fails to remedy within thirty (30) days of notice.\n\n15.2 Tenant may terminate if the Premises are damaged so as to be unusable for more than one hundred eighty (180) days and Landlord does not rebuild within a reasonable period.\n\nArticle 17 — Renewal\n\n17.1 Tenant may extend the term for one (1) further period of five (5) years by giving not less than nine (9) months' prior written notice, on the same terms except Base Rent shall be the higher of open market rent or the Base Rent immediately prior to renewal, determined by independent valuer if parties disagree."
+    },
+    "expected_output": {
+      "risk_level": "low",
+      "issues_found": [],
+      "missing_clauses": [
+        "Full review of rent review, alienation, and statutory protections in the governing member state"
+      ],
+      "favorable_terms": [
+        "Service charge reconciliation and annual cap",
+        "Structural repair allocation and mutual waiver of subrogation",
+        "Tenant break for prolonged damage",
+        "Renewal option with market rent mechanics"
+      ],
+      "unfavorable_terms": [
+        "105% compounded cap still allows material growth over a long lease"
+      ],
+      "overall_recommendation": "approve",
+      "reasoning": "Reviewer assessment: excerpt from long lease shows balanced EU-style commercial terms with caps, insurance waivers, and renewal mechanics — reasonable subject to local law review of the full instrument."
+    }
+  },
+  {
+    "input": {
+      "contract_type": "services",
+      "jurisdiction": "US-NY",
+      "party_role": "reviewer",
+      "contract_text": "STATEMENT OF WORK NO. 3 — IMPLEMENTATION SERVICES\n\nProject: Customer onboarding portal integration.\n\nScope. Vendor shall perform configuration and integration services to connect Customer's CRM instance with Vendor's messaging API as described in Vendor's standard integration guide version 3.2 (\"Guide\"). Vendor will allocate up to two hundred (200) hours during the ninety (90) day performance period.\n\nDeliverables. Vendor will deliver: (a) configured connectors; (b) test evidence from Vendor's staging environment; (c) a handover session of up to four (4) hours.\n\nAssumptions. Customer will provide timely access to systems, test data, and a single designated technical contact with decision authority. Delays caused by Customer will extend timelines on a day-for-day basis.\n\nOut of Scope. Custom code beyond connector configuration, data migration, production cutover support beyond one (1) remote session, and any work relating to third-party products not listed in Exhibit B are out of scope and require a new SOW.\n\nAcceptance. Customer will run acceptance tests in Appendix A within ten (10) business days of Vendor's notice of readiness. Failure to respond constitutes acceptance.\n\nFees. Fixed fee $85,000, invoiced 50% on SOW execution and 50% upon acceptance or deemed acceptance."
+    },
+    "expected_output": {
+      "risk_level": "medium",
+      "issues_found": [
+        "Deliverables rely on external Guide — version lock should be explicit",
+        "Deemed acceptance on silence may be acceptable if tests are objective but risky if Appendix A is loose"
+      ],
+      "missing_clauses": [
+        "Warranty/remedy period post-acceptance for defects",
+        "Explicit defect correction window before acceptance final"
+      ],
+      "favorable_terms": [
+        "Clear out-of-scope boundaries and Customer delay treatment",
+        "Fixed fee with defined hour cap reduces open-ended T&M risk"
+      ],
+      "unfavorable_terms": [
+        "Limited production support in scope",
+        "50% upfront shifts cash risk to Customer"
+      ],
+      "overall_recommendation": "negotiate",
+      "reasoning": "Reviewer: SOW is relatively clear but acceptance and post-go-live support need tightening; not inherently unfair if Appendix A tests are solid."
+    }
+  },
+  {
+    "input": {
+      "contract_type": "SaaS",
+      "jurisdiction": "EU",
+      "party_role": "signee",
+      "contract_text": "DATA PROCESSING ADDENDUM (DPA) — EXCERPT\n\n1. Roles. For the processing of personal data described in Annex I, Customer acts as controller and Provider acts as processor.\n\n2. Instructions. Provider shall process personal data only on documented instructions from Customer, including via the Services configuration, unless EU or Member State law requires otherwise — in which case Provider shall inform Customer of that legal requirement before processing, unless prohibited.\n\n3. Confidentiality. Provider ensures persons authorized to process personal data are bound by confidentiality.\n\n4. Security. Provider shall implement measures in Annex II (technical and organizational measures). Provider may update measures if they do not reduce overall security.\n\n5. Sub-processing. Customer grants general authorization for sub-processors listed at trust.example/subprocessors. Provider will notify Customer of new sub-processors and Customer may object on documented data protection grounds; if objection is unresolved, Customer may terminate the affected Services as its sole remedy.\n\n6. Transfers. Where transfers outside the EEA occur, Provider will ensure appropriate safeguards (e.g., SCCs) and conduct assessments as required.\n\n7. Assistance. Provider shall assist Customer with data subject requests, DPIAs, and breach notifications as described in Annex III, subject to additional fees for non-standard requests.\n\n8. Deletion. Upon termination, Provider shall delete or return personal data within ninety (90) days unless law requires retention, in which case Provider shall isolate and protect such data.\n\n9. Audit. Once per year on reasonable notice, Customer may request a summary of third-party audit reports; onsite audits only where required by supervisory authority or if mandatory under law, subject to confidentiality and security rules."
+    },
+    "expected_output": {
+      "risk_level": "low",
+      "issues_found": [
+        "Assistance fees for non-standard DSAR/DPIA work should be priced or capped in main agreement",
+        "Audit rights are summary-based — may be insufficient for highly regulated customers"
+      ],
+      "missing_clauses": [
+        "Link to executed SCCs and transfer impact assessment details for specific modules"
+      ],
+      "favorable_terms": [
+        "Article 28-style obligations: instructions, security, subprocessors, transfers, deletion",
+        "Objection remedy for new sub-processors"
+      ],
+      "unfavorable_terms": [
+        "Limited audit beyond summaries unless regulator-mandated"
+      ],
+      "overall_recommendation": "negotiate",
+      "reasoning": "As signee (Customer) under EU GDPR expectations the DPA excerpt is largely standard; negotiate audit depth and assistance pricing if regulatory exposure is high."
+    }
+  },
+  {
+    "input": {
+      "contract_type": "services",
+      "jurisdiction": "US-TX",
+      "party_role": "drafter",
+      "contract_text": "MASTER SERVICES AGREEMENT — INDEMNITY AND LIABILITY (EXCERPT)\n\nIndemnification by Vendor. Vendor shall defend, indemnify, and hold harmless Customer and its officers, directors, and employees from and against any third-party claim that the Deliverables, as delivered by Vendor and used by Customer in accordance with this Agreement, infringe any U.S. patent, copyright, or trade secret, and Vendor shall pay settlements approved by Customer (such approval not to be unreasonably withheld) and damages finally awarded.\n\nIndemnification by Customer. Customer shall defend, indemnify, and hold harmless Vendor from claims arising out of Customer's data, Customer's use of Deliverables in combination with non-Vendor products, or Customer's violation of law.\n\nProcedure. The indemnified party shall promptly notify the indemnifying party, cooperate, and allow the indemnifying party to control defense and settlement, except no settlement admitting liability or imposing obligations on the indemnified party may be made without consent.\n\nLiability. EXCEPT FOR INDEMNITY OBLIGATIONS, BREACH OF CONFIDENTIALITY, OR WILLFUL MISCONDUCT, EACH PARTY'S AGGREGATE LIABILITY SHALL NOT EXCEED THE AMOUNTS PAID OR PAYABLE BY CUSTOMER IN THE TWELVE MONTHS PRECEDING THE CLAIM. NEITHER PARTY IS LIABLE FOR INDIRECT OR CONSEQUENTIAL DAMAGES. THE FOREGOING DOES NOT LIMIT LIABILITY FOR DEATH OR PERSONAL INJURY CAUSED BY NEGLIGENCE TO THE EXTENT PROHIBITED BY LAW."
+    },
+    "expected_output": {
+      "risk_level": "medium",
+      "issues_found": [
+        "IP indemnity scope is standard but carve-outs for combination use are Customer-borne — ensure sales materials disclose",
+        "Indemnity carve-out from liability cap increases exposure for both sides in different scenarios"
+      ],
+      "missing_clauses": [
+        "Exclusive remedy ladder for IP claims in main body",
+        "Texas-specific enforceability review for certain caps in consumer contexts (not likely B2B)"
+      ],
+      "favorable_terms": [
+        "Symmetric indemnity procedure and settlement control",
+        "Mutual liability cap with standard exclusions"
+      ],
+      "unfavorable_terms": [],
+      "overall_recommendation": "approve",
+      "reasoning": "As drafter (Vendor) the Texas-law excerpt is a conventional B2B indemnity and liability framework with balanced procedures; acceptable for enterprise services if scope matches go-to-market."
+    }
+  }
+]

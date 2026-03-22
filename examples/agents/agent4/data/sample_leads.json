@@ -1,0 +1,302 @@
+[
+  {
+    "input": {
+      "address": "1245 N Alpine Dr, Beverly Hills, CA 90210",
+      "property_type": "single_family",
+      "square_footage": 6200,
+      "bedrooms": 6,
+      "bathrooms": 7,
+      "year_built": 1992,
+      "lot_size_sqft": 22000
+    },
+    "expected_output": {
+      "estimated_value": 4850000,
+      "confidence_range_low": 4500000,
+      "confidence_range_high": 5200000,
+      "price_per_sqft": 782.0,
+      "market_condition": "hot",
+      "comparable_properties_used": 2,
+      "reasoning": "Luxury Beverly Hills estate; comps near 5800–6500 sqft support high $/sf; hot 90210 market."
+    }
+  },
+  {
+    "input": {
+      "address": "420 Ellis St Unit 504, San Francisco, CA 94102",
+      "property_type": "condo",
+      "square_footage": 720,
+      "bedrooms": 1,
+      "bathrooms": 1,
+      "year_built": 2008,
+      "lot_size_sqft": 0
+    },
+    "expected_output": {
+      "estimated_value": 685000,
+      "confidence_range_low": 640000,
+      "confidence_range_high": 730000,
+      "price_per_sqft": 951.0,
+      "market_condition": "hot",
+      "comparable_properties_used": 2,
+      "reasoning": "Starter downtown condo; comp cluster ~$890–928/sf on similar units; tight inventory in 94102."
+    }
+  },
+  {
+    "input": {
+      "address": "200 S Michigan Ave Ste 1, Chicago, IL 60601",
+      "property_type": "commercial",
+      "square_footage": 11500,
+      "bedrooms": 0,
+      "bathrooms": 4,
+      "year_built": 1924,
+      "lot_size_sqft": 8000
+    },
+    "expected_output": {
+      "estimated_value": 3200000,
+      "confidence_range_low": 2950000,
+      "confidence_range_high": 3450000,
+      "price_per_sqft": 278.0,
+      "market_condition": "balanced",
+      "comparable_properties_used": 2,
+      "reasoning": "Loop commercial; comps near $272–280/sf; balanced downtown fundamentals."
+    }
+  },
+  {
+    "input": {
+      "address": "88 President St, Brooklyn, NY 11201",
+      "property_type": "multi_family",
+      "square_footage": 4800,
+      "bedrooms": 12,
+      "bathrooms": 8,
+      "year_built": 1890,
+      "lot_size_sqft": 3200
+    },
+    "expected_output": {
+      "estimated_value": 2950000,
+      "confidence_range_low": 2750000,
+      "confidence_range_high": 3150000,
+      "price_per_sqft": 615.0,
+      "market_condition": "balanced",
+      "comparable_properties_used": 2,
+      "reasoning": "Four-unit brownstone; multifamily comps in 11201 cluster ~$587–589/sf; income approach implied."
+    }
+  },
+  {
+    "input": {
+      "address": "77 Oak Ave, Cleveland, OH 44113",
+      "property_type": "single_family",
+      "square_footage": 1850,
+      "bedrooms": 3,
+      "bathrooms": 2,
+      "year_built": 1925,
+      "lot_size_sqft": 5200
+    },
+    "expected_output": {
+      "estimated_value": 120000,
+      "confidence_range_low": 95000,
+      "confidence_range_high": 155000,
+      "price_per_sqft": 65.0,
+      "market_condition": "balanced",
+      "comparable_properties_used": 2,
+      "reasoning": "Fixer-upper with deferred maintenance; comps in low $100s/sf before condition discount."
+    }
+  },
+  {
+    "input": {
+      "address": "55 Rainey St, Austin, TX 78701",
+      "property_type": "single_family",
+      "square_footage": 3100,
+      "bedrooms": 4,
+      "bathrooms": 4,
+      "year_built": 2024,
+      "lot_size_sqft": 4800
+    },
+    "expected_output": {
+      "estimated_value": 1420000,
+      "confidence_range_low": 1350000,
+      "confidence_range_high": 1500000,
+      "price_per_sqft": 458.0,
+      "market_condition": "hot",
+      "comparable_properties_used": 2,
+      "reasoning": "New construction in Rainey Street; comps ~$428–450/sf; premium for new build and hot 78701."
+    }
+  },
+  {
+    "input": {
+      "address": "9 Route 16, Whitefield, NH 03561",
+      "property_type": "single_family",
+      "square_footage": 1750,
+      "bedrooms": 3,
+      "bathrooms": 2,
+      "year_built": 1978,
+      "lot_size_sqft": 87120
+    },
+    "expected_output": {
+      "estimated_value": 265000,
+      "confidence_range_low": 235000,
+      "confidence_range_high": 300000,
+      "price_per_sqft": 151.0,
+      "market_condition": "balanced",
+      "comparable_properties_used": 2,
+      "reasoning": "Rural property with few nearby comps; rural sales ~$144–155/sf; wide confidence band."
+    }
+  },
+  {
+    "input": {
+      "address": "2100 1st Ave N, Seattle, WA 98101",
+      "property_type": "townhouse",
+      "square_footage": 2100,
+      "bedrooms": 3,
+      "bathrooms": 2,
+      "year_built": 2016,
+      "lot_size_sqft": 1800
+    },
+    "expected_output": {
+      "estimated_value": 1180000,
+      "confidence_range_low": 1100000,
+      "confidence_range_high": 1260000,
+      "price_per_sqft": 562.0,
+      "market_condition": "hot",
+      "comparable_properties_used": 2,
+      "reasoning": "Belltown townhouse; townhouse comp ~$525/sf; hot Seattle market with low inventory."
+    }
+  },
+  {
+    "input": {
+      "address": "400 W High St, Columbus, OH 43215",
+      "property_type": "condo",
+      "square_footage": 1100,
+      "bedrooms": 2,
+      "bathrooms": 2,
+      "year_built": 2005,
+      "lot_size_sqft": 0
+    },
+    "expected_output": {
+      "estimated_value": 285000,
+      "confidence_range_low": 260000,
+      "confidence_range_high": 315000,
+      "price_per_sqft": 259.0,
+      "market_condition": "cool",
+      "comparable_properties_used": 1,
+      "reasoning": "Downtown Columbus condo; comp near $257/sf; cool market with longer DOM and higher inventory."
+    }
+  },
+  {
+    "input": {
+      "address": "1900 Brickell Ave PH2, Miami, FL 33139",
+      "property_type": "condo",
+      "square_footage": 3400,
+      "bedrooms": 3,
+      "bathrooms": 3,
+      "year_built": 2019,
+      "lot_size_sqft": 0
+    },
+    "expected_output": {
+      "estimated_value": 3400000,
+      "confidence_range_low": 3150000,
+      "confidence_range_high": 3700000,
+      "price_per_sqft": 1000.0,
+      "market_condition": "balanced",
+      "comparable_properties_used": 1,
+      "reasoning": "Brickell penthouse; luxury condo comp ~$969/sf; balanced Brickell trend with default regional stats."
+    }
+  },
+  {
+    "input": {
+      "address": "500 NW Burnside St, Portland, OR 97201",
+      "property_type": "townhouse",
+      "square_footage": 1950,
+      "bedrooms": 3,
+      "bathrooms": 2,
+      "year_built": 2012,
+      "lot_size_sqft": 2200
+    },
+    "expected_output": {
+      "estimated_value": 825000,
+      "confidence_range_low": 760000,
+      "confidence_range_high": 895000,
+      "price_per_sqft": 423.0,
+      "market_condition": "cool",
+      "comparable_properties_used": 1,
+      "reasoning": "Pearl District townhouse; negative YoY appreciation and elevated inventory; comp ~$433/sf adjusted down."
+    }
+  },
+  {
+    "input": {
+      "address": "800 Warehouse Row, Dallas, TX 75201",
+      "property_type": "single_family",
+      "square_footage": 4200,
+      "bedrooms": 4,
+      "bathrooms": 3,
+      "year_built": 1940,
+      "lot_size_sqft": 6000
+    },
+    "expected_output": {
+      "estimated_value": 1050000,
+      "confidence_range_low": 950000,
+      "confidence_range_high": 1150000,
+      "price_per_sqft": 250.0,
+      "market_condition": "balanced",
+      "comparable_properties_used": 1,
+      "reasoning": "Unusual warehouse conversion; comp near $258/sf with adjustment for adaptive reuse and layout."
+    }
+  },
+  {
+    "input": {
+      "address": "Slip 4, 1500 Harbor Island Dr, San Diego, CA 92101",
+      "property_type": "single_family",
+      "square_footage": 1400,
+      "bedrooms": 2,
+      "bathrooms": 2,
+      "year_built": 2015,
+      "lot_size_sqft": 0
+    },
+    "expected_output": {
+      "estimated_value": 425000,
+      "confidence_range_low": 350000,
+      "confidence_range_high": 525000,
+      "price_per_sqft": 304.0,
+      "market_condition": "balanced",
+      "comparable_properties_used": 0,
+      "reasoning": "Houseboat / floating home edge case; no direct DB match; wide band due to moorage and niche liquidity."
+    }
+  },
+  {
+    "input": {
+      "address": "1422 Summitridge Dr, Beverly Hills, CA 90210",
+      "property_type": "single_family",
+      "square_footage": 6500,
+      "bedrooms": 7,
+      "bathrooms": 8,
+      "year_built": 2018,
+      "lot_size_sqft": 28000
+    },
+    "expected_output": {
+      "estimated_value": 5200000,
+      "confidence_range_low": 4800000,
+      "confidence_range_high": 5600000,
+      "price_per_sqft": 800.0,
+      "market_condition": "hot",
+      "comparable_properties_used": 1,
+      "reasoning": "Ultra-luxury new-build; comp sale at $784/sf for 6500 sqft; trophy market in 90210."
+    }
+  },
+  {
+    "input": {
+      "address": "61 W 41st St, Cleveland, OH 44113",
+      "property_type": "single_family",
+      "square_footage": 1700,
+      "bedrooms": 3,
+      "bathrooms": 1,
+      "year_built": 1910,
+      "lot_size_sqft": 4000
+    },
+    "expected_output": {
+      "estimated_value": 110000,
+      "confidence_range_low": 90000,
+      "confidence_range_high": 135000,
+      "price_per_sqft": 65.0,
+      "market_condition": "balanced",
+      "comparable_properties_used": 1,
+      "reasoning": "Entry-level Ohio City SFR; direct comp at $102/sf; older systems imply value toward lower band (~$100k)."
+    }
+  }
+]

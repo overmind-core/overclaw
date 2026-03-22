@@ -1,0 +1,287 @@
+[
+  {
+    "input": {
+      "candidate_name": "Priya Nair",
+      "job_title": "Senior Software Engineer",
+      "job_id": "software_engineer",
+      "years_experience": 9,
+      "resume_text": "Staff software engineer with nine years building distributed services in Python and TypeScript on AWS and Kubernetes. Owns CI/CD, mentors junior engineers, and led migration of monolith to microservices serving 50M daily requests. Deep expertise in SQL performance tuning, Docker, and Git-based workflows across multiple production systems."
+    },
+    "expected_output": {
+      "overall_score": 92,
+      "skill_match_percentage": 88.0,
+      "experience_match": "strong_match",
+      "culture_fit_indicators": ["collaboration", "mentorship", "production_ownership"],
+      "strengths": ["Strong required and preferred technical stack", "Senior scope and scale"],
+      "gaps": [],
+      "recommendation": "advance_to_interview",
+      "reasoning": "High alignment with required and preferred skills; experience level fits a senior IC role."
+    }
+  },
+  {
+    "input": {
+      "candidate_name": "Daniel Okonkwo",
+      "job_title": "Junior Software Engineer",
+      "job_id": "software_engineer",
+      "years_experience": 16,
+      "resume_text": "Principal engineer and former engineering director with sixteen years shipping Python and Java backends at scale. Led org-wide platform strategy, architecture reviews, and hiring. Seeking a hands-on junior title to reduce management overhead and return to individual contribution."
+    },
+    "expected_output": {
+      "overall_score": 72,
+      "skill_match_percentage": 85.0,
+      "experience_match": "over_qualified",
+      "culture_fit_indicators": ["leadership_experience", "explicit_IC_intent"],
+      "strengths": ["Deep technical background", "Proven delivery at scale"],
+      "gaps": ["Role_level_mismatch_risk", "Retention_and_expectations_need_clarification"],
+      "recommendation": "maybe_pile",
+      "reasoning": "Technically strong but likely over-qualified for a junior scope; confirm motivation and compensation fit before advancing."
+    }
+  },
+  {
+    "input": {
+      "candidate_name": "Hannah Brooks",
+      "job_title": "Data Scientist",
+      "job_id": "data_scientist",
+      "years_experience": 6,
+      "resume_text": "Marketing analytics lead for six years owning campaign performance, A/B tests, and stakeholder reporting in Excel and Tableau. Completed a recent bootcamp in Python and SQL and now seeks a hands-on data science role after driving insights for brand and growth teams without building ML models in production."
+    },
+    "expected_output": {
+      "overall_score": 48,
+      "skill_match_percentage": 52.0,
+      "experience_match": "strong_match",
+      "culture_fit_indicators": ["experimentation_mindset", "stakeholder_facing"],
+      "strengths": ["Statistics-adjacent experience", "Communication and analytics tooling"],
+      "gaps": ["Limited_production_ML", "Recent_transition_into_core_DS_stack"],
+      "recommendation": "maybe_pile",
+      "reasoning": "Career switcher with relevant analytics background but thin depth in core DS tooling and ML delivery; interview only if leveling matches."
+    }
+  },
+  {
+    "input": {
+      "candidate_name": "Alex Rivera",
+      "job_title": "Software Engineer",
+      "job_id": "software_engineer",
+      "years_experience": 0,
+      "resume_text": "New B.S. Computer Science graduate with coursework in data structures, algorithms, and a capstone team project in Python. Active on GitHub with small personal projects and seeking a first full-time engineering role where I can learn from experienced mentors."
+    },
+    "expected_output": {
+      "overall_score": 42,
+      "skill_match_percentage": 45.0,
+      "experience_match": "under_qualified",
+      "culture_fit_indicators": ["learning_orientation", "formal_cs_foundation"],
+      "strengths": ["Python exposure", "Git usage via projects"],
+      "gaps": ["No_professional_experience", "SQL_and_production_practice_unclear"],
+      "recommendation": "maybe_pile",
+      "reasoning": "Fresh graduate with academic signals but below typical years for the posting; consider internship or junior track only."
+    }
+  },
+  {
+    "input": {
+      "candidate_name": "Dr. Elena Vogel",
+      "job_title": "Sales Representative",
+      "job_id": "sales_rep",
+      "years_experience": 14,
+      "resume_text": "Award-winning condensed-matter physicist with fourteen years of federally funded research, fifty-plus publications, and keynote talks at international conferences. Seeking a career pivot into quota-carrying sales to leverage communication skills and intellectual curiosity in a fast-paced commercial environment."
+    },
+    "expected_output": {
+      "overall_score": 35,
+      "skill_match_percentage": 40.0,
+      "experience_match": "over_qualified",
+      "culture_fit_indicators": ["communication_presence", "high_achievement_drive"],
+      "strengths": ["Public speaking", "Analytical rigor"],
+      "gaps": ["No_CRM_or_sales_cycle_experience", "Role_fit_uncertain"],
+      "recommendation": "reject",
+      "reasoning": "Impressive academic profile but weak overlap with sales tooling and pipeline experience required for the role."
+    }
+  },
+  {
+    "input": {
+      "candidate_name": "Jordan Lee",
+      "job_title": "Data Scientist",
+      "job_id": "data_scientist",
+      "years_experience": 4,
+      "resume_text": "Resume lists agile, machine learning, statistics, SQL, Python, TensorFlow, PyTorch, Spark, Tableau, AWS, Kubernetes, Docker, stakeholder management, scrum, kanban, and deep learning in one dense paragraph without projects, metrics, or tenure tied to each skill. Previously worked in unrelated retail scheduling software support."
+    },
+    "expected_output": {
+      "overall_score": 38,
+      "skill_match_percentage": 55.0,
+      "experience_match": "strong_match",
+      "culture_fit_indicators": ["possible_keyword_density_without_depth"],
+      "strengths": ["Surface_coverage_of_many_terms"],
+      "gaps": ["Shallow_evidence", "Weak_alignment_between_claims_and_experience"],
+      "recommendation": "maybe_pile",
+      "reasoning": "Keyword-rich but shallow narrative; verify hands-on depth and production ML in technical screen."
+    }
+  },
+  {
+    "input": {
+      "candidate_name": "Wei Zhang",
+      "job_title": "UX Designer",
+      "job_id": "ux_designer",
+      "years_experience": 5,
+      "resume_text": "Curriculum Vitae — Nationality: CN. 2018–Present: Product Designer, Shenzhen (Figma, agile ceremonies, cross-functional teams). Education: B.A. Industrial Design. Languages: Mandarin (native), English (professional). Portfolio: case studies for mobile banking flows and accessibility improvements."
+    },
+    "expected_output": {
+      "overall_score": 78,
+      "skill_match_percentage": 72.0,
+      "experience_match": "strong_match",
+      "culture_fit_indicators": ["international_background", "accessibility_awareness"],
+      "strengths": ["Figma_and_product_design_process", "Collaboration_signals"],
+      "gaps": ["English_communication_to_validate", "Frontend_code_depth_optional"],
+      "recommendation": "advance_to_interview",
+      "reasoning": "Non-standard CV format but credible design stack and agile collaboration; interview to assess communication and craft."
+    }
+  },
+  {
+    "input": {
+      "candidate_name": "Marcus Cole",
+      "job_title": "Product Manager",
+      "job_id": "product_manager",
+      "years_experience": 7,
+      "resume_text": "Senior PM with seven years shipping B2B SaaS roadmaps, SQL for funnel analysis, and Excel for financial models. Took a two-year career break for family care (2021–2023) before returning to lead a cross-functional launch that exceeded adoption targets. Comfortable with agile, stakeholder management, and executive updates."
+    },
+    "expected_output": {
+      "overall_score": 80,
+      "skill_match_percentage": 76.0,
+      "experience_match": "strong_match",
+      "culture_fit_indicators": ["resilience", "return_to_work"],
+      "strengths": ["Core_PM_skills", "Quant_and_prioritization"],
+      "gaps": ["Gap_requires_context_not_bias"],
+      "recommendation": "advance_to_interview",
+      "reasoning": "Strong role fit despite employment gap; tools align with requirements and experience band fits senior PM expectations."
+    }
+  },
+  {
+    "input": {
+      "candidate_name": "Sofia Andersson",
+      "job_title": "DevOps Engineer",
+      "job_id": "devops_engineer",
+      "years_experience": 5,
+      "resume_text": "Independent DevOps consultant for five years delivering Docker-based pipelines, Linux automation, and CI/CD for startups. Seeking a full-time platform role with on-call rotation and deeper ownership of Kubernetes and Terraform at product scale rather than short-term contracts."
+    },
+    "expected_output": {
+      "overall_score": 84,
+      "skill_match_percentage": 78.0,
+      "experience_match": "strong_match",
+      "culture_fit_indicators": ["contract_to_FTE_motivation", "hands_on_operations"],
+      "strengths": ["Docker_Git_CI_CD", "Linux_practice"],
+      "gaps": ["Kubernetes_Terraform_depth_to_confirm"],
+      "recommendation": "advance_to_interview",
+      "reasoning": "Freelance background maps well to DevOps; validate depth on k8s/terraform and preference for embedded team work."
+    }
+  },
+  {
+    "input": {
+      "candidate_name": "Chris Patel",
+      "job_title": "Software Engineer",
+      "job_id": "software_engineer",
+      "years_experience": 4,
+      "resume_text": "Backend engineer focused on Python services, Git workflows, and relational SQL tuning in production. Four years shipping features without cloud certifications or container orchestration; prefers lean stacks and has not used TypeScript, AWS, Kubernetes, or Docker in paid work."
+    },
+    "expected_output": {
+      "overall_score": 68,
+      "skill_match_percentage": 65.0,
+      "experience_match": "strong_match",
+      "culture_fit_indicators": ["pragmatic_scope"],
+      "strengths": ["100_percent_of_required_skills_demonstrated"],
+      "gaps": ["0_percent_preferred_cloud_and_orchestration_in_work_history"],
+      "recommendation": "maybe_pile",
+      "reasoning": "Meets required skills strongly but lacks preferred cloud and container experience; advance if upskilling is acceptable."
+    }
+  },
+  {
+    "input": {
+      "candidate_name": "Olivia Grant",
+      "job_title": "Marketing Manager",
+      "job_id": "marketing_manager",
+      "years_experience": 6,
+      "resume_text": "Growth marketing lead with six years owning SEO programs, executive stakeholder updates, and budget reporting in Excel. Built Tableau dashboards for campaign ROI and presented quarterly reviews to leadership; experienced with HubSpot CRM integrations and cross-functional campaign launches."
+    },
+    "expected_output": {
+      "overall_score": 88,
+      "skill_match_percentage": 85.0,
+      "experience_match": "strong_match",
+      "culture_fit_indicators": ["analytics_led_marketing", "executive_communication"],
+      "strengths": ["SEO_excel_stakeholders", "CRM_and_reporting"],
+      "gaps": [],
+      "recommendation": "advance_to_interview",
+      "reasoning": "Strong alignment with marketing manager requirements and preferred tools; experience level matches mid-level scope."
+    }
+  },
+  {
+    "input": {
+      "candidate_name": "James Okafor",
+      "job_title": "Product Manager",
+      "job_id": "product_manager",
+      "years_experience": 5,
+      "resume_text": "Internal transfer candidate currently leading operations analytics at the same company; partnering daily with engineering and design on agile ceremonies, SQL-backed roadmaps, and stakeholder prioritization. Seeking formal PM title after two years of successful internal recommendations and cross-functional launches."
+    },
+    "expected_output": {
+      "overall_score": 82,
+      "skill_match_percentage": 78.0,
+      "experience_match": "strong_match",
+      "culture_fit_indicators": ["internal_network_effects", "known_collaboration_style"],
+      "strengths": ["Agile_SQL_stakeholder_core", "Company_context"],
+      "gaps": ["Title_change_process", "External_PM_benchmarking"],
+      "recommendation": "advance_to_interview",
+      "reasoning": "Internal transfer with aligned skills and lower ramp risk; confirm scope versus external PM bar."
+    }
+  },
+  {
+    "input": {
+      "candidate_name": "Riley Chen",
+      "job_title": "Software Engineer",
+      "job_id": "software_engineer",
+      "years_experience": 3,
+      "resume_text": "Customer success manager for three years excelling at stakeholder management, negotiation, public speaking at user conferences, and Excel-heavy business reviews. Learning Python on nights and weekends with no production code reviews or Git collaboration in a software team setting."
+    },
+    "expected_output": {
+      "overall_score": 36,
+      "skill_match_percentage": 38.0,
+      "experience_match": "adequate",
+      "culture_fit_indicators": ["strong_soft_skills"],
+      "strengths": ["Communication", "Client-facing_delivery"],
+      "gaps": ["Weak_engineering_practice", "Missing_core_swe_signals"],
+      "recommendation": "reject",
+      "reasoning": "Strong interpersonal skills but insufficient technical depth and tooling for a software engineer role."
+    }
+  },
+  {
+    "input": {
+      "candidate_name": "Tom Whitaker",
+      "job_title": "Software Engineer",
+      "job_id": "software_engineer",
+      "years_experience": 12,
+      "resume_text": "Twelve years maintaining COBOL and jQuery-heavy internal tools at a regional bank with minimal cloud adoption. Comfortable with SQL batch jobs and on-prem servers; limited exposure to modern Python frameworks, containers, or distributed systems beyond reading documentation."
+    },
+    "expected_output": {
+      "overall_score": 44,
+      "skill_match_percentage": 48.0,
+      "experience_match": "over_qualified",
+      "culture_fit_indicators": ["legacy_environment_tolerance"],
+      "strengths": ["Long_tenure", "Reliability_in_banking_context"],
+      "gaps": ["Outdated_stack_for_role", "Modern_engineering_practices_gap"],
+      "recommendation": "maybe_pile",
+      "reasoning": "Senior years but misaligned technology footprint; only advance with strong upskilling plan or different role family."
+    }
+  },
+  {
+    "input": {
+      "candidate_name": "Victoria Hammond",
+      "job_title": "Finance Analyst",
+      "job_id": "finance_analyst",
+      "years_experience": 18,
+      "resume_text": "CFO and former VP Finance with eighteen years leading FP&A, board reporting, and M&A diligence at public companies. Seeking a hands-on finance analyst role for better work-life balance after restructuring; expert in Excel modeling, GAAP accounting standards, and stakeholder management with finance teams."
+    },
+    "expected_output": {
+      "overall_score": 58,
+      "skill_match_percentage": 70.0,
+      "experience_match": "over_qualified",
+      "culture_fit_indicators": ["executive_gravitas", "explicit_downshift_motivation"],
+      "strengths": ["Deep_modeling_and_accounting", "Leadership_context"],
+      "gaps": ["Scope_mismatch_for_IC_analyst", "Retention_and_satisfaction_risk"],
+      "recommendation": "maybe_pile",
+      "reasoning": "Executive-level candidate with strong finance skills but likely misaligned with analyst scope and manager expectations."
+    }
+  }
+]

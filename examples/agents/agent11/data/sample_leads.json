@@ -1,0 +1,302 @@
+[
+  {
+    "input": {
+      "student_id": "STU001",
+      "student_name": "Maya Patel",
+      "grade_level": 10,
+      "semester": "spring",
+      "subject_of_concern": "all",
+      "parent_notes": "Wondering if we should enroll in honors next year."
+    },
+    "expected_output": {
+      "performance_level": "excelling",
+      "trend": "stable",
+      "strengths": ["math", "english", "science", "history", "art"],
+      "areas_for_improvement": [],
+      "recommended_interventions": ["Continue enrichment; consider honors placement"],
+      "parent_conference_needed": false,
+      "gifted_program_candidate": true,
+      "reasoning": "Near-perfect grades across subjects, excellent attendance, high participation — profile consistent with gifted/high achiever."
+    }
+  },
+  {
+    "input": {
+      "student_id": "STU002",
+      "student_name": "Jordan Lee",
+      "grade_level": 9,
+      "semester": "spring",
+      "subject_of_concern": "math",
+      "parent_notes": "Worried about algebra readiness for next year."
+    },
+    "expected_output": {
+      "performance_level": "at_risk",
+      "trend": "stable",
+      "strengths": ["english", "art", "history"],
+      "areas_for_improvement": ["math", "science"],
+      "recommended_interventions": ["Math intervention or tutoring", "Coordinate with science teacher on quantitative skills"],
+      "parent_conference_needed": true,
+      "gifted_program_candidate": false,
+      "reasoning": "Math and science remain weak while English is strong; math concern is primary."
+    }
+  },
+  {
+    "input": {
+      "student_id": "STU003",
+      "student_name": "Chris Morgan",
+      "grade_level": 8,
+      "semester": "spring",
+      "subject_of_concern": "all",
+      "parent_notes": ""
+    },
+    "expected_output": {
+      "performance_level": "at_risk",
+      "trend": "declining",
+      "strengths": [],
+      "areas_for_improvement": ["all core subjects", "attendance and engagement"],
+      "recommended_interventions": ["Attendance plan", "Counselor check-in", "Academic support for declining grades"],
+      "parent_conference_needed": true,
+      "gifted_program_candidate": false,
+      "reasoning": "Grades dropped from fall to spring with rising absences and tardies; participation low."
+    }
+  },
+  {
+    "input": {
+      "student_id": "STU004",
+      "student_name": "Sam Rivera",
+      "grade_level": 7,
+      "semester": "spring",
+      "subject_of_concern": "all",
+      "parent_notes": "Transferred in January; still settling in."
+    },
+    "expected_output": {
+      "performance_level": "on_track",
+      "trend": "stable",
+      "strengths": ["core subjects"],
+      "areas_for_improvement": ["limited longitudinal data"],
+      "recommended_interventions": ["Monitor transition", "Gather fall baseline when available"],
+      "parent_conference_needed": false,
+      "gifted_program_candidate": false,
+      "reasoning": "Partial-year records only; mid-B range with typical attendance for short enrollment."
+    }
+  },
+  {
+    "input": {
+      "student_id": "STU005",
+      "student_name": "Taylor Brooks",
+      "grade_level": 6,
+      "semester": "spring",
+      "subject_of_concern": "science",
+      "parent_notes": "504 plan in place; please align with reading supports."
+    },
+    "expected_output": {
+      "performance_level": "critical",
+      "trend": "stable",
+      "strengths": ["art"],
+      "areas_for_improvement": ["math", "science", "english", "history"],
+      "recommended_interventions": ["Implement 504 accommodations consistently", "Small-group instruction", "Reading strategies in science"],
+      "parent_conference_needed": true,
+      "gifted_program_candidate": false,
+      "reasoning": "Multiple failing/near-failing grades; assessment notes extended time and focus needs."
+    }
+  },
+  {
+    "input": {
+      "student_id": "STU006",
+      "student_name": "Riley Chen",
+      "grade_level": 11,
+      "semester": "spring",
+      "subject_of_concern": "all",
+      "parent_notes": "Recent separation at home; grades slipped this winter."
+    },
+    "expected_output": {
+      "performance_level": "at_risk",
+      "trend": "stable",
+      "strengths": ["art"],
+      "areas_for_improvement": ["core academics", "consistency"],
+      "recommended_interventions": ["Counselor or social-emotional support", "Flexible deadlines where appropriate", "Monitor attendance"],
+      "parent_conference_needed": true,
+      "gifted_program_candidate": false,
+      "reasoning": "C grades across subjects with family stress noted; attendance irregularities clustered around home events."
+    }
+  },
+  {
+    "input": {
+      "student_id": "STU007",
+      "student_name": "Casey Williams",
+      "grade_level": 10,
+      "semester": "spring",
+      "subject_of_concern": "english",
+      "parent_notes": "Varsity travel — hard to keep up on road weeks."
+    },
+    "expected_output": {
+      "performance_level": "on_track",
+      "trend": "stable",
+      "strengths": ["history", "math"],
+      "areas_for_improvement": ["english consistency", "science"],
+      "recommended_interventions": ["Travel-week academic plan", "Tutoring for English on competition weeks"],
+      "parent_conference_needed": false,
+      "gifted_program_candidate": false,
+      "reasoning": "Volatile pattern tied to schedule; grades mixed with notable English dip in fall recovery in spring."
+    }
+  },
+  {
+    "input": {
+      "student_id": "STU008",
+      "student_name": "Jamie Ortiz",
+      "grade_level": 9,
+      "semester": "spring",
+      "subject_of_concern": "all",
+      "parent_notes": "Teacher says Jamie is well-behaved but barely passing."
+    },
+    "expected_output": {
+      "performance_level": "critical",
+      "trend": "stable",
+      "strengths": [],
+      "areas_for_improvement": ["all subjects", "classroom participation"],
+      "recommended_interventions": ["Structured study skills", "Check for undiagnosed learning needs", "Frequent formative checks"],
+      "parent_conference_needed": true,
+      "gifted_program_candidate": false,
+      "reasoning": "D-range grades with good attendance; quiet low participation suggests skill gaps not behavior."
+    }
+  },
+  {
+    "input": {
+      "student_id": "STU009",
+      "student_name": "Drew Nguyen",
+      "grade_level": 8,
+      "semester": "spring",
+      "subject_of_concern": "all",
+      "parent_notes": "Proud of the turnaround this term."
+    },
+    "expected_output": {
+      "performance_level": "on_track",
+      "trend": "improving",
+      "strengths": ["math", "english", "science", "history", "art"],
+      "areas_for_improvement": [],
+      "recommended_interventions": ["Sustain mentorship supports", "Celebrate gains to maintain momentum"],
+      "parent_conference_needed": false,
+      "gifted_program_candidate": false,
+      "reasoning": "Clear lift from fall C/D range to solid Bs in spring; attendance improved alongside grades."
+    }
+  },
+  {
+    "input": {
+      "student_id": "STU010",
+      "student_name": "Quinn Foster",
+      "grade_level": 10,
+      "semester": "spring",
+      "subject_of_concern": "all",
+      "parent_notes": ""
+    },
+    "expected_output": {
+      "performance_level": "on_track",
+      "trend": "stable",
+      "strengths": ["math", "english", "science", "history", "art"],
+      "areas_for_improvement": ["attendance", "punctuality"],
+      "recommended_interventions": ["Attendance contract", "Tardy intervention plan", "Credit recovery monitoring if policy applies"],
+      "parent_conference_needed": true,
+      "gifted_program_candidate": false,
+      "reasoning": "Strong academics despite high absences and tardies; chronic attendance risk despite grades."
+    }
+  },
+  {
+    "input": {
+      "student_id": "STU011",
+      "student_name": "Skyler Kim",
+      "grade_level": 1,
+      "semester": "spring",
+      "subject_of_concern": "all",
+      "parent_notes": "First year in elementary — how is Skyler doing overall?"
+    },
+    "expected_output": {
+      "performance_level": "excelling",
+      "trend": "stable",
+      "strengths": ["math", "art", "science"],
+      "areas_for_improvement": [],
+      "recommended_interventions": ["Continue age-appropriate enrichment as needed"],
+      "parent_conference_needed": false,
+      "gifted_program_candidate": false,
+      "reasoning": "Primary grades with strong marks and excellent attendance; profile is above typical expectations for grade 1."
+    }
+  },
+  {
+    "input": {
+      "student_id": "STU012",
+      "student_name": "Avery Thompson",
+      "grade_level": 12,
+      "semester": "spring",
+      "subject_of_concern": "all",
+      "parent_notes": "Applying to competitive colleges; want a clear picture for counselor letter."
+    },
+    "expected_output": {
+      "performance_level": "excelling",
+      "trend": "stable",
+      "strengths": ["english", "history", "math", "science"],
+      "areas_for_improvement": ["art is strong but slightly lower than STEM/ELA peak"],
+      "recommended_interventions": ["Finalize college list with counselor", "Keep senior spring momentum"],
+      "parent_conference_needed": false,
+      "gifted_program_candidate": false,
+      "reasoning": "High-A profile across core subjects; excused college-related absences only; strong self-advocacy noted."
+    }
+  },
+  {
+    "input": {
+      "student_id": "STU013",
+      "student_name": "Reese Martinez",
+      "grade_level": 9,
+      "semester": "spring",
+      "subject_of_concern": "math",
+      "parent_notes": "Reese lives for studio art but shuts down in STEM classes."
+    },
+    "expected_output": {
+      "performance_level": "at_risk",
+      "trend": "stable",
+      "strengths": ["art"],
+      "areas_for_improvement": ["math", "science", "english", "history"],
+      "recommended_interventions": ["STEM confidence-building", "Cross-curricular projects linking art to STEM", "Small-group math support"],
+      "parent_conference_needed": true,
+      "gifted_program_candidate": false,
+      "reasoning": "Outstanding art performance with D-range STEM and ELA grades; visual strength not translating to core academics."
+    }
+  },
+  {
+    "input": {
+      "student_id": "STU014",
+      "student_name": "Min-jun Park",
+      "grade_level": 7,
+      "semester": "spring",
+      "subject_of_concern": "english",
+      "parent_notes": "ESL at home; reading in English is still slow."
+    },
+    "expected_output": {
+      "performance_level": "at_risk",
+      "trend": "improving",
+      "strengths": ["math", "art"],
+      "areas_for_improvement": ["english", "history reading load"],
+      "recommended_interventions": ["ESL services", "Vocabulary and writing scaffolds", "Leveled texts"],
+      "parent_conference_needed": true,
+      "gifted_program_candidate": false,
+      "reasoning": "English lags other subjects; math stronger; assessment notes ESL verbal gap; modest spring gains."
+    }
+  },
+  {
+    "input": {
+      "student_id": "STU015",
+      "student_name": "Harper Singh",
+      "grade_level": 8,
+      "semester": "spring",
+      "subject_of_concern": "all",
+      "parent_notes": "Never misses school — why are grades only average?"
+    },
+    "expected_output": {
+      "performance_level": "on_track",
+      "trend": "stable",
+      "strengths": ["attendance", "reliability"],
+      "areas_for_improvement": ["all subjects — raise mastery from C+ to B range"],
+      "recommended_interventions": ["Study strategies and test preparation", "Formative feedback loop with teachers"],
+      "parent_conference_needed": false,
+      "gifted_program_candidate": false,
+      "reasoning": "Near-perfect attendance with mid-C grades; effort/participation adequate but assessment performance limited."
+    }
+  }
+]

@@ -1,0 +1,39 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: check-json
+        exclude: "frontend/tsconfig.json"
+      - id: check-toml
+      - id: check-docstring-first
+      - id: check-case-conflict
+      - id: detect-private-key
+
+  - repo: https://github.com/hukkin/mdformat
+    rev: 1.0.0
+    hooks:
+      - id: mdformat
+        additional_dependencies:
+          - mdformat-gfm
+          - mdformat-black
+
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.21.2
+    hooks:
+      - id: pyupgrade
+        args: [--py313-plus]
+
+  - repo: local
+    hooks:
+      - id: lint-format
+        name: ruff check --fix && ruff format
+        entry: bash -c 'uv run ruff check --fix "$@" && uv run ruff format "$@"' --
+        language: system
+        types_or: [python]

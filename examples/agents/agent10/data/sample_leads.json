@@ -1,0 +1,361 @@
+[
+  {
+    "input": {
+      "origin_city": "Boston, MA",
+      "destination_city": "Los Angeles, CA",
+      "package_weight_kg": 12.5,
+      "package_dimensions": "45x35x25cm",
+      "shipment_type": "standard",
+      "fragile": false,
+      "hazardous": false,
+      "requested_delivery_date": "2026-04-01"
+    },
+    "expected_output": {
+      "recommended_route": "Cross-country ground via Chicago hub or direct trunk NYC–LAX lane; 3–5 day standard service",
+      "carrier": "UPS or FedEx Ground",
+      "estimated_cost": 85.0,
+      "estimated_delivery_date": "2026-03-30",
+      "alternative_options": [
+        {"carrier": "FedEx", "cost": 88.0, "delivery_date": "2026-03-29"},
+        {"carrier": "USPS", "cost": 55.0, "delivery_date": "2026-04-02"}
+      ],
+      "risk_factors": ["Weather delays possible on long-haul lane", "Residential delivery may add one day"],
+      "reasoning": "Standard cross-country parcel; weight and size fit parcel carriers; USPS cheapest but slower."
+    }
+  },
+  {
+    "input": {
+      "origin_city": "Chicago, IL",
+      "destination_city": "Denver, CO",
+      "package_weight_kg": 3.2,
+      "package_dimensions": "25x20x15cm",
+      "shipment_type": "overnight",
+      "fragile": false,
+      "hazardous": false,
+      "requested_delivery_date": "2026-03-25"
+    },
+    "expected_output": {
+      "recommended_route": "Overnight express air from ORD regional hub to Denver metro",
+      "carrier": "FedEx Priority Overnight",
+      "estimated_cost": 95.0,
+      "estimated_delivery_date": "2026-03-25",
+      "alternative_options": [
+        {"carrier": "UPS Next Day Air", "cost": 92.0, "delivery_date": "2026-03-25"},
+        {"carrier": "DHL Express", "cost": 105.0, "delivery_date": "2026-03-25"}
+      ],
+      "risk_factors": ["Cutoff times for overnight", "Medical supplies may need signature"],
+      "reasoning": "Urgent medical-style delivery; overnight service with cold-chain capable carriers if needed."
+    }
+  },
+  {
+    "input": {
+      "origin_city": "Chicago, IL",
+      "destination_city": "Dallas, TX",
+      "package_weight_kg": 500.0,
+      "package_dimensions": "200x120x100cm",
+      "shipment_type": "freight",
+      "fragile": false,
+      "hazardous": false,
+      "requested_delivery_date": "2026-04-10"
+    },
+    "expected_output": {
+      "recommended_route": "LTL freight on CHI–DAL lane; dock-to-dock or liftgate",
+      "carrier": "XPO Freight or Old Dominion Freight",
+      "estimated_cost": 620.0,
+      "estimated_delivery_date": "2026-04-09",
+      "alternative_options": [
+        {"carrier": "DHL Freight", "cost": 680.0, "delivery_date": "2026-04-08"},
+        {"carrier": "FedEx Freight", "cost": 710.0, "delivery_date": "2026-04-08"}
+      ],
+      "risk_factors": ["Appointment scheduling", "Residential delivery may need extra equipment"],
+      "reasoning": "500kg industrial equipment exceeds parcel limits; LTL freight carriers with pallet handling."
+    }
+  },
+  {
+    "input": {
+      "origin_city": "Los Angeles, CA",
+      "destination_city": "New York, NY",
+      "package_weight_kg": 28.0,
+      "package_dimensions": "80x60x40cm",
+      "shipment_type": "express",
+      "fragile": true,
+      "hazardous": false,
+      "requested_delivery_date": "2026-04-05"
+    },
+    "expected_output": {
+      "recommended_route": "Cross-country express with fragile handling and crated artwork protocols",
+      "carrier": "FedEx Custom Critical or UPS Express with fragile",
+      "estimated_cost": 210.0,
+      "estimated_delivery_date": "2026-04-04",
+      "alternative_options": [
+        {"carrier": "UPS", "cost": 198.0, "delivery_date": "2026-04-04"},
+        {"carrier": "DHL", "cost": 225.0, "delivery_date": "2026-04-03"}
+      ],
+      "risk_factors": ["Tip/tilt sensitivity", "Insurance valuation required for high-value art"],
+      "reasoning": "Fragile artwork needs parcel carriers with fragile surcharges and express transit."
+    }
+  },
+  {
+    "input": {
+      "origin_city": "Dallas, TX",
+      "destination_city": "Atlanta, GA",
+      "package_weight_kg": 45.0,
+      "package_dimensions": "60x40x40cm",
+      "shipment_type": "freight",
+      "fragile": false,
+      "hazardous": true,
+      "requested_delivery_date": "2026-04-12"
+    },
+    "expected_output": {
+      "recommended_route": "Hazmat-qualified LTL or freight with DG documentation",
+      "carrier": "FedEx Freight Hazmat or UPS Freight",
+      "estimated_cost": 540.0,
+      "estimated_delivery_date": "2026-04-11",
+      "alternative_options": [
+        {"carrier": "DHL", "cost": 580.0, "delivery_date": "2026-04-10"},
+        {"carrier": "XPO Freight", "cost": 495.0, "delivery_date": "2026-04-12"}
+      ],
+      "risk_factors": ["UN number and MSDS required", "USPS not eligible for hazmat"],
+      "reasoning": "Hazardous materials require hazmat-capable carriers; USPS excluded."
+    }
+  },
+  {
+    "input": {
+      "origin_city": "San Francisco, CA",
+      "destination_city": "San Francisco, CA",
+      "package_weight_kg": 4.0,
+      "package_dimensions": "30x25x15cm",
+      "shipment_type": "standard",
+      "fragile": false,
+      "hazardous": false,
+      "requested_delivery_date": "2026-03-28"
+    },
+    "expected_output": {
+      "recommended_route": "Local same-metro courier or express ground (same-day/next-day local)",
+      "carrier": "Local courier or UPS/FedEx Ground local",
+      "estimated_cost": 18.0,
+      "estimated_delivery_date": "2026-03-27",
+      "alternative_options": [
+        {"carrier": "USPS Priority Local", "cost": 12.0, "delivery_date": "2026-03-28"}
+      ],
+      "risk_factors": ["Traffic in SF metro may affect same-day windows"],
+      "reasoning": "Origin equals destination; minimal linehaul; local delivery pricing."
+    }
+  },
+  {
+    "input": {
+      "origin_city": "Miami, FL",
+      "destination_city": "London, UK",
+      "package_weight_kg": 12.0,
+      "package_dimensions": "50x40x30cm",
+      "shipment_type": "express",
+      "fragile": false,
+      "hazardous": false,
+      "requested_delivery_date": "2026-04-15"
+    },
+    "expected_output": {
+      "recommended_route": "International air express MIA–LHR gateway with customs clearance",
+      "carrier": "DHL Express International",
+      "estimated_cost": 285.0,
+      "estimated_delivery_date": "2026-04-14",
+      "alternative_options": [
+        {"carrier": "FedEx International Priority", "cost": 298.0, "delivery_date": "2026-04-14"},
+        {"carrier": "UPS Worldwide Express", "cost": 310.0, "delivery_date": "2026-04-13"}
+      ],
+      "risk_factors": ["Customs duties and documentation", "Brexit-related brokerage for UK"],
+      "reasoning": "International lane; use carriers with global express and customs support."
+    }
+  },
+  {
+    "input": {
+      "origin_city": "New York, NY",
+      "destination_city": "Los Angeles, CA",
+      "package_weight_kg": 18.0,
+      "package_dimensions": "40x30x25cm",
+      "shipment_type": "freight",
+      "fragile": false,
+      "hazardous": false,
+      "requested_delivery_date": "2026-04-20"
+    },
+    "expected_output": {
+      "recommended_route": "Multi-stop trunk: NYC–CHI–DAL–LAX consolidation to reduce linehaul cost",
+      "carrier": "FedEx Freight or UPS Freight multi-leg",
+      "estimated_cost": 112.0,
+      "estimated_delivery_date": "2026-04-18",
+      "alternative_options": [
+        {"carrier": "XPO LTL multi-stop", "cost": 98.0, "delivery_date": "2026-04-19"},
+        {"carrier": "Direct express parcel", "cost": 135.0, "delivery_date": "2026-04-16"}
+      ],
+      "risk_factors": ["Additional handling at each hub", "Longer transit vs direct express"],
+      "reasoning": "Multi-stop routing can lower cost for non-urgent consolidated freight-style moves."
+    }
+  },
+  {
+    "input": {
+      "origin_city": "Minneapolis, MN",
+      "destination_city": "Fargo, ND",
+      "package_weight_kg": 22.0,
+      "package_dimensions": "55x40x35cm",
+      "shipment_type": "standard",
+      "fragile": false,
+      "hazardous": false,
+      "requested_delivery_date": "2026-04-08"
+    },
+    "expected_output": {
+      "recommended_route": "Rural feeder lane MSP–FAR with limited daily departures",
+      "carrier": "UPS Ground or regional LTL",
+      "estimated_cost": 48.0,
+      "estimated_delivery_date": "2026-04-07",
+      "alternative_options": [
+        {"carrier": "FedEx Ground", "cost": 52.0, "delivery_date": "2026-04-07"},
+        {"carrier": "USPS", "cost": 38.0, "delivery_date": "2026-04-09"}
+      ],
+      "risk_factors": ["Sparse rural delivery frequency", "Weather in upper Midwest"],
+      "reasoning": "Remote destination; expect +1 day vs dense corridors and fewer service options."
+    }
+  },
+  {
+    "input": {
+      "origin_city": "Seattle, WA",
+      "destination_city": "Denver, CO",
+      "package_weight_kg": 6.0,
+      "package_dimensions": "35x25x20cm",
+      "shipment_type": "standard",
+      "fragile": false,
+      "hazardous": false,
+      "requested_delivery_date": "2025-12-22"
+    },
+    "expected_output": {
+      "recommended_route": "SEA–DEN mountain corridor during peak holiday capacity",
+      "carrier": "UPS Ground",
+      "estimated_cost": 62.0,
+      "estimated_delivery_date": "2025-12-24",
+      "alternative_options": [
+        {"carrier": "FedEx Ground", "cost": 64.0, "delivery_date": "2025-12-24"},
+        {"carrier": "USPS", "cost": 42.0, "delivery_date": "2025-12-26"}
+      ],
+      "risk_factors": ["Holiday peak: carriers at reduced capacity", "Guaranteed delivery may cost extra"],
+      "reasoning": "Mid-December peak; expect limited capacity and possible one-day slip vs off-season."
+    }
+  },
+  {
+    "input": {
+      "origin_city": "Miami, FL",
+      "destination_city": "Chicago, IL",
+      "package_weight_kg": 8.5,
+      "package_dimensions": "40x30x25cm",
+      "shipment_type": "express",
+      "fragile": false,
+      "hazardous": false,
+      "requested_delivery_date": "2026-03-30"
+    },
+    "expected_output": {
+      "recommended_route": "Cold-chain express with temp monitoring MIA hub to ORD",
+      "carrier": "FedEx Cold Chain or UPS Temperature True",
+      "estimated_cost": 175.0,
+      "estimated_delivery_date": "2026-03-29",
+      "alternative_options": [
+        {"carrier": "DHL MedExpress", "cost": 190.0, "delivery_date": "2026-03-29"},
+        {"carrier": "UPS", "cost": 168.0, "delivery_date": "2026-03-29"}
+      ],
+      "risk_factors": ["Gel packs/dry ice regulations", "Signature and chain-of-custody"],
+      "reasoning": "Temperature-sensitive pharmaceuticals require cold-chain capable express carriers."
+    }
+  },
+  {
+    "input": {
+      "origin_city": "Philadelphia, PA",
+      "destination_city": "Boston, MA",
+      "package_weight_kg": 0.2,
+      "package_dimensions": "32x24x1cm",
+      "shipment_type": "standard",
+      "fragile": false,
+      "hazardous": false,
+      "requested_delivery_date": "2026-04-02"
+    },
+    "expected_output": {
+      "recommended_route": "Short-haul envelope/documents BOS–PHL corridor",
+      "carrier": "USPS Priority Mail",
+      "estimated_cost": 9.0,
+      "estimated_delivery_date": "2026-04-01",
+      "alternative_options": [
+        {"carrier": "UPS Ground", "cost": 14.0, "delivery_date": "2026-04-01"},
+        {"carrier": "FedEx Ground", "cost": 15.0, "delivery_date": "2026-04-01"}
+      ],
+      "risk_factors": ["No tracking granularity vs express on USPS First Class"],
+      "reasoning": "Lightweight envelope-sized shipment; USPS most cost-effective on short regional lane."
+    }
+  },
+  {
+    "input": {
+      "origin_city": "Phoenix, AZ",
+      "destination_city": "El Paso, TX",
+      "package_weight_kg": 42.0,
+      "package_dimensions": "150x90x70cm",
+      "shipment_type": "freight",
+      "fragile": false,
+      "hazardous": false,
+      "requested_delivery_date": "2026-04-18"
+    },
+    "expected_output": {
+      "recommended_route": "Oversized parcel approaching parcel limits; LTL or freight preferred",
+      "carrier": "FedEx Freight or XPO LTL",
+      "estimated_cost": 195.0,
+      "estimated_delivery_date": "2026-04-17",
+      "alternative_options": [
+        {"carrier": "UPS Freight", "cost": 205.0, "delivery_date": "2026-04-17"},
+        {"carrier": "Old Dominion", "cost": 188.0, "delivery_date": "2026-04-18"}
+      ],
+      "risk_factors": ["Dimensional weight billing", "Residential may need liftgate fees"],
+      "reasoning": "Very large dimensions trigger freight-style handling even at moderate weight."
+    }
+  },
+  {
+    "input": {
+      "origin_city": "Memphis, TN",
+      "destination_city": "Chicago, IL",
+      "package_weight_kg": 9.0,
+      "package_dimensions": "38x28x22cm",
+      "shipment_type": "overnight",
+      "fragile": false,
+      "hazardous": false,
+      "requested_delivery_date": "2026-03-24"
+    },
+    "expected_output": {
+      "recommended_route": "Next-flight or priority overnight MEM hub to ORD with AM delivery commitment",
+      "carrier": "FedEx Priority Overnight",
+      "estimated_cost": 78.0,
+      "estimated_delivery_date": "2026-03-24",
+      "alternative_options": [
+        {"carrier": "UPS Next Day Air Early", "cost": 85.0, "delivery_date": "2026-03-24"},
+        {"carrier": "DHL Express", "cost": 82.0, "delivery_date": "2026-03-24"}
+      ],
+      "risk_factors": ["Missed cutoff pushes to next business day", "Weather at ORD"],
+      "reasoning": "Tight deadline; overnight express from major hub city with morning delivery options."
+    }
+  },
+  {
+    "input": {
+      "origin_city": "Denver, CO",
+      "destination_city": "Salt Lake City, UT",
+      "package_weight_kg": 11.0,
+      "package_dimensions": "42x30x25cm",
+      "shipment_type": "standard",
+      "fragile": false,
+      "hazardous": false,
+      "requested_delivery_date": "2026-05-10"
+    },
+    "expected_output": {
+      "recommended_route": "Short-haul ground DEN–SLC; slowest acceptable service to minimize cost",
+      "carrier": "USPS Ground Advantage or UPS Ground",
+      "estimated_cost": 22.0,
+      "estimated_delivery_date": "2026-05-08",
+      "alternative_options": [
+        {"carrier": "FedEx Ground", "cost": 24.0, "delivery_date": "2026-05-08"},
+        {"carrier": "UPS", "cost": 26.0, "delivery_date": "2026-05-07"}
+      ],
+      "risk_factors": ["No time guarantee on economy ground"],
+      "reasoning": "Budget-conscious standard shipment on short lane; cheapest carrier adequate for flexible ETA."
+    }
+  }
+]

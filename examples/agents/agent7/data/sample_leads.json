@@ -1,0 +1,302 @@
+[
+  {
+    "input": {
+      "field_id": "F-IA-001",
+      "location": "Iowa",
+      "current_crop": "corn",
+      "soil_type": "loam",
+      "season": "spring",
+      "acres": 160.0,
+      "irrigation_available": false
+    },
+    "expected_output": {
+      "recommendation": "plant",
+      "suggested_crops": ["corn", "soybean", "alfalfa"],
+      "risk_factors": ["Rain-dependent moisture", "Monitor nitrogen at sidedress"],
+      "expected_yield_rating": "excellent",
+      "fertilizer_recommendation": "Split N application; maintain P/K per soil test on strong loam.",
+      "timing_advice": "Plant when soil temperature stabilizes; favorable spring showers in forecast.",
+      "reasoning": "Good Iowa loam with solid nutrients and mild wet spring supports corn or rotation to soybean."
+    }
+  },
+  {
+    "input": {
+      "field_id": "F-TX-DROUGHT",
+      "location": "Texas Panhandle",
+      "current_crop": "sorghum",
+      "soil_type": "sandy",
+      "season": "summer",
+      "acres": 320.0,
+      "irrigation_available": true
+    },
+    "expected_output": {
+      "recommendation": "irrigate",
+      "suggested_crops": ["sorghum", "cotton", "soybean"],
+      "risk_factors": ["Severe moisture deficit", "Heat stress"],
+      "expected_yield_rating": "fair",
+      "fertilizer_recommendation": "Conserve moisture with reduced tillage; fertigate lightly to match water.",
+      "timing_advice": "Irrigate at critical growth stages; avoid peak afternoon evaporation.",
+      "reasoning": "Dry hot forecast and low soil moisture require irrigation to protect yield on drought-tolerant crops."
+    }
+  },
+  {
+    "input": {
+      "field_id": "F-MN-DEPLETED",
+      "location": "Minnesota",
+      "current_crop": "corn",
+      "soil_type": "clay",
+      "season": "fall",
+      "acres": 240.0,
+      "irrigation_available": false
+    },
+    "expected_output": {
+      "recommendation": "rotate",
+      "suggested_crops": ["soybean", "alfalfa", "winter wheat"],
+      "risk_factors": ["Depleted NPK after intensive corn", "Rotation needed for sustainability"],
+      "expected_yield_rating": "poor",
+      "fertilizer_recommendation": "Build with legume or small grain rotation before heavy corn again; lime if pH drifts high.",
+      "timing_advice": "Plan cover or rotation crop for next season; avoid continuous corn without amendment.",
+      "reasoning": "Soil test shows depleted macronutrients; rotating breaks pest cycles and restores fertility."
+    }
+  },
+  {
+    "input": {
+      "field_id": "F-OR-ORG",
+      "location": "Oregon",
+      "current_crop": "barley",
+      "soil_type": "silt",
+      "season": "spring",
+      "acres": 45.0,
+      "irrigation_available": false
+    },
+    "expected_output": {
+      "recommendation": "fertilize",
+      "suggested_crops": ["barley", "alfalfa", "potatoes"],
+      "risk_factors": ["Wet spring disease pressure", "Organic compliance — no synthetic fertilizer"],
+      "expected_yield_rating": "good",
+      "fertilizer_recommendation": "Use compost, approved organic amendments, and legume green manure only.",
+      "timing_advice": "Work fields when trafficable; manage drainage before heavy rains.",
+      "reasoning": "High organic matter organic field; nutrient strategy must stay within certified organic inputs."
+    }
+  },
+  {
+    "input": {
+      "field_id": "F-AR-RICE",
+      "location": "Arkansas Delta",
+      "current_crop": "fallow",
+      "soil_type": "clay",
+      "season": "spring",
+      "acres": 85.0,
+      "irrigation_available": true
+    },
+    "expected_output": {
+      "recommendation": "plant",
+      "suggested_crops": ["rice", "soybean", "corn"],
+      "risk_factors": ["Flooding management", "Humid disease scouting"],
+      "expected_yield_rating": "good",
+      "fertilizer_recommendation": "Follow rice N schedule for flooded culture; verify zinc on heavy clay if needed.",
+      "timing_advice": "Flood and establish when temperatures support rice; warm humid window suits paddy prep.",
+      "reasoning": "Clay delta soil and irrigation suit flooded rice; weather is warm and wet for establishment."
+    }
+  },
+  {
+    "input": {
+      "field_id": "F-CA-VINE",
+      "location": "California Central Coast",
+      "current_crop": "wine grapes",
+      "soil_type": "loam",
+      "season": "summer",
+      "acres": 22.0,
+      "irrigation_available": true
+    },
+    "expected_output": {
+      "recommendation": "irrigate",
+      "suggested_crops": ["wine grapes"],
+      "risk_factors": ["Limited rainfall", "Deficit irrigation for quality"],
+      "expected_yield_rating": "excellent",
+      "fertilizer_recommendation": "Minimal N for wine quality; foliar or soil amendments only as petiole tests indicate.",
+      "timing_advice": "Deficit irrigate through veraison; avoid excess vigor on gravelly soils.",
+      "reasoning": "Perennial vineyard on coastal pattern: mild temps, low rain — manage water for canopy balance."
+    }
+  },
+  {
+    "input": {
+      "field_id": "F-KS-WHEAT",
+      "location": "Kansas",
+      "current_crop": "winter wheat",
+      "soil_type": "silt",
+      "season": "winter",
+      "acres": 500.0,
+      "irrigation_available": false
+    },
+    "expected_output": {
+      "recommendation": "wait",
+      "suggested_crops": ["winter wheat", "barley", "soybean"],
+      "risk_factors": ["Cool nights", "Spring moisture for grain fill"],
+      "expected_yield_rating": "good",
+      "fertilizer_recommendation": "Topdress N in spring based on tiller count and yield goal; watch sulfur on silt.",
+      "timing_advice": "Monitor winter wheat for spring green-up; delay spring ops if soils too wet.",
+      "reasoning": "Winter wheat is in dormant/growth stages; timing centers on spring topdress and freeze protection."
+    }
+  },
+  {
+    "input": {
+      "field_id": "F-GA-PEST",
+      "location": "Georgia",
+      "current_crop": "cotton",
+      "soil_type": "sandy",
+      "season": "summer",
+      "acres": 175.0,
+      "irrigation_available": true
+    },
+    "expected_output": {
+      "recommendation": "wait",
+      "suggested_crops": ["cotton", "peanuts", "soybean"],
+      "risk_factors": ["Elevated pest pressure nearby", "Low pH sandy soil", "Humidity favors insects/disease"],
+      "expected_yield_rating": "fair",
+      "fertilizer_recommendation": "Split nutrient on sand; integrate IPM scouting given regional pest history.",
+      "timing_advice": "Scout weekly during squaring/flowering; treat thresholds not calendars.",
+      "reasoning": "Warm humid summer increases pest risk; sandy acid soil needs careful fertility and monitoring."
+    }
+  },
+  {
+    "input": {
+      "field_id": "F-HOBBY-02",
+      "location": "Vermont",
+      "current_crop": "tomatoes",
+      "soil_type": "loam",
+      "season": "summer",
+      "acres": 2.5,
+      "irrigation_available": false
+    },
+    "expected_output": {
+      "recommendation": "irrigate",
+      "suggested_crops": ["tomatoes", "potatoes", "barley"],
+      "risk_factors": ["Small scale hand labor", "Moisture consistency for vegetables"],
+      "expected_yield_rating": "good",
+      "fertilizer_recommendation": "Compost and OM-rich amendments for garden scale; avoid over-fertilizing small plots.",
+      "timing_advice": "Mulch and consistent water for tomatoes; stagger planting for short season.",
+      "reasoning": "Hobby plot with high OM loam; drip or hand watering may be needed without broad irrigation infrastructure."
+    }
+  },
+  {
+    "input": {
+      "field_id": "F-COMM-1000",
+      "location": "Nebraska",
+      "current_crop": "corn",
+      "soil_type": "loam",
+      "season": "spring",
+      "acres": 1200.0,
+      "irrigation_available": true
+    },
+    "expected_output": {
+      "recommendation": "plant",
+      "suggested_crops": ["corn", "soybean", "sorghum"],
+      "risk_factors": ["Logistics at scale", "Grid sampling variability across blocks"],
+      "expected_yield_rating": "excellent",
+      "fertilizer_recommendation": "Variable-rate N from grid samples; prioritize pivot zones on 1000+ acre operation.",
+      "timing_advice": "Coordinate planting windows across crews; use forecast for pre-plant herbicide timing.",
+      "reasoning": "Strong commercial loam with irrigation; large acreage needs precision ag and operational scheduling."
+    }
+  },
+  {
+    "input": {
+      "field_id": "F-TROP-HI",
+      "location": "Hawaii",
+      "current_crop": "none",
+      "soil_type": "loam",
+      "season": "summer",
+      "acres": 30.0,
+      "irrigation_available": true
+    },
+    "expected_output": {
+      "recommendation": "plant",
+      "suggested_crops": ["bananas", "tomatoes", "cotton"],
+      "risk_factors": ["Tropical pests", "Heavy rainfall erosion"],
+      "expected_yield_rating": "good",
+      "fertilizer_recommendation": "Match high rainfall with split applications and cover to reduce leaching.",
+      "timing_advice": "Year-round warmth suits tropical crops; plant after field prep for wet season drainage.",
+      "reasoning": "Tropical climate favors heat-loving crops like bananas; irrigation available for dry spells."
+    }
+  },
+  {
+    "input": {
+      "field_id": "F-GA-PEST",
+      "location": "Georgia",
+      "current_crop": "cotton",
+      "soil_type": "sandy",
+      "season": "fall",
+      "acres": 90.0,
+      "irrigation_available": false
+    },
+    "expected_output": {
+      "recommendation": "fertilize",
+      "suggested_crops": ["alfalfa", "sorghum", "soybean"],
+      "risk_factors": ["Low organic matter", "Acidic sand needs amendment"],
+      "expected_yield_rating": "fair",
+      "fertilizer_recommendation": "Build OM with cover crops; lime and band P/K; avoid broadcast loss on sand.",
+      "timing_advice": "Amend after harvest; plant cover to reduce erosion over winter.",
+      "reasoning": "Poor sandy soil benefits from organic matter and targeted amendment before next cash crop."
+    }
+  },
+  {
+    "input": {
+      "field_id": "F-IA-001",
+      "location": "Iowa",
+      "current_crop": "corn",
+      "soil_type": "loam",
+      "season": "spring",
+      "acres": 80.0,
+      "irrigation_available": false
+    },
+    "expected_output": {
+      "recommendation": "rotate",
+      "suggested_crops": ["soybean", "corn", "alfalfa"],
+      "risk_factors": ["Corn-after-corn disease pressure", "N management"],
+      "expected_yield_rating": "good",
+      "fertilizer_recommendation": "Rotate to soybean to reduce N need next cycle; adjust corn N if staying on corn.",
+      "timing_advice": "Transition plan: plant soybean this season or diversify to break pest cycle.",
+      "reasoning": "Transitioning from continuous corn benefits from rotation to soybean or alfalfa for soil and pest balance."
+    }
+  },
+  {
+    "input": {
+      "field_id": "F-MN-DEPLETED",
+      "location": "Minnesota",
+      "current_crop": "corn",
+      "soil_type": "clay",
+      "season": "winter",
+      "acres": 100.0,
+      "irrigation_available": false
+    },
+    "expected_output": {
+      "recommendation": "wait",
+      "suggested_crops": ["corn", "soybean", "winter wheat"],
+      "risk_factors": ["Frozen ground", "Season inappropriate for corn planting"],
+      "expected_yield_rating": "poor",
+      "fertilizer_recommendation": "Plan spring soil test; no field application until soils thaw and drain.",
+      "timing_advice": "Do not plant corn in winter; schedule for late spring when soil temperature and frost risk allow.",
+      "reasoning": "Corn is not planted in Minnesota winter; wait for proper spring window despite planning interest."
+    }
+  },
+  {
+    "input": {
+      "field_id": "F-ARID-AZ",
+      "location": "Arid Southwest",
+      "current_crop": "none",
+      "soil_type": "sandy",
+      "season": "summer",
+      "acres": 400.0,
+      "irrigation_available": false
+    },
+    "expected_output": {
+      "recommendation": "wait",
+      "suggested_crops": ["sorghum", "cotton", "alfalfa"],
+      "risk_factors": ["No irrigation in arid climate", "Extreme heat and zero forecast rain"],
+      "expected_yield_rating": "poor",
+      "fertilizer_recommendation": "Defer planting until water strategy exists; avoid high-water crops without water rights.",
+      "timing_advice": "Do not establish water-intensive crops until irrigation or monsoon timing is secured.",
+      "reasoning": "Arid region forecast shows no rain; without irrigation, planting most row crops is high risk."
+    }
+  }
+]

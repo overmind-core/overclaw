@@ -1,0 +1,383 @@
+[
+  {
+    "input": {
+      "policy_number": "POL-AUTO-10001",
+      "policyholder_name": "Jane Smith",
+      "claim_type": "auto",
+      "incident_date": "2025-03-10",
+      "incident_description": "Stopped at a red light when another driver rear-ended my sedan. Moderate damage to rear bumper and trunk lid. Police report filed; other party cited for following too closely.",
+      "claimed_amount": 8400.0,
+      "supporting_documents": [
+        "Police accident report AR-2025-0310",
+        "Repair estimate from certified body shop",
+        "Photos of vehicle damage (8 angles)",
+        "Driver license and registration copy"
+      ]
+    },
+    "expected_output": {
+      "claim_status": "approved",
+      "approved_amount": 7900.0,
+      "coverage_applicable": true,
+      "fraud_risk": "low",
+      "denial_reasons": [],
+      "conditions": [],
+      "reasoning": "Active auto policy, named insured matches, collision loss with strong documentation; estimate net of $500 deductible is consistent with limits."
+    }
+  },
+  {
+    "input": {
+      "policy_number": "POL-HOME-20001",
+      "policyholder_name": "Alice Martinez",
+      "claim_type": "home",
+      "incident_date": "2025-02-18",
+      "incident_description": "Severe thunderstorm with straight-line winds tore shingles off the roof and damaged gutters. Tree branch fell on detached garage roof. No injuries.",
+      "claimed_amount": 42000.0,
+      "supporting_documents": [
+        "Weather service storm confirmation for ZIP",
+        "Roof inspection report with photos",
+        "Contractor repair estimate",
+        "Home inventory list for damaged personal property in garage"
+      ]
+    },
+    "expected_output": {
+      "claim_status": "approved",
+      "approved_amount": 39500.0,
+      "coverage_applicable": true,
+      "fraud_risk": "low",
+      "denial_reasons": [],
+      "conditions": [],
+      "reasoning": "Wind/storm peril covered under dwelling and other structures; documentation supports scope; deductible applied."
+    }
+  },
+  {
+    "input": {
+      "policy_number": "POL-HEALTH-30001",
+      "policyholder_name": "Maria Garcia",
+      "claim_type": "health",
+      "incident_date": "2025-01-28",
+      "incident_description": "Emergency inpatient surgery for acute appendicitis with two-night hospital stay and laparoscopic procedure. Anesthesia and surgeon fees included.",
+      "claimed_amount": 68000.0,
+      "supporting_documents": [
+        "Itemized hospital bill",
+        "Operative report",
+        "EOB from insurer showing deductible met YTD"
+      ]
+    },
+    "expected_output": {
+      "claim_status": "approved",
+      "approved_amount": 52800.0,
+      "coverage_applicable": true,
+      "fraud_risk": "low",
+      "denial_reasons": [],
+      "conditions": [],
+      "reasoning": "Medically necessary inpatient surgery within network; standard cost-sharing after deductible and coinsurance per policy."
+    }
+  },
+  {
+    "input": {
+      "policy_number": "POL-AUTO-10002",
+      "policyholder_name": "Robert Chen",
+      "claim_type": "auto",
+      "incident_date": "2025-03-20",
+      "incident_description": "Need payment ASAP. Total loss. Surgery scheduled next week for unrelated issue. Wire funds to account ending 9999.",
+      "claimed_amount": 100000.0,
+      "supporting_documents": []
+    },
+    "expected_output": {
+      "claim_status": "under_review",
+      "approved_amount": 0.0,
+      "coverage_applicable": true,
+      "fraud_risk": "high",
+      "denial_reasons": [],
+      "conditions": [
+        "Provide police report or accident location proof",
+        "Vehicle inspection",
+        "Verify bank account and eliminate wire-fraud patterns"
+      ],
+      "reasoning": "Inconsistent narrative (auto vs surgery), round large amount, no documentation, payment urgency — elevated fraud screening before payment."
+    }
+  },
+  {
+    "input": {
+      "policy_number": "POL-AUTO-10002",
+      "policyholder_name": "Robert Chen",
+      "claim_type": "auto",
+      "incident_date": "2025-03-12",
+      "incident_description": "Single-vehicle collision into highway barrier; extensive front-end damage and possible frame damage.",
+      "claimed_amount": 185000.0,
+      "supporting_documents": [
+        "Towing receipt",
+        "Initial body shop total-loss evaluation"
+      ]
+    },
+    "expected_output": {
+      "claim_status": "partial_approval",
+      "approved_amount": 34000.0,
+      "coverage_applicable": true,
+      "fraud_risk": "low",
+      "denial_reasons": [
+        "Collision coverage limit caps payment; claimed amount exceeds policy collision limit"
+      ],
+      "conditions": [
+        "Salvage title process if total loss confirmed"
+      ],
+      "reasoning": "Loss is covered but collision limit on policy is below requested amount; pay to limit minus deductible."
+    }
+  },
+  {
+    "input": {
+      "policy_number": "POL-HOME-20002",
+      "policyholder_name": "Frank Expired",
+      "claim_type": "home",
+      "incident_date": "2025-03-05",
+      "incident_description": "Kitchen fire damaged cabinets and ceiling after grease flare-up.",
+      "claimed_amount": 25000.0,
+      "supporting_documents": [
+        "Fire department incident report",
+        "Photos of damage"
+      ]
+    },
+    "expected_output": {
+      "claim_status": "denied",
+      "approved_amount": 0.0,
+      "coverage_applicable": false,
+      "fraud_risk": "low",
+      "denial_reasons": [
+        "Policy lapsed before incident date — not active coverage"
+      ],
+      "conditions": [],
+      "reasoning": "Policy status expired; no contract in force on incident date."
+    }
+  },
+  {
+    "input": {
+      "policy_number": "POL-AUTO-10003",
+      "policyholder_name": "Sarah Claims",
+      "claim_type": "auto",
+      "incident_date": "2025-03-15",
+      "incident_description": "Sideswipe in parking lot; scrapes along passenger doors and mirror replacement.",
+      "claimed_amount": 4800.0,
+      "supporting_documents": [
+        "Shop estimate",
+        "Photos"
+      ]
+    },
+    "expected_output": {
+      "claim_status": "approved",
+      "approved_amount": 4050.0,
+      "coverage_applicable": true,
+      "fraud_risk": "medium",
+      "denial_reasons": [],
+      "conditions": [
+        "Enhanced review due to high prior claim frequency on policy"
+      ],
+      "reasoning": "Covered collision-type loss; insured has multiple prior paid claims so claim is legitimate but flagged for frequency monitoring."
+    }
+  },
+  {
+    "input": {
+      "policy_number": "POL-AUTO-10001",
+      "policyholder_name": "Jane Smith",
+      "claim_type": "auto",
+      "incident_date": "2025-03-08",
+      "incident_description": "Minor scratch on driver door in parking lot.",
+      "claimed_amount": 900.0,
+      "supporting_documents": [
+        "One cell phone photo"
+      ]
+    },
+    "expected_output": {
+      "claim_status": "under_review",
+      "approved_amount": 0.0,
+      "coverage_applicable": true,
+      "fraud_risk": "low",
+      "denial_reasons": [],
+      "conditions": [
+        "Second repair estimate",
+        "Clearer photos showing damage relation to incident date"
+      ],
+      "reasoning": "Documentation insufficient to confirm scope and repair reasonableness; reserve decision pending."
+    }
+  },
+  {
+    "input": {
+      "policy_number": "POL-HEALTH-30001",
+      "policyholder_name": "Maria Garcia",
+      "claim_type": "health",
+      "incident_date": "2024-12-10",
+      "incident_description": "Complex spinal fusion surgery with week-long inpatient rehabilitation at in-network academic medical center.",
+      "claimed_amount": 520000.0,
+      "supporting_documents": [
+        "Full itemized bill",
+        "Admission and discharge summaries",
+        "Pre-authorization letter",
+        "Network verification letter"
+      ]
+    },
+    "expected_output": {
+      "claim_status": "approved",
+      "approved_amount": 410000.0,
+      "coverage_applicable": true,
+      "fraud_risk": "low",
+      "denial_reasons": [],
+      "conditions": [],
+      "reasoning": "Large but legitimate in-network surgical claim with complete documentation; subject to deductible, OOP max, and coinsurance."
+    }
+  },
+  {
+    "input": {
+      "policy_number": "POL-AUTO-10002",
+      "policyholder_name": "Robert Chen",
+      "claim_type": "auto",
+      "incident_date": "2025-03-19",
+      "incident_description": "Tapped a pole in parking garage at low speed; small paint chip on bumper.",
+      "claimed_amount": 200.0,
+      "supporting_documents": [
+        "Photo of bumper",
+        "Written estimate for touch-up paint"
+      ]
+    },
+    "expected_output": {
+      "claim_status": "approved",
+      "approved_amount": 0.0,
+      "coverage_applicable": true,
+      "fraud_risk": "low",
+      "denial_reasons": [],
+      "conditions": [
+        "Consider paying out of pocket — repair below deductible"
+      ],
+      "reasoning": "Covered peril but claimed amount is below policy deductible; nominal or zero payment."
+    }
+  },
+  {
+    "input": {
+      "policy_number": "POL-LIFE-40001",
+      "policyholder_name": "James Okonkwo",
+      "claim_type": "life",
+      "incident_date": "2025-02-14",
+      "incident_description": "Insured passed away unexpectedly; death certificate lists natural causes.",
+      "claimed_amount": 500000.0,
+      "supporting_documents": [
+        "Certified death certificate",
+        "Claimant statement",
+        "Original policy document copy"
+      ]
+    },
+    "expected_output": {
+      "claim_status": "under_review",
+      "approved_amount": 500000.0,
+      "coverage_applicable": true,
+      "fraud_risk": "low",
+      "denial_reasons": [],
+      "conditions": [
+        "Medical records review",
+        "Confirm beneficiary designation and contestability period rules"
+      ],
+      "reasoning": "Face amount matches policy; life claims require verification before final issuance even when initially approvable."
+    }
+  },
+  {
+    "input": {
+      "policy_number": "POL-PROP-50001",
+      "policyholder_name": "Harbor Retail LLC",
+      "claim_type": "property",
+      "incident_date": "2025-03-01",
+      "incident_description": "Overnight break-in; front glass door smashed, display cases damaged, inventory stolen.",
+      "claimed_amount": 85000.0,
+      "supporting_documents": [
+        "Police burglary report",
+        "Security video stills",
+        "Inventory loss spreadsheet",
+        "Glass contractor estimate"
+      ]
+    },
+    "expected_output": {
+      "claim_status": "approved",
+      "approved_amount": 80000.0,
+      "coverage_applicable": true,
+      "fraud_risk": "low",
+      "denial_reasons": [],
+      "conditions": [],
+      "reasoning": "Theft and vandalism covered; building and BPP limits and deductible support stated estimate after review."
+    }
+  },
+  {
+    "input": {
+      "policy_number": "POL-AUTO-10001",
+      "policyholder_name": "Jane Smith",
+      "claim_type": "auto",
+      "incident_date": "2025-03-11",
+      "incident_description": "Collision damage to rear bumper; shop notes heavy rust and prior unrepaired damage in same area prior to this accident.",
+      "claimed_amount": 6000.0,
+      "supporting_documents": [
+        "Repair estimate noting pre-existing rust",
+        "Photos"
+      ]
+    },
+    "expected_output": {
+      "claim_status": "partial_approval",
+      "approved_amount": 3200.0,
+      "coverage_applicable": true,
+      "fraud_risk": "low",
+      "denial_reasons": [],
+      "conditions": [
+        "Apportionment between new accident damage and pre-existing condition"
+      ],
+      "reasoning": "New accident is covered but estimate indicates pre-existing wear; pay only incremental damage attributable to this loss."
+    }
+  },
+  {
+    "input": {
+      "policy_number": "POL-HOME-20003",
+      "policyholder_name": "New Homeowner",
+      "claim_type": "home",
+      "incident_date": "2025-03-18",
+      "incident_description": "Hailstorm damaged roof shingles; several tabs cracked and granule loss visible.",
+      "claimed_amount": 14000.0,
+      "supporting_documents": [
+        "Roof inspection with hail date correlation",
+        "Contractor bid"
+      ]
+    },
+    "expected_output": {
+      "claim_status": "under_review",
+      "approved_amount": 0.0,
+      "coverage_applicable": true,
+      "fraud_risk": "medium",
+      "denial_reasons": [],
+      "conditions": [
+        "Verify loss date vs policy effective date",
+        "Supplemental weather verification for exact date of hail"
+      ],
+      "reasoning": "Policy is within first 30 days of inception — legitimate storm claims occur but timing triggers enhanced review."
+    }
+  },
+  {
+    "input": {
+      "policy_number": "POL-HOME-20001",
+      "policyholder_name": "Alice Martinez",
+      "claim_type": "home",
+      "incident_date": "2025-03-09",
+      "incident_description": "Hurricane wind damaged roof and siding; storm surge also flooded basement and ruined furniture and electronics.",
+      "claimed_amount": 95000.0,
+      "supporting_documents": [
+        "Wind damage roof report",
+        "Basement water line photos",
+        "Furniture replacement quotes"
+      ]
+    },
+    "expected_output": {
+      "claim_status": "partial_approval",
+      "approved_amount": 52000.0,
+      "coverage_applicable": true,
+      "fraud_risk": "low",
+      "denial_reasons": [
+        "Flood/surge damage to basement contents excluded without flood endorsement"
+      ],
+      "conditions": [
+        "Separate flood claim if separate flood policy exists"
+      ],
+      "reasoning": "Wind damage to structure likely covered; flood from surge typically excluded on standard HO — pay covered portion only."
+    }
+  }
+]

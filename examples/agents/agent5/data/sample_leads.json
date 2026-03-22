@@ -1,0 +1,272 @@
+[
+  {
+    "input": {
+      "ticket_subject": "URGENT: Production database wiped — customer records gone",
+      "ticket_body": "We are on the enterprise plan with dedicated support. This morning our analytics workspace shows ZERO rows for the last 6 months. Our CFO is on the line. We need an immediate restore and root cause. Account: ACME-ENT-4401.",
+      "customer_tier": "enterprise",
+      "product_area": "dashboard",
+      "previous_tickets_count": 2
+    },
+    "expected_output": {
+      "category": "data_loss",
+      "priority": "P0",
+      "assigned_team": "engineering",
+      "sentiment": "angry",
+      "estimated_resolution_time": "1-2 hours",
+      "auto_response_suggested": false,
+      "reasoning": "Enterprise customer reporting catastrophic data disappearance; highest severity; requires engineering incident response and possible restore, not a canned reply."
+    }
+  },
+  {
+    "input": {
+      "ticket_subject": "Charged twice for the same invoice",
+      "ticket_body": "I was billed $499 twice on March 12 for invoice INV-88321. I only have one subscription. Please refund the duplicate and explain how this happened.",
+      "customer_tier": "pro",
+      "product_area": "billing",
+      "previous_tickets_count": 0
+    },
+    "expected_output": {
+      "category": "billing_issue",
+      "priority": "P1",
+      "assigned_team": "billing",
+      "sentiment": "frustrated",
+      "estimated_resolution_time": "same day",
+      "auto_response_suggested": false,
+      "reasoning": "Clear double-charge dispute requiring billing investigation and refund; pro customer; not safe to automate beyond acknowledgment."
+    }
+  },
+  {
+    "input": {
+      "ticket_subject": "Bulk export API for saved views",
+      "ticket_body": "I'm a heavy API user (50k+ calls/day). I'd love a bulk export endpoint for saved dashboard views as Parquet or CSV, with pagination by cursor. Happy to beta test.",
+      "customer_tier": "pro",
+      "product_area": "api",
+      "previous_tickets_count": 14
+    },
+    "expected_output": {
+      "category": "feature_request",
+      "priority": "P3",
+      "assigned_team": "product",
+      "sentiment": "positive",
+      "estimated_resolution_time": "1-2 weeks",
+      "auto_response_suggested": false,
+      "reasoning": "Power user requesting new capability; route to product for roadmap; positive tone; not a defect."
+    }
+  },
+  {
+    "input": {
+      "ticket_subject": "Where do I find webhook logs?",
+      "ticket_body": "Hi, I'm on the free plan. I set up a webhook but I don't know where to see if it fired. Thanks!",
+      "customer_tier": "free",
+      "product_area": "integrations",
+      "previous_tickets_count": 0
+    },
+    "expected_output": {
+      "category": "how_to",
+      "priority": "P3",
+      "assigned_team": "tier1_support",
+      "sentiment": "neutral",
+      "estimated_resolution_time": "1-2 hours",
+      "auto_response_suggested": true,
+      "reasoning": "Simple documentation-style question from free tier; suitable for a help article or short auto-reply with links."
+    }
+  },
+  {
+    "input": {
+      "ticket_subject": "This is unacceptable — 6 hours of downtime",
+      "ticket_body": "Your status page is a joke. Our team lost a whole day. We're evaluating competitors. I want a real postmortem and credits on our enterprise contract.",
+      "customer_tier": "enterprise",
+      "product_area": "dashboard",
+      "previous_tickets_count": 7
+    },
+    "expected_output": {
+      "category": "complaint",
+      "priority": "P1",
+      "assigned_team": "customer_success",
+      "sentiment": "angry",
+      "estimated_resolution_time": "same day",
+      "auto_response_suggested": false,
+      "reasoning": "Primarily dissatisfaction and relationship risk after outage; enterprise with repeat tickets; needs human response and likely CS/leadership involvement."
+    }
+  },
+  {
+    "input": {
+      "ticket_subject": "Possible IDOR in shared report links",
+      "ticket_body": "Security researcher here (see attached). I can access another org's report by incrementing the ID in the URL. Disclosure timeline: 90 days. CVE request pending.",
+      "customer_tier": "enterprise",
+      "product_area": "api",
+      "previous_tickets_count": 0
+    },
+    "expected_output": {
+      "category": "security",
+      "priority": "P0",
+      "assigned_team": "security",
+      "sentiment": "neutral",
+      "estimated_resolution_time": "1-2 hours",
+      "auto_response_suggested": false,
+      "reasoning": "Vulnerability report requiring security triage and engineering fix; must not be handled by generic auto-response."
+    }
+  },
+  {
+    "input": {
+      "ticket_subject": "429 errors after following rate limit docs",
+      "ticket_body": "We're using the official backoff with jitter but still getting 429s on /v2/events. Our integration is effectively blocked. App ID: int-7721.",
+      "customer_tier": "pro",
+      "product_area": "api",
+      "previous_tickets_count": 3
+    },
+    "expected_output": {
+      "category": "bug",
+      "priority": "P2",
+      "assigned_team": "engineering",
+      "sentiment": "frustrated",
+      "estimated_resolution_time": "1-3 days",
+      "auto_response_suggested": false,
+      "reasoning": "Integration blocked by API behavior; likely engineering investigation; not a billing or how-to issue."
+    }
+  },
+  {
+    "input": {
+      "ticket_subject": "iOS app crashes on launch after update",
+      "ticket_body": "Version 3.8.1 crashes immediately on iPhone 15 Pro, iOS 18. Reinstall didn't help. Can't access mobile approvals at all.",
+      "customer_tier": "pro",
+      "product_area": "mobile",
+      "previous_tickets_count": 1
+    },
+    "expected_output": {
+      "category": "bug",
+      "priority": "P1",
+      "assigned_team": "engineering",
+      "sentiment": "frustrated",
+      "estimated_resolution_time": "same day",
+      "auto_response_suggested": false,
+      "reasoning": "Mobile crash blocking core workflow; product_area mobile; needs engineering repro and fix."
+    }
+  },
+  {
+    "input": {
+      "ticket_subject": "Love the new dashboard filters — small idea",
+      "ticket_body": "The team really likes the new filters. One idea: could we pin a filter set as default per workspace? Would save us clicks every morning. Keep up the great work!",
+      "customer_tier": "pro",
+      "product_area": "dashboard",
+      "previous_tickets_count": 0
+    },
+    "expected_output": {
+      "category": "feature_request",
+      "priority": "P3",
+      "assigned_team": "product",
+      "sentiment": "positive",
+      "estimated_resolution_time": "1-2 weeks",
+      "auto_response_suggested": true,
+      "reasoning": "Positive feedback with a product suggestion; low urgency; safe thank-you plus logging for roadmap."
+    }
+  },
+  {
+    "input": {
+      "ticket_subject": "Locked out — MFA phone stolen",
+      "ticket_body": "I can't log in. Authenticator was on my old phone. Support phone didn't pick up. Need admin to reset MFA for user jordan@smallco.com.",
+      "customer_tier": "free",
+      "product_area": "account",
+      "previous_tickets_count": 0
+    },
+    "expected_output": {
+      "category": "account_access",
+      "priority": "P2",
+      "assigned_team": "tier1_support",
+      "sentiment": "frustrated",
+      "estimated_resolution_time": "1-2 hours",
+      "auto_response_suggested": false,
+      "reasoning": "Account access and MFA recovery; requires identity verification; not appropriate for full automation."
+    }
+  },
+  {
+    "input": {
+      "ticket_subject": "Wrong plan AND exports failing",
+      "ticket_body": "You moved us to Pro but we're still billed as Enterprise (see last invoice). Also CSV export from Reports spins forever then errors. Please fix billing first then the export bug.",
+      "customer_tier": "enterprise",
+      "product_area": "billing",
+      "previous_tickets_count": 5
+    },
+    "expected_output": {
+      "category": "billing_issue",
+      "priority": "P1",
+      "assigned_team": "billing",
+      "sentiment": "frustrated",
+      "estimated_resolution_time": "1-3 days",
+      "auto_response_suggested": false,
+      "reasoning": "Customer explicitly prioritizes billing mismatch; secondary bug in exports noted for follow-up; billing owns first response."
+    }
+  },
+  {
+    "input": {
+      "ticket_subject": "WIN FREE IPHONE CLICK HERE NOW!!!",
+      "ticket_body": "Congratulations you won!!! Click http://bit.ly/suspicious-link to claim prize. Forward to 10 friends!!!",
+      "customer_tier": "free",
+      "product_area": "account",
+      "previous_tickets_count": 0
+    },
+    "expected_output": {
+      "category": "security",
+      "priority": "P3",
+      "assigned_team": "security",
+      "sentiment": "neutral",
+      "estimated_resolution_time": "30 minutes",
+      "auto_response_suggested": true,
+      "reasoning": "Phishing/spam pattern with suspicious link; low severity but belongs with security/abuse handling; canned warning or auto-close may suffice."
+    }
+  },
+  {
+    "input": {
+      "ticket_subject": "no can login please help urgent",
+      "ticket_body": "i try many time password not work. i reset still no. my english not good sorry. need for work tomorrow.",
+      "customer_tier": "pro",
+      "product_area": "account",
+      "previous_tickets_count": 1
+    },
+    "expected_output": {
+      "category": "account_access",
+      "priority": "P2",
+      "assigned_team": "tier1_support",
+      "sentiment": "frustrated",
+      "estimated_resolution_time": "same day",
+      "auto_response_suggested": false,
+      "reasoning": "Login/access issue despite unclear wording; pro customer; needs human-guided troubleshooting, not a template-only fix."
+    }
+  },
+  {
+    "input": {
+      "ticket_subject": "stuff broken",
+      "ticket_body": "its not working. fix it.",
+      "customer_tier": "free",
+      "product_area": "dashboard",
+      "previous_tickets_count": 0
+    },
+    "expected_output": {
+      "category": "bug",
+      "priority": "P3",
+      "assigned_team": "tier1_support",
+      "sentiment": "neutral",
+      "estimated_resolution_time": "1-3 days",
+      "auto_response_suggested": false,
+      "reasoning": "Extremely vague; likely technical issue but requires triage questions; tier1 gathers details before engineering."
+    }
+  },
+  {
+    "input": {
+      "ticket_subject": "Slack integration OAuth redirect mismatch",
+      "ticket_body": "Connecting Slack fails at callback with redirect_uri_mismatch. I copied the URL from your docs exactly into Slack app settings. Org uses SSO.",
+      "customer_tier": "enterprise",
+      "product_area": "integrations",
+      "previous_tickets_count": 0
+    },
+    "expected_output": {
+      "category": "how_to",
+      "priority": "P2",
+      "assigned_team": "tier1_support",
+      "sentiment": "neutral",
+      "estimated_resolution_time": "1-2 hours",
+      "auto_response_suggested": false,
+      "reasoning": "Integration configuration issue often resolved with correct redirect URI and SSO notes; enterprise may need specialist but start tier1/engineering handoff as needed."
+    }
+  }
+]
