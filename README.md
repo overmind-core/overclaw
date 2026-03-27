@@ -2,6 +2,8 @@
 
 Automatically optimize your AI agent's prompts, tool definitions, model selection, and pipeline logic through structured experimentation.
 
+**Documentation:** [OverClaw guide](https://docs.overmindlab.ai/guides/overclaw_doc/)
+
 ## What it does
 
 OverClaw runs your agent against a test dataset, traces every LLM call and
