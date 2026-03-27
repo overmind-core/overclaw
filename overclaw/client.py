@@ -298,7 +298,6 @@ def upsert_agent(
     Stores all eval-spec fields plus dataset cases + policy JSON in
     ``eval_dataset``.  Returns the Agent object.
     """
-    print(client, project_id, agent_path)
     slug = agent_slug_from_path(agent_path)
     description = (spec.get("agent_description") or "")[:512] or None
     name = (description or slug)[:255]
