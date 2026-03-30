@@ -202,6 +202,124 @@ def _save_and_finish(
     )
 
 
+def _smoke_test_agent(
+    agent_path: str, fn_name: str, input_case: dict
+) -> tuple[bool, str | None]:
+    """Import the agent module and call fn_name(input_case) once.
+
+    Returns (True, None) on success or (False, error_message) on any exception.
+    Uses a throwaway module name so repeated imports don't collide.
+    """
+    import importlib.util
+
+    try:
+        spec = importlib.util.spec_from_file_location("_overclaw_smoke_agent", agent_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)  # type: ignore[union-attr]
+        getattr(module, fn_name)(input_case)
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _run_beginning_smoke_test(
+    agent_path: str, fn_name: str, console: Console, *, fast: bool = False
+) -> None:
+    """Smoke-test the agent with the first seed case if seed data is available.
+
+    Hard-fails (SystemExit 1) when seed data exists but the agent crashes.
+    Silently skips when there is no seed data — end-of-setup will cover it.
+    """
+    data_dir = _data_dir(agent_path)
+    console.print(f"  [dim]Looking for seed data in [cyan]{rel(data_dir)}[/cyan]…[/dim]")
+    existing_json = sorted(data_dir.glob("*.json")) if data_dir.is_dir() else []
+
+    if not existing_json:
+        console.print(
+            f"  [dim]No seed data found at [cyan]{rel(data_dir)}[/cyan] — "
+            "skipping pre-setup smoke test. "
+            "Agent will be validated after the dataset is built.[/dim]"
+        )
+        return
+
+    try:
+        cases = load_data(str(existing_json[0]))
+    except Exception:
+        console.print(
+            f"  [dim]Could not read [cyan]{existing_json[0].name}[/cyan] — "
+            "skipping smoke test.[/dim]"
+        )
+        return
+
+    if not cases:
+        console.print(
+            f"  [dim][cyan]{existing_json[0].name}[/cyan] is empty — "
+            "skipping pre-setup smoke test.[/dim]"
+        )
+        return
+
+    first_input = cases[0].get("input", cases[0])
+    console.print(
+        f"  [dim]Running pre-setup smoke test using "
+        f"[cyan]{existing_json[0].name}[/cyan] ({len(cases)} case(s))…[/dim]"
+    )
+    success, error = _smoke_test_agent(agent_path, fn_name, first_input)
+
+    if success:
+        console.print(
+            f"  [bold green]✓[/bold green]  [dim]Agent smoke test passed.[/dim]\n"
+        )
+    else:
+        console.print(
+            f"\n  [bold red]✗  Agent smoke test failed[/bold red]\n"
+            f"  [dim]{error}[/dim]\n\n"
+            "  Fix the error above before running setup.\n"
+        )
+        raise SystemExit(1)
+
+
+def _run_end_smoke_test(
+    agent_name: str, agent_path: str, fn_name: str, console: Console
+) -> None:
+    """Validate the agent runs against the first generated dataset case.
+
+    Issues a warning panel on failure but does NOT abort — the spec is already
+    saved and the user should be informed rather than left with a silent problem.
+    """
+    dataset_path = agent_setup_spec_dir(agent_name) / "dataset.json"
+    if not dataset_path.exists():
+        return
+
+    try:
+        cases = load_data(str(dataset_path))
+    except Exception:
+        return
+
+    if not cases:
+        return
+
+    first_input = cases[0].get("input", cases[0])
+    console.print("  [dim]Running post-setup smoke test against first dataset case…[/dim]")
+    success, error = _smoke_test_agent(agent_path, fn_name, first_input)
+
+    if success:
+        console.print(
+            f"  [bold green]✓[/bold green]  Agent smoke test passed — ready for optimization.\n"
+        )
+    else:
+        console.print(
+            Panel(
+                "[bold yellow]⚠  Smoke test warning[/bold yellow]\n\n"
+                "The agent raised an error on a sample dataset case:\n"
+                f"[dim]{error}[/dim]\n\n"
+                "The setup spec has been saved. Review the error above before running:\n"
+                f"  [bold]overclaw optimize {agent_name}[/bold]",
+                border_style="yellow",
+                padding=(1, 2),
+            )
+        )
+
+
 def _data_dir(agent_path: str) -> Path:
     """Directory where the user's own seed data lives (read-only for setup)."""
     return Path(agent_path).resolve().parent / "data"
@@ -773,6 +891,8 @@ def main(
         console.print(f"\n  [red]Error:[/red] Policy file {policy} does not exist.")
         raise SystemExit(1)
 
+    _run_beginning_smoke_test(agent_path, fn_name, console, fast=fast)
+
     if fast:
         raw_model = os.getenv("ANALYZER_MODEL", "").strip()
         if not raw_model:
@@ -864,6 +984,7 @@ def main(
 
         spec = generate_spec_from_proposal(analysis, policy_data=policy_data)
         _save_and_finish(spec, agent_name, console, policy_md=policy_md)
+        _run_end_smoke_test(agent_name, agent_path, fn_name, console)
         _sync_setup_artifacts(agent_name, agent_path, console)
         return
 
@@ -990,6 +1111,7 @@ def main(
         if Confirm.ask("Are you satisfied with the evaluation criteria?", default=True):
             spec = generate_spec_from_proposal(analysis, policy_data=policy_data)
             _save_and_finish(spec, agent_name, console, policy_md=policy_md)
+            _run_end_smoke_test(agent_name, agent_path, fn_name, console)
             _sync_setup_artifacts(agent_name, agent_path, console)
             return
 
@@ -1012,6 +1134,7 @@ def main(
                 f"  [dim]Edit [cyan]{spec_out}[/cyan] to fine-tune "
                 f"the criteria, then run the optimizer.[/dim]\n"
             )
+            _run_end_smoke_test(agent_name, agent_path, fn_name, console)
             _sync_setup_artifacts(agent_name, agent_path, console)
             return
 
