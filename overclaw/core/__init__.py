@@ -1,1 +1,1 @@
-"""Shared utilities: LLM model catalog, tracing, policy helpers, and branding."""
+"""Core infrastructure: constants, paths, agent registry, and tracing."""

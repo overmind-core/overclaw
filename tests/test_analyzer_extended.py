@@ -15,7 +15,7 @@ from overclaw.optimize.analyzer import (
 
 
 class TestRunDiagnosis:
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_success(self, mock_litellm):
         diagnosis = {"root_cause": "bad prompt", "changes": [{"action": "fix prompt"}]}
         mock_resp = MagicMock()
@@ -37,7 +37,7 @@ class TestRunDiagnosis:
         )
         assert result["root_cause"] == "bad prompt"
 
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_parse_failure_returns_none(self, mock_litellm):
         mock_resp = MagicMock()
         mock_resp.choices = [MagicMock()]
@@ -58,7 +58,7 @@ class TestRunDiagnosis:
         )
         assert result is None
 
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_exception_returns_none(self, mock_litellm):
         mock_litellm.completion.side_effect = RuntimeError("API error")
 
@@ -76,7 +76,7 @@ class TestRunDiagnosis:
         )
         assert result is None
 
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_with_focus_area(self, mock_litellm):
         diagnosis = {"root_cause": "tool issue", "changes": []}
         mock_resp = MagicMock()
@@ -101,7 +101,7 @@ class TestRunDiagnosis:
 
 
 class TestRunCodegen:
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_success(self, mock_litellm):
         code = "def run(input_data):\n    return {'result': 'improved'}\n"
         mock_resp = MagicMock()
@@ -120,7 +120,7 @@ class TestRunCodegen:
         assert result is not None
         assert "def run" in result
 
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_exception_returns_none(self, mock_litellm):
         mock_litellm.completion.side_effect = RuntimeError("API fail")
         result = _run_codegen(
@@ -158,7 +158,7 @@ class TestGenerateCandidates:
         mock_diag.return_value = None
         mock_codegen.return_value = None
 
-        with patch("overclaw.core.litellm_params.litellm") as mock_litellm:
+        with patch("overclaw.utils.llm.litellm") as mock_litellm:
             mock_resp = MagicMock()
             mock_resp.choices = [MagicMock()]
             mock_resp.choices[0].message.content = "no code"

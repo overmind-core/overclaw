@@ -55,8 +55,25 @@ def agent_experiments_dir(agent_name: str) -> Path:
     return agent_overclaw_dir(agent_name) / "experiments"
 
 
+def agent_env_path(agent_name: str) -> Path:
+    """Per-agent ``.env`` at ``<state>/agents/<name>/.env``."""
+    return agent_overclaw_dir(agent_name) / ".env"
+
+
 def load_overclaw_dotenv() -> None:
     """Load state-directory ``.env`` into the process environment (no-op if missing)."""
     path = overclaw_env_path()
     if path.is_file():
         load_dotenv(path)
+
+
+def load_agent_dotenv(agent_name: str) -> None:
+    """Load per-agent ``.env`` into the process environment, overriding any existing values.
+
+    No-op if the file does not exist.  Agent-specific vars take precedence over
+    the global ``.overclaw/.env`` so credentials saved during ``overclaw setup``
+    are always used when the agent is run or optimised.
+    """
+    path = agent_env_path(agent_name)
+    if path.is_file():
+        load_dotenv(path, override=True)

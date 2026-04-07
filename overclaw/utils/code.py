@@ -1,11 +1,11 @@
 """
-Agent code bundler for multi-file optimization.
+Agent code bundling and static analysis for multi-file optimization.
 
 Resolves all project-local code reachable from an agent's entry file,
 stores complete file sources, and provides whole-file replacement logic
 to apply targeted updates back to original files.
 
-The bundler bridges the gap between multi-file agent codebases and
+This module bridges the gap between multi-file agent codebases and
 the single-prompt optimization loop.  It produces a compact virtual
 representation of only the code the agent actually uses, tagged with
 origin information, and maps LLM-generated updates back into the

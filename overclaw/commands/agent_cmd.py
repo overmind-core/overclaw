@@ -16,7 +16,7 @@ from rich.panel import Panel
 from rich.prompt import Confirm
 from rich.table import Table
 
-from overclaw.core.branding import BRAND
+from overclaw.utils.display import BRAND
 from overclaw.core.paths import agent_experiments_dir, agent_setup_spec_dir
 from overclaw.core.constants import overclaw_rel
 from overclaw.core.registry import (

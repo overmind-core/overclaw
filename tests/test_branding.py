@@ -1,4 +1,4 @@
-"""Tests for overclaw.core.branding — brand constants and logo rendering."""
+"""Tests for overclaw.utils.display — brand constants and logo rendering."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 from rich.console import Console
 
-from overclaw.core.branding import BRAND, _load_logo_grid, render_logo
+from overclaw.utils.display import BRAND, _load_logo_grid, render_logo
 
 
 class TestBrandConstant:
@@ -17,14 +17,14 @@ class TestBrandConstant:
 
 class TestLoadLogoGrid:
     def test_returns_list(self):
-        import overclaw.core.branding as branding
+        import overclaw.utils.display as branding
 
         branding._logo_grid_cache = None
         grid = _load_logo_grid()
         assert isinstance(grid, list)
 
     def test_cache_reused(self):
-        import overclaw.core.branding as branding
+        import overclaw.utils.display as branding
 
         branding._logo_grid_cache = None
         grid1 = _load_logo_grid()
@@ -42,7 +42,7 @@ class TestRenderLogo:
         render_logo(console, small=True)
 
     def test_empty_grid(self):
-        import overclaw.core.branding as branding
+        import overclaw.utils.display as branding
 
         original = branding._logo_grid_cache
         branding._logo_grid_cache = []

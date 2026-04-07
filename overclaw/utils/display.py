@@ -1,4 +1,4 @@
-"""Shared CLI branding for OverClaw — Overmind logo rendered as terminal art.
+"""CLI branding and display helpers for OverClaw.
 
 Brand constants
 ---------------
@@ -9,7 +9,7 @@ The SVG favicon is a 192×192 pixel-art image built from 6×6 px tiles,
 giving a 32×32 colour grid.  We convert it to terminal art using the UTF-8
 upper-half-block character (▀) to pair rows, halving the line count.
 
-Public helpers
+Logo / prompts
 --------------
 render_logo(console, *, small=False)
     Print the logo centred.  ``small=True`` uses half resolution (16 cols × 8
@@ -17,6 +17,14 @@ render_logo(console, *, small=False)
 
 overmind_prompt(console, prompt, **kwargs) -> str
     Show the small logo then call Rich's Prompt.ask.
+
+Progress / paths
+----------------
+make_spinner_progress(console, …)
+    Returns a ``rich.progress.Progress`` with brand-orange spinner.
+
+rel(path)
+    Path relative to CWD for display.
 """
 
 from __future__ import annotations
@@ -25,6 +33,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt
 from rich.text import Text
 
@@ -114,3 +123,34 @@ def overmind_prompt(console: Console, prompt: str, **kwargs) -> str:
     console.print()
     render_logo(console, small=True)
     return Prompt.ask(prompt.lstrip(), **kwargs)
+
+
+def rel(path: str | Path) -> str:
+    """Return *path* relative to CWD for display; falls back to absolute."""
+    try:
+        return str(Path(path).relative_to(Path.cwd()))
+    except ValueError:
+        return str(path)
+
+
+def make_spinner_progress(console: Console, *, transient: bool = False) -> Progress:
+    """Return a ``Progress`` with brand-orange spinner and text.
+
+    Pass ``transient=True`` to erase the spinner line when the context exits,
+    leaving a clean terminal for the next ``console.print`` call.
+    """
+    return Progress(
+        SpinnerColumn(style=BRAND),
+        TextColumn(f"[bold {BRAND}]{{task.description}}"),
+        console=console,
+        transient=transient,
+    )
+
+
+__all__ = [
+    "BRAND",
+    "make_spinner_progress",
+    "overmind_prompt",
+    "rel",
+    "render_logo",
+]

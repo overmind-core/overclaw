@@ -477,7 +477,7 @@ class TestIsContradictory:
 
 
 class TestLlmJudge:
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_judge_success(self, mock_litellm, sample_eval_spec):
         ev = SpecEvaluator(sample_eval_spec, llm_judge_model="test-model")
         mock_resp = MagicMock()
@@ -496,7 +496,7 @@ class TestLlmJudge:
         )
         assert 0.0 <= score <= 1.0
 
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_judge_with_policy(self, mock_litellm, sample_eval_spec):
         ev = SpecEvaluator(
             sample_eval_spec,
@@ -518,7 +518,7 @@ class TestLlmJudge:
         score = ev._score_with_llm_judge({"input": "test"}, {}, {})
         assert 0.0 <= score <= 1.0
 
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_judge_parse_failure_returns_fallback(self, mock_litellm, sample_eval_spec):
         ev = SpecEvaluator(sample_eval_spec, llm_judge_model="model")
         mock_resp = MagicMock()
@@ -529,7 +529,7 @@ class TestLlmJudge:
         score = ev._score_with_llm_judge({}, {}, {})
         assert score == 0.5
 
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_judge_exception_returns_fallback(self, mock_litellm, sample_eval_spec):
         ev = SpecEvaluator(sample_eval_spec, llm_judge_model="model")
         mock_litellm.completion.side_effect = RuntimeError("boom")

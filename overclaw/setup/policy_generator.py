@@ -21,9 +21,9 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Prompt
 
-from overclaw.core.branding import BRAND, overmind_prompt
-from overclaw.core.litellm_params import llm_completion
-from overclaw.core.progress import make_spinner_progress
+from overclaw.utils.display import BRAND, overmind_prompt
+from overclaw.utils.llm import llm_completion
+from overclaw.utils.display import make_spinner_progress
 from overclaw.prompts.policy_generator import (
     POLICY_FROM_CODE_PROMPT,
     POLICY_FROM_DOCUMENT_PROMPT,

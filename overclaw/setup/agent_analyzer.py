@@ -14,10 +14,10 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from overclaw.core.bundler import AgentBundle
-from overclaw.core.litellm_params import llm_completion
+from overclaw.utils.code import AgentBundle
+from overclaw.utils.llm import llm_completion
 from overclaw.core.registry import project_root, project_root_from_agent_file
-from overclaw.core.progress import make_spinner_progress
+from overclaw.utils.display import make_spinner_progress
 from overclaw.prompts.agent_analyzer import ANALYSIS_PROMPT
 
 logger = logging.getLogger(__name__)

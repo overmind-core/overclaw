@@ -159,8 +159,13 @@ class TestSetupCmdMainInteractive:
     @patch("overclaw.commands.setup_cmd.prompt_for_catalog_litellm_model")
     @patch("overclaw.commands.setup_cmd.resolve_agent")
     @patch("overclaw.commands.setup_cmd.load_overclaw_dotenv")
+    @patch(
+        "overclaw.commands.setup_cmd.read_api_key_masked",
+        return_value="sk-ant-api03-test-placeholder",
+    )
     def test_interactive_auto_policy(
         self,
+        _mock_read_api_key,
         mock_load_env,
         mock_resolve,
         mock_picker,
@@ -188,7 +193,8 @@ class TestSetupCmdMainInteractive:
         }
         mock_policy.return_value = ("# Policy", {"purpose": "test", "domain_rules": []})
 
-        mock_prompt.ask.side_effect = ["2"]
+        # Provider pick (1/2/3) then policy mode pick (1/2).
+        mock_prompt.ask.side_effect = ["2", "2"]
         mock_confirm.ask.side_effect = [
             True,  # satisfied with policy
             True,  # satisfied with criteria

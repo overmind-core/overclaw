@@ -13,7 +13,7 @@ Supports three scoring layers:
 import json
 from pathlib import Path
 
-from overclaw.core.litellm_params import llm_completion
+from overclaw.utils.llm import llm_completion
 from overclaw.prompts.evaluator import LLM_JUDGE_BATCH_PROMPT, LLM_JUDGE_PROMPT
 
 
@@ -584,7 +584,7 @@ def has_entrypoint(code: str, fn_name: str) -> bool:
     entry function for every test case.  Uses AST parsing for accuracy,
     with a string-based fallback for non-parseable code.
     """
-    from overclaw.core.bundler import has_entrypoint_ast
+    from overclaw.utils.code import has_entrypoint_ast
 
     if has_entrypoint_ast(code, fn_name):
         return True

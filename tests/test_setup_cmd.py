@@ -16,8 +16,11 @@ from overclaw.commands.setup_cmd import (
     _data_dir,
     _display_proposed_criteria,
     _resolve_datagen_model,
+    _run_beginning_smoke_test,
+    _run_end_smoke_test,
     _save_and_finish,
     _save_dataset,
+    _smoke_test_agent,
     _validate_agent_entrypoint,
 )
 
@@ -128,7 +131,7 @@ class TestSaveAndFinish:
         spec = {"output_fields": {}, "policy": {"domain_rules": ["r1"]}}
         console = MagicMock()
         _save_and_finish(spec, "myagent", console, policy_md="# Policy")
-        from overclaw.core.policy import default_policy_path
+        from overclaw.utils.policy import default_policy_path
 
         assert Path(default_policy_path("myagent")).exists()
 
@@ -188,3 +191,178 @@ class TestDisplayProposedCriteria:
     def test_no_criteria(self):
         console = MagicMock()
         _display_proposed_criteria({}, console)
+
+
+# ---------------------------------------------------------------------------
+# Smoke-test helpers
+# ---------------------------------------------------------------------------
+
+
+class TestSmokeTestAgent:
+    def test_success(self, tmp_path):
+        agent = tmp_path / "agent.py"
+        agent.write_text("def run(x):\n    return {'ok': True}\n")
+        ok, err = _smoke_test_agent(str(agent), "run", {"val": 1})
+        assert ok is True
+        assert err is None
+
+    def test_agent_raises_returns_false(self, tmp_path):
+        agent = tmp_path / "agent.py"
+        agent.write_text("def run(x):\n    raise ValueError('boom')\n")
+        ok, err = _smoke_test_agent(str(agent), "run", {})
+        assert ok is False
+        assert "boom" in err
+
+    def test_import_error_returns_false(self, tmp_path):
+        agent = tmp_path / "agent.py"
+        agent.write_text("this is not valid python !!!\n")
+        ok, err = _smoke_test_agent(str(agent), "run", {})
+        assert ok is False
+        assert err is not None
+
+    def test_missing_function_returns_false(self, tmp_path):
+        agent = tmp_path / "agent.py"
+        agent.write_text("def other(x):\n    return {}\n")
+        ok, err = _smoke_test_agent(str(agent), "run", {})
+        assert ok is False
+        assert err is not None
+
+    def test_input_passed_through(self, tmp_path):
+        agent = tmp_path / "agent.py"
+        agent.write_text(
+            "def run(x):\n"
+            "    if x.get('key') != 'value':\n"
+            "        raise AssertionError('wrong input')\n"
+            "    return {}\n"
+        )
+        ok, err = _smoke_test_agent(str(agent), "run", {"key": "value"})
+        assert ok is True
+
+        ok2, err2 = _smoke_test_agent(str(agent), "run", {"key": "wrong"})
+        assert ok2 is False
+        assert "wrong input" in err2
+
+
+class TestRunBeginningSmokTest:
+    def test_no_seed_dir_skips(self, tmp_path):
+        """When no data/ directory exists the test is skipped, no exit."""
+        agent = tmp_path / "agent.py"
+        agent.write_text("def run(x): return {}\n")
+        console = MagicMock()
+        _run_beginning_smoke_test(str(agent), "run", console)
+        # Should not raise; first call should mention the data path being checked
+        first_call_args = console.print.call_args_list[0][0][0]
+        assert "data" in first_call_args
+
+    def test_empty_seed_file_skips(self, tmp_path):
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        (data_dir / "cases.json").write_text("[]")
+        agent = tmp_path / "agent.py"
+        agent.write_text("def run(x): return {}\n")
+        console = MagicMock()
+        _run_beginning_smoke_test(str(agent), "run", console)
+        # Should mention the file name in the skip message
+        all_output = " ".join(str(c) for c in console.print.call_args_list)
+        assert "cases.json" in all_output
+
+    def test_success_with_seed(self, tmp_path):
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        (data_dir / "cases.json").write_text(
+            json.dumps([{"input": {"x": 1}, "expected_output": {"y": 2}}])
+        )
+        agent = tmp_path / "agent.py"
+        agent.write_text("def run(x): return {'y': x.get('x')}\n")
+        console = MagicMock()
+        _run_beginning_smoke_test(str(agent), "run", console)
+        # Should not raise
+
+    def test_failure_exits(self, tmp_path):
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        (data_dir / "cases.json").write_text(
+            json.dumps([{"input": {"x": 1}, "expected_output": {}}])
+        )
+        agent = tmp_path / "agent.py"
+        agent.write_text("def run(x): raise RuntimeError('agent broken')\n")
+        console = MagicMock()
+        with pytest.raises(SystemExit) as exc_info:
+            _run_beginning_smoke_test(str(agent), "run", console)
+        assert exc_info.value.code == 1
+
+    def test_unreadable_seed_file_skips(self, tmp_path):
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        (data_dir / "cases.json").write_text("not valid json {{{")
+        agent = tmp_path / "agent.py"
+        agent.write_text("def run(x): return {}\n")
+        console = MagicMock()
+        # Should not raise — bad JSON is treated as unreadable, silently skipped
+        _run_beginning_smoke_test(str(agent), "run", console)
+
+    def test_seed_case_without_input_key(self, tmp_path):
+        """Cases stored as flat dicts (no 'input' wrapper) should still work."""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        (data_dir / "cases.json").write_text(
+            json.dumps([{"company": "Acme", "budget": 1000}])
+        )
+        agent = tmp_path / "agent.py"
+        agent.write_text("def run(x): return {'ok': True}\n")
+        console = MagicMock()
+        _run_beginning_smoke_test(str(agent), "run", console)
+
+
+class TestRunEndSmokeTest:
+    def test_no_dataset_skips(self, overclaw_tmp_project):
+        agent = overclaw_tmp_project / "agent.py"
+        agent.write_text("def run(x): return {}\n")
+        console = MagicMock()
+        # dataset.json doesn't exist — should return silently
+        _run_end_smoke_test("myagent", str(agent), "run", console)
+        console.print.assert_not_called()
+
+    def test_success(self, overclaw_tmp_project):
+        from overclaw.core.paths import agent_setup_spec_dir
+
+        spec_dir = agent_setup_spec_dir("myagent")
+        spec_dir.mkdir(parents=True)
+        dataset_path = spec_dir / "dataset.json"
+        dataset_path.write_text(
+            json.dumps([{"input": {"x": 1}, "expected_output": {"y": 2}}])
+        )
+        agent = overclaw_tmp_project / "agent.py"
+        agent.write_text("def run(x): return {'y': x.get('x')}\n")
+        console = MagicMock()
+        _run_end_smoke_test("myagent", str(agent), "run", console)
+        # Should print success, not raise
+        console.print.assert_called()
+
+    def test_failure_warns_does_not_exit(self, overclaw_tmp_project):
+        from overclaw.core.paths import agent_setup_spec_dir
+
+        spec_dir = agent_setup_spec_dir("myagent")
+        spec_dir.mkdir(parents=True)
+        dataset_path = spec_dir / "dataset.json"
+        dataset_path.write_text(
+            json.dumps([{"input": {"x": 1}, "expected_output": {}}])
+        )
+        agent = overclaw_tmp_project / "agent.py"
+        agent.write_text("def run(x): raise ValueError('oops')\n")
+        console = MagicMock()
+        # Must NOT raise SystemExit — just warn
+        _run_end_smoke_test("myagent", str(agent), "run", console)
+        console.print.assert_called()
+
+    def test_empty_dataset_skips(self, overclaw_tmp_project):
+        from overclaw.core.paths import agent_setup_spec_dir
+
+        spec_dir = agent_setup_spec_dir("myagent")
+        spec_dir.mkdir(parents=True)
+        (spec_dir / "dataset.json").write_text("[]")
+        agent = overclaw_tmp_project / "agent.py"
+        agent.write_text("def run(x): return {}\n")
+        console = MagicMock()
+        _run_end_smoke_test("myagent", str(agent), "run", console)
+        console.print.assert_not_called()

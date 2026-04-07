@@ -19,7 +19,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
-from overclaw.core.litellm_params import llm_completion
+from overclaw.utils.llm import llm_completion
 from overclaw.prompts.analyzer import (
     CODEGEN_FOCUS_DIRECTIVE,
     CODEGEN_PROMPT,
@@ -33,7 +33,7 @@ from overclaw.prompts.analyzer import (
 )
 
 if TYPE_CHECKING:
-    from overclaw.core.bundler import AgentBundle
+    from overclaw.utils.code import AgentBundle
 
 
 # ---------------------------------------------------------------------------

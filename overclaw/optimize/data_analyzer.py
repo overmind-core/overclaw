@@ -15,8 +15,8 @@ from rich.console import Console
 from rich.rule import Rule
 from rich.table import Table
 
-from overclaw.core.branding import BRAND
-from overclaw.core.progress import make_spinner_progress
+from overclaw.utils.display import BRAND
+from overclaw.utils.display import make_spinner_progress
 from overclaw.optimize.data import (
     _format_input_schema,
     _format_output_schema,

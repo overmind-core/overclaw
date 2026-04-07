@@ -12,10 +12,8 @@ Usage:
 
 from __future__ import annotations
 
-import getpass
 import os
 import re
-import sys
 from pathlib import Path
 
 from dotenv import dotenv_values, load_dotenv
@@ -24,11 +22,14 @@ from rich.panel import Panel
 from rich.prompt import Confirm
 from rich.rule import Rule
 
-from overclaw.core.branding import BRAND, render_logo as _render_logo
+from overclaw.utils.display import BRAND, render_logo as _render_logo
 from overclaw.core.constants import OVERCLAW_DIR_NAME, overclaw_rel
+from overclaw.utils.io import read_api_key_masked
 from overclaw.core.registry import init_project_root
-from overclaw.core.model_picker import prompt_for_catalog_litellm_model
-from overclaw.core.models import (
+from overclaw.utils.model_picker import prompt_for_catalog_litellm_model
+from overclaw.utils.models import (
+    DEFAULT_ANALYZER_MODEL,
+    DEFAULT_DATAGEN_MODEL,
     model_name_for_env_storage,
     normalize_to_litellm_model_id,
 )
@@ -88,72 +89,6 @@ def _warn_missing_key_for_model(
     )
 
 
-def _read_api_key_masked(label: str) -> str:
-    """Read a line from the TTY; echo each character as ``*`` (paste-friendly).
-
-    Falls back to ``getpass`` when stdin is not a terminal.
-    """
-    prompt = f"  {label} API key: "
-    if not sys.stdin.isatty():
-        return getpass.getpass(prompt).strip()
-
-    sys.stdout.write(prompt)
-    sys.stdout.flush()
-    chars: list[str] = []
-
-    try:
-        if sys.platform == "win32":
-            import msvcrt
-
-            while True:
-                ch = msvcrt.getwch()
-                if ch in "\r\n":
-                    break
-                if ord(ch) == 3:
-                    raise KeyboardInterrupt
-                if ch in "\x08\x7f":
-                    if chars:
-                        chars.pop()
-                        sys.stdout.write("\b \b")
-                        sys.stdout.flush()
-                    continue
-                if ch.isprintable():
-                    chars.append(ch)
-                    sys.stdout.write("*")
-                    sys.stdout.flush()
-        else:
-            import termios
-            import tty
-
-            fd = sys.stdin.fileno()
-            old = termios.tcgetattr(fd)
-            try:
-                tty.setcbreak(fd)
-                while True:
-                    ch = sys.stdin.read(1)
-                    if ch in "\r\n":
-                        break
-                    if ch == "\x03":
-                        raise KeyboardInterrupt
-                    if ch in "\x08\x7f":
-                        if chars:
-                            chars.pop()
-                            sys.stdout.write("\b \b")
-                            sys.stdout.flush()
-                        continue
-                    if ch and ch.isprintable():
-                        chars.append(ch)
-                        sys.stdout.write("*")
-                        sys.stdout.flush()
-            finally:
-                termios.tcsetattr(fd, termios.TCSADRAIN, old)
-    finally:
-        sys.stdout.write("\n")
-        sys.stdout.flush()
-
-    return "".join(chars).strip()
-
-
 def _prompt_optional_api_key(
     console: Console,
     *,
@@ -166,7 +101,7 @@ def _prompt_optional_api_key(
         f"  [dim]Enter your {label} API key, or press Enter to skip if you are not "
         f"using {label}.[/dim]"
     )
-    key = _read_api_key_masked(label)
+    key = read_api_key_masked(f"{label} API key")
     if key:
         env[env_key] = key
         console.print("  [dim]Saved as[/dim] [green]*******[/green]")
@@ -218,7 +153,7 @@ def _collect_overmind_backend(console: Console, env: dict[str, str]) -> None:
             "when OVERMIND_API_URL is also configured.[/dim]"
         )
         if Confirm.ask("  Replace existing Overmind API token?", default=False):
-            token = _read_api_key_masked("Overmind")
+            token = read_api_key_masked("Overmind API key")
             env["OVERMIND_API_TOKEN"] = token
             if token:
                 console.print("  [dim]Saved as[/dim] [green]*******[/green]")
@@ -233,7 +168,7 @@ def _collect_overmind_backend(console: Console, env: dict[str, str]) -> None:
         "(or press Enter to keep local disk storage).[/dim]"
     )
     console.print("  [dim]Expected token prefix: [bold]ovr_[/bold][/dim]")
-    token = _read_api_key_masked("Overmind")
+    token = read_api_key_masked("Overmind API key")
     if token:
         env["OVERMIND_API_TOKEN"] = token
         console.print("  [dim]Saved as[/dim] [green]*******[/green]")
@@ -271,6 +206,7 @@ def _collect_analyzer_model(console: Console, env: dict[str, str]) -> str:
         console,
         select_prompt="  Select analyzer model (number)",
         env_default=normalize_to_litellm_model_id(raw) if raw else None,
+        default_model=DEFAULT_ANALYZER_MODEL,
         no_catalog_prompt="  Enter analyzer model (provider/model)",
     )
     return chosen
@@ -309,6 +245,7 @@ def _collect_synthetic_datagen_model(
         console,
         select_prompt="  Select synthetic data generation model (number)",
         env_default=normalize_to_litellm_model_id(raw) if raw else None,
+        default_model=DEFAULT_DATAGEN_MODEL,
         no_catalog_prompt="  Enter model for synthetic data (provider/model)",
     )
 

@@ -43,7 +43,7 @@ uv tool install -e .
 overclaw init
 
 # 3. Register your agent with a name and entrypoint
-overclaw agent register lead-qualification agents.agent1.sample_agent:run
+overclaw agent register lead-qualification examples.agents.agent1.sample_agent:run
 
 # 4. Analyze your agent, define policies, and build evaluation criteria
 overclaw setup lead-qualification

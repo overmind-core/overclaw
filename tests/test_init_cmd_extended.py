@@ -8,19 +8,19 @@ from overclaw.commands.init_cmd import (
     _collect_anthropic,
     _collect_openai,
     _prompt_optional_api_key,
-    _read_api_key_masked,
 )
+from overclaw.utils.io import read_api_key_masked
 
 
 class TestPromptOptionalApiKey:
-    @patch("overclaw.commands.init_cmd._read_api_key_masked", return_value="sk-test")
+    @patch("overclaw.commands.init_cmd.read_api_key_masked", return_value="sk-test")
     def test_saves_key(self, mock_read):
         console = MagicMock()
         env: dict[str, str] = {}
         _prompt_optional_api_key(console, label="Test", env_key="TEST_KEY", env=env)
         assert env["TEST_KEY"] == "sk-test"
 
-    @patch("overclaw.commands.init_cmd._read_api_key_masked", return_value="")
+    @patch("overclaw.commands.init_cmd.read_api_key_masked", return_value="")
     def test_empty_key_clears(self, mock_read):
         console = MagicMock()
         env: dict[str, str] = {"TEST_KEY": "old"}
@@ -57,10 +57,10 @@ class TestCollectAnthropic:
 
 
 class TestReadApiKeyMasked:
-    @patch("overclaw.commands.init_cmd.sys")
-    @patch("overclaw.commands.init_cmd.getpass")
+    @patch("overclaw.utils.io.sys")
+    @patch("overclaw.utils.io.getpass")
     def test_non_tty_falls_back(self, mock_getpass, mock_sys):
         mock_sys.stdin.isatty.return_value = False
         mock_getpass.getpass.return_value = "sk-test"
-        result = _read_api_key_masked("Test")
+        result = read_api_key_masked("Test")
         assert result == "sk-test"

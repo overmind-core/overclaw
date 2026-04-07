@@ -12,7 +12,7 @@ from overclaw.setup.questionnaire import _display_refined, run_questionnaire
 class TestRunQuestionnaire:
     @patch("overclaw.setup.questionnaire.Prompt")
     @patch("overclaw.setup.questionnaire.overmind_prompt")
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_success(self, mock_litellm, mock_prompt, mock_rich_prompt):
         mock_prompt.side_effect = ["change importance", "accuracy", "wrong enum"]
         mock_rich_prompt.ask.return_value = ""
@@ -38,7 +38,7 @@ class TestRunQuestionnaire:
 
     @patch("overclaw.setup.questionnaire.Prompt")
     @patch("overclaw.setup.questionnaire.overmind_prompt")
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_parse_failure_keeps_original(
         self, mock_litellm, mock_prompt, mock_rich_prompt
     ):

@@ -36,10 +36,9 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
-from overclaw.core.branding import BRAND
-from overclaw.core.bundler import AgentBundle
+from overclaw.utils.code import AgentBundle
 from overclaw.core.paths import agent_experiments_dir
-from overclaw.core.progress import make_spinner_progress
+from overclaw.utils.display import BRAND, make_spinner_progress
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
@@ -52,7 +51,7 @@ from overclaw.optimize.evaluator import (
     SpecEvaluator,
     load_evaluator,
 )
-from overclaw.core.policy import (
+from overclaw.utils.policy import (
     format_for_codegen,
     format_for_diagnosis,
     format_for_judge,
@@ -1478,7 +1477,7 @@ class Optimizer:
         if not self._bundle or not self._best_files:
             return
 
-        from overclaw.core.bundler import extract_pieces
+        from overclaw.utils.code import extract_pieces
 
         self._bundle.original_files = dict(self._best_files)
         new_pieces = []
@@ -1512,7 +1511,7 @@ class Optimizer:
         if not self._bundle:
             return None
 
-        from overclaw.core.bundler import has_entrypoint_ast
+        from overclaw.utils.code import has_entrypoint_ast
 
         file_updates = bundle_updates.get("file_updates")
         if file_updates:
@@ -1802,7 +1801,7 @@ class Optimizer:
     # ------------------------------------------------------------------
 
     def _validate_code(self, code: str) -> bool:
-        from overclaw.core.bundler import has_entrypoint_ast
+        from overclaw.utils.code import has_entrypoint_ast
 
         agent_path = Path(self.config.agent_path)
         ext = agent_path.suffix.lower()

@@ -18,7 +18,7 @@ def _ensure_overclaw_root(base: Path) -> None:
 
 
 class TestAnalyzeAgent:
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_success(self, mock_litellm, tmp_path):
         _ensure_overclaw_root(tmp_path)
         agent = tmp_path / "agent.py"
@@ -40,7 +40,7 @@ class TestAnalyzeAgent:
         assert result["_agent_path"] == str(agent)
         assert "_agent_code" in result
 
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_parse_failure_exits(self, mock_litellm, tmp_path):
         _ensure_overclaw_root(tmp_path)
         agent = tmp_path / "agent.py"
@@ -55,7 +55,7 @@ class TestAnalyzeAgent:
         with pytest.raises(SystemExit):
             analyze_agent(str(agent), "model", console, entrypoint_fn="run")
 
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_json_embedded_in_text(self, mock_litellm, tmp_path):
         _ensure_overclaw_root(tmp_path)
         agent = tmp_path / "agent.py"

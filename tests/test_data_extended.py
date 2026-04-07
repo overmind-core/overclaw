@@ -16,7 +16,7 @@ from overclaw.optimize.data import (
 
 
 class TestLlmCall:
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_success(self, mock_litellm):
         mock_resp = MagicMock()
         mock_resp.choices = [MagicMock()]
@@ -26,7 +26,7 @@ class TestLlmCall:
         result = _llm_call("model", "prompt", max_retries=1)
         assert result == "response"
 
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     @patch("overclaw.optimize.data.time.sleep")
     def test_rate_limit_retry(self, mock_sleep, mock_litellm):
         import litellm as real_litellm
@@ -39,7 +39,7 @@ class TestLlmCall:
         result = _llm_call("model", "prompt", max_retries=2)
         assert result == "ok"
 
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_all_retries_fail(self, mock_litellm):
         import litellm as real_litellm
 
@@ -106,7 +106,7 @@ class TestGenerateBatch:
 
 
 class TestGenerateSyntheticData:
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_success(self, mock_litellm):
         cases = [{"input": {"x": 1}, "expected_output": {"y": 2}}]
         mock_resp = MagicMock()
@@ -117,7 +117,7 @@ class TestGenerateSyntheticData:
         result = generate_synthetic_data("desc", "model", num_samples=1)
         assert len(result) == 1
 
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_parse_failure_raises(self, mock_litellm):
         mock_resp = MagicMock()
         mock_resp.choices = [MagicMock()]
@@ -127,7 +127,7 @@ class TestGenerateSyntheticData:
         with pytest.raises(ValueError, match="Failed to parse"):
             generate_synthetic_data("desc", "model")
 
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_with_agent_code_and_policy(self, mock_litellm):
         cases = [{"input": {"x": 1}, "expected_output": {"y": 2}}]
         mock_resp = MagicMock()

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from overclaw.core.bundler import AgentBundle
+from overclaw.utils.code import AgentBundle
 from overclaw.core.constants import OVERCLAW_DIR_NAME
 from overclaw.core.registry import (
     _entries_to_toml_array,

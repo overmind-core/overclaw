@@ -12,11 +12,11 @@ from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.rule import Rule
 from rich.table import Table
 
-from overclaw.core.branding import BRAND, render_logo
+from overclaw.utils.display import BRAND, rel, render_logo
 from overclaw.core.constants import overclaw_rel
-from overclaw.core.progress import rel
-from overclaw.core.model_picker import prompt_for_catalog_litellm_model
-from overclaw.core.models import (
+from overclaw.utils.model_picker import prompt_for_catalog_litellm_model
+from overclaw.utils.models import (
+    DEFAULT_ANALYZER_MODEL,
     get_default_models_for_provider,
     get_models_for_provider,
     get_providers,
@@ -321,6 +321,7 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
                 console,
                 select_prompt="   Select analyzer model (number)",
                 env_default=_analyzer_default_from_env(),
+                default_model=DEFAULT_ANALYZER_MODEL,
                 no_catalog_prompt="   Enter analyzer model",
             )
     else:
@@ -331,6 +332,7 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
             console,
             select_prompt="   Select analyzer model (number)",
             env_default=_analyzer_default_from_env(),
+            default_model=DEFAULT_ANALYZER_MODEL,
             no_catalog_prompt="   Enter analyzer model",
         )
 

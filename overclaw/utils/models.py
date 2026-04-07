@@ -2,27 +2,75 @@
 
 SUPPORTED_LLM_MODELS = [
     # ── OpenAI ──────────────────────────────────────────────────────────
-    {"provider": "openai", "model_name": "gpt-5.4"},
-    {"provider": "openai", "model_name": "gpt-5.4-pro"},
-    {"provider": "openai", "model_name": "gpt-5.4-mini"},
-    {"provider": "openai", "model_name": "gpt-5.4-nano"},
-    {"provider": "openai", "model_name": "gpt-5.2"},
-    {"provider": "openai", "model_name": "gpt-5.2-pro"},
-    {"provider": "openai", "model_name": "gpt-5"},
-    {"provider": "openai", "model_name": "gpt-5-mini"},
-    {"provider": "openai", "model_name": "gpt-5-nano"},
+    {"provider": "openai", "model_name": "gpt-5.4", "provider_display_name": "OpenAI"},
+    {
+        "provider": "openai",
+        "model_name": "gpt-5.4-pro",
+        "provider_display_name": "OpenAI",
+    },
+    {
+        "provider": "openai",
+        "model_name": "gpt-5.4-mini",
+        "provider_display_name": "OpenAI",
+    },
+    {
+        "provider": "openai",
+        "model_name": "gpt-5.4-nano",
+        "provider_display_name": "OpenAI",
+    },
+    {"provider": "openai", "model_name": "gpt-5.2", "provider_display_name": "OpenAI"},
+    {
+        "provider": "openai",
+        "model_name": "gpt-5.2-pro",
+        "provider_display_name": "OpenAI",
+    },
+    {"provider": "openai", "model_name": "gpt-5", "provider_display_name": "OpenAI"},
+    {
+        "provider": "openai",
+        "model_name": "gpt-5-mini",
+        "provider_display_name": "OpenAI",
+    },
+    {
+        "provider": "openai",
+        "model_name": "gpt-5-nano",
+        "provider_display_name": "OpenAI",
+    },
     # ── Anthropic ────────────────────────────────────────────────────────
-    {"provider": "anthropic", "model_name": "claude-opus-4-6"},
-    {"provider": "anthropic", "model_name": "claude-sonnet-4-6"},
-    {"provider": "anthropic", "model_name": "claude-opus-4-5"},
-    {"provider": "anthropic", "model_name": "claude-sonnet-4-5"},
-    {"provider": "anthropic", "model_name": "claude-haiku-4-5"},
+    {
+        "provider": "anthropic",
+        "model_name": "claude-opus-4-6",
+        "provider_display_name": "Anthropic",
+    },
+    {
+        "provider": "anthropic",
+        "model_name": "claude-sonnet-4-6",
+        "provider_display_name": "Anthropic",
+    },
+    {
+        "provider": "anthropic",
+        "model_name": "claude-opus-4-5",
+        "provider_display_name": "Anthropic",
+    },
+    {
+        "provider": "anthropic",
+        "model_name": "claude-sonnet-4-5",
+        "provider_display_name": "Anthropic",
+    },
+    {
+        "provider": "anthropic",
+        "model_name": "claude-haiku-4-5",
+        "provider_display_name": "Anthropic",
+    },
 ]
 
 DEFAULT_BACKTEST_MODELS: dict[str, list[str]] = {
     "openai": ["gpt-5.4", "gpt-5.4-mini"],
     "anthropic": ["claude-sonnet-4-6", "claude-haiku-4-5"],
 }
+
+# Pre-selected defaults for interactive model prompts.
+DEFAULT_ANALYZER_MODEL = "anthropic/claude-sonnet-4-6"
+DEFAULT_DATAGEN_MODEL = "anthropic/claude-sonnet-4-6"
 
 
 def get_providers() -> list[str]:
@@ -35,6 +83,14 @@ def get_providers() -> list[str]:
             seen.add(p)
             providers.append(p)
     return providers
+
+
+def get_provider_display_name(provider: str) -> str:
+    """Return the ``provider_display_name`` for *provider*, falling back to ``provider.title()``."""
+    for m in SUPPORTED_LLM_MODELS:
+        if m["provider"] == provider:
+            return m.get("provider_display_name") or provider.title()
+    return provider.title()
 
 
 def get_models_for_provider(provider: str) -> list[str]:

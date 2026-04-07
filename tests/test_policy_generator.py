@@ -123,7 +123,7 @@ class TestDisplayPolicy:
 
 
 class TestGeneratePolicyFromCode:
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_success(self, mock_litellm):
         mock_resp = MagicMock()
         mock_resp.choices = [MagicMock()]
@@ -139,7 +139,7 @@ class TestGeneratePolicyFromCode:
         assert "Policy" in md
         assert data["domain_rules"] == ["r1"]
 
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_fallback_on_parse_failure(self, mock_litellm):
         mock_resp = MagicMock()
         mock_resp.choices = [MagicMock()]
@@ -153,7 +153,7 @@ class TestGeneratePolicyFromCode:
 
 
 class TestGeneratePolicyFromDocument:
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_success(self, mock_litellm, tmp_path):
         doc = tmp_path / "policy.md"
         doc.write_text("# My Rules\nRule 1\n")
@@ -173,7 +173,7 @@ class TestGeneratePolicyFromDocument:
 
 
 class TestImproveExistingPolicy:
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_success(self, mock_litellm, tmp_path):
         doc = tmp_path / "policy.md"
         doc.write_text("# Old Policy\nOld rules\n")

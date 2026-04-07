@@ -15,7 +15,7 @@ from typing import Any
 
 import litellm
 
-from overclaw.core.litellm_params import llm_completion
+from overclaw.utils.llm import llm_completion
 
 _local = threading.local()
 

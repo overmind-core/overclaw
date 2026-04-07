@@ -120,7 +120,7 @@ class TestCallLlm:
         return mock_resp
 
     @patch("overclaw.core.tracer.litellm")
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_success_no_tracer(self, mock_lp, mock_tracer):
         set_current_tracer(None)
         mock_lp.completion.return_value = self._mock_response()
@@ -130,7 +130,7 @@ class TestCallLlm:
         assert result.choices[0].message.content == "hello"
 
     @patch("overclaw.core.tracer.litellm")
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_success_with_tracer(self, mock_lp, mock_tracer):
         tracer = Tracer(trace_id="t7")
         set_current_tracer(tracer)
@@ -147,7 +147,7 @@ class TestCallLlm:
         set_current_tracer(None)
 
     @patch("overclaw.core.tracer.litellm")
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_error_propagated(self, mock_lp, mock_tracer):
         set_current_tracer(None)
         mock_lp.completion.side_effect = RuntimeError("API down")
@@ -156,7 +156,7 @@ class TestCallLlm:
             call_llm("model", [{"role": "user", "content": "hi"}])
 
     @patch("overclaw.core.tracer.litellm")
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_error_span_recorded(self, mock_lp, mock_tracer):
         tracer = Tracer(trace_id="t8")
         set_current_tracer(tracer)
@@ -170,7 +170,7 @@ class TestCallLlm:
         set_current_tracer(None)
 
     @patch("overclaw.core.tracer.litellm")
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_with_tools(self, mock_lp, mock_tracer):
         set_current_tracer(None)
         mock_resp = self._mock_response()
@@ -189,7 +189,7 @@ class TestCallLlm:
         assert result is not None
 
     @patch("overclaw.core.tracer.litellm")
-    @patch("overclaw.core.litellm_params.litellm")
+    @patch("overclaw.utils.llm.litellm")
     def test_cost_exception_handled(self, mock_lp, mock_tracer):
         set_current_tracer(None)
         mock_lp.completion.return_value = self._mock_response()

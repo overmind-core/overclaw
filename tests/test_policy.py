@@ -1,9 +1,9 @@
-"""Tests for overclaw.core.policy — policy loading and formatting."""
+"""Tests for overclaw.utils.policy — policy loading and formatting."""
 
 from __future__ import annotations
 
 from overclaw.core.constants import OVERCLAW_DIR_NAME
-from overclaw.core.policy import (
+from overclaw.utils.policy import (
     _get_constraints,
     _get_edge_cases,
     _get_quality_expectations,

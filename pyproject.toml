@@ -43,6 +43,12 @@ test = [
 ]
 
 
+[tool.pytest.ini_options]
+filterwarnings = [
+    # Rich ``Live`` warns about Jupyter when the display backend is ambiguous (e.g. under pytest).
+    "ignore:install .*ipywidgets.* for Jupyter support:UserWarning",
+]
+
 [tool.ruff]
 exclude = ["bae", "openapi_client", "tests", "agents"]
 fix = true

@@ -3,7 +3,7 @@
 Provides two generation paths:
 
 Path A (no seed data) — full persona-driven pipeline:
-  Phase 1: Generate domain-aware personas from agent context
+  Phase 1: Red-team-style personas (diverse + adversarial/edge intents) from agent context
   Phase 2: Per round, each persona is handled **sequentially**; within a persona,
   the batch is split across **parallel** LLM shard calls
   Phase 3: Deduplication + schema validation + retries
@@ -31,13 +31,13 @@ from typing import Any
 
 import litellm
 
-from overclaw.core.litellm_params import llm_completion
+from overclaw.utils.llm import llm_completion
 from rich.console import Console
 from rich.rule import Rule
 from rich.table import Table
 
-from overclaw.core.branding import BRAND
-from overclaw.core.progress import make_spinner_progress
+from overclaw.utils.display import BRAND
+from overclaw.utils.display import make_spinner_progress
 from overclaw.prompts.data import (
     BATCH_GENERATION_PROMPT,
     PERSONAS_GENERATION_PROMPT,
@@ -801,9 +801,25 @@ def generate_diverse_synthetic_data(
 
     t_start = time.monotonic()
 
-    # Phase 1: generate personas
+    # Phase 1: generate personas (red-team–style diversity before batch case gen)
+    console.print()
+    console.print(
+        f"  [bold {BRAND}]Phase 1 · Red-team personas[/bold {BRAND}]"
+        f"  [dim](synthetic test design)[/dim]"
+    )
+    console.print(
+        "  [dim]This step runs one LLM call that invents several fictional users who might "
+        "interact with your agent: different roles, skill levels, and communication styles. "
+        "Some personas are deliberately adversarial or edge-case–oriented so the suite "
+        "exercises policy boundaries and ambiguous inputs, not only ideal requests. "
+        "Right after this finishes you’ll see each persona’s name, intent, and style; "
+        "Phase 2 then generates concrete [cyan]input[/cyan] / [cyan]expected_output[/cyan] "
+        "cases persona by persona.[/dim]"
+    )
     with make_spinner_progress(console, transient=True) as progress:
-        progress.add_task("  Phase 1 · Generating user personas…")
+        progress.add_task(
+            "  Phase 1 · Red teaming: drafting persona profiles with the model…"
+        )
         personas = _generate_personas(
             agent_description,
             agent_code,
