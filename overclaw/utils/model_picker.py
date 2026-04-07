@@ -3,7 +3,7 @@
 from rich.console import Console
 from rich.prompt import Prompt
 
-from overclaw.utils.display import BRAND
+from overclaw.utils.display import select_option
 from overclaw.utils.models import (
     get_litellm_model_ids,
     get_models_for_provider,
@@ -15,7 +15,7 @@ from overclaw.utils.models import (
 def prompt_for_catalog_litellm_model(
     console: Console,
     *,
-    select_prompt: str,
+    select_prompt: str = "",
     env_default: str | None = None,
     default_model: str | None = None,
     no_catalog_prompt: str = "   Enter model (provider/model)",
@@ -33,64 +33,54 @@ def prompt_for_catalog_litellm_model(
 
     providers = get_providers()
 
-    # env value takes priority; caller default is the fallback
     effective_default = env_default or (
         default_model if default_model and default_model in models else None
     )
 
     # ── Step 1: pick provider ────────────────────────────────────────────────
-    console.print("\n   [dim]Available providers:[/dim]")
-    provider_keys = [str(i) for i in range(1, len(providers) + 1)]
-
-    default_provider_key = "1"
+    default_provider_idx = 0
     if effective_default:
         eff_provider = effective_default.split("/")[0]
         if eff_provider in providers:
-            default_provider_key = str(providers.index(eff_provider) + 1)
+            default_provider_idx = providers.index(eff_provider)
 
-    for i, prov in enumerate(providers, 1):
-        tag = (
-            " [dim](from .env)[/dim]"
-            if env_default and env_default.split("/")[0] == prov
-            else ""
-        )
-        console.print(
-            f"     [bold {BRAND}][{i}][/bold {BRAND}] {get_provider_display_name(prov)}{tag}"
-        )
+    provider_labels = []
+    for prov in providers:
+        label = get_provider_display_name(prov)
+        if env_default and env_default.split("/")[0] == prov:
+            label += "  (from .env)"
+        provider_labels.append(label)
 
-    provider_pick = Prompt.ask(
-        "   Select provider (number)",
-        choices=provider_keys,
-        default=default_provider_key,
+    provider_idx = select_option(
+        provider_labels,
+        title="Select provider:",
+        default_index=default_provider_idx,
+        console=console,
     )
-    chosen_provider = providers[int(provider_pick) - 1]
+    chosen_provider = providers[provider_idx]
 
     # ── Step 2: pick model within provider ───────────────────────────────────
     provider_models = get_models_for_provider(chosen_provider)
-    model_keys = [str(i) for i in range(1, len(provider_models) + 1)]
 
-    default_model_key = "1"
+    default_model_idx = 0
     if effective_default:
         eff_prov, _, eff_model = effective_default.partition("/")
         if eff_prov == chosen_provider and eff_model in provider_models:
-            default_model_key = str(provider_models.index(eff_model) + 1)
+            default_model_idx = provider_models.index(eff_model)
 
-    console.print(
-        f"\n   [dim]Available {get_provider_display_name(chosen_provider)} models:[/dim]"
-    )
-    for i, model_name in enumerate(provider_models, 1):
-        tag = (
-            " [dim](from .env)[/dim]"
-            if env_default and env_default == f"{chosen_provider}/{model_name}"
-            else ""
-        )
-        console.print(f"     [bold {BRAND}][{i}][/bold {BRAND}] {model_name}{tag}")
+    model_labels = []
+    for model_name in provider_models:
+        label = model_name
+        if env_default and env_default == f"{chosen_provider}/{model_name}":
+            label += "  (from .env)"
+        model_labels.append(label)
 
-    model_pick = Prompt.ask(
-        select_prompt,
-        choices=model_keys,
-        default=default_model_key,
+    model_idx = select_option(
+        model_labels,
+        title=f"Select {get_provider_display_name(chosen_provider)} model:",
+        default_index=default_model_idx,
+        console=console,
     )
-    chosen_model = provider_models[int(model_pick) - 1]
+    chosen_model = provider_models[model_idx]
 
     return f"{chosen_provider}/{chosen_model}"

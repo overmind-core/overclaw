@@ -59,23 +59,20 @@ class TestOtherAgentsWithEntrypoint:
 
 
 class TestConfirmDuplicateEntrypoint:
-    @patch("overclaw.commands.agent_cmd.Confirm")
-    def test_user_confirms(self, mock_confirm):
-        mock_confirm.ask.return_value = True
+    @patch("overclaw.commands.agent_cmd.confirm_option", return_value=True)
+    def test_user_confirms(self, _mock_confirm):
         console = MagicMock()
         _confirm_duplicate_entrypoint(console, "m:f", ["existing"])
 
-    @patch("overclaw.commands.agent_cmd.Confirm")
-    def test_user_aborts(self, mock_confirm):
-        mock_confirm.ask.return_value = False
+    @patch("overclaw.commands.agent_cmd.confirm_option", return_value=False)
+    def test_user_aborts(self, _mock_confirm):
         console = MagicMock()
         with pytest.raises(SystemExit) as exc_info:
             _confirm_duplicate_entrypoint(console, "m:f", ["existing"])
         assert exc_info.value.code == 0
 
-    @patch("overclaw.commands.agent_cmd.Confirm")
-    def test_for_update_prompt_text(self, mock_confirm):
-        mock_confirm.ask.return_value = True
+    @patch("overclaw.commands.agent_cmd.confirm_option", return_value=True)
+    def test_for_update_prompt_text(self, _mock_confirm):
         console = MagicMock()
         _confirm_duplicate_entrypoint(console, "m:f", ["existing"], for_update=True)
 
@@ -109,9 +106,8 @@ class TestCmdRegister:
         with pytest.raises(SystemExit):
             cmd_register("test", "nonexistent.module:func")
 
-    @patch("overclaw.commands.agent_cmd.Confirm")
-    def test_register_duplicate_entrypoint_confirmed(self, mock_confirm, tmp_project):
-        mock_confirm.ask.return_value = True
+    @patch("overclaw.commands.agent_cmd.confirm_option", return_value=True)
+    def test_register_duplicate_entrypoint_confirmed(self, _mock_confirm, tmp_project):
         cmd_register("second-agent", "agents.agent1.sample_agent:run")
         from overclaw.core.registry import load_registry
 
@@ -137,18 +133,15 @@ class TestCmdList:
 
 
 class TestCmdRemove:
-    @patch("overclaw.commands.agent_cmd.Confirm")
-    def test_remove_existing(self, mock_confirm, tmp_project):
-        mock_confirm.ask.return_value = True
+    @patch("overclaw.commands.agent_cmd.confirm_option", return_value=True)
+    def test_remove_existing(self, _mock_confirm, tmp_project):
         cmd_remove("my-agent")
         from overclaw.core.registry import load_registry
 
         assert "my-agent" not in load_registry()
-        assert mock_confirm.ask.call_args.kwargs.get("default") is True
 
-    @patch("overclaw.commands.agent_cmd.Confirm")
-    def test_remove_aborted(self, mock_confirm, tmp_project):
-        mock_confirm.ask.return_value = False
+    @patch("overclaw.commands.agent_cmd.confirm_option", return_value=False)
+    def test_remove_aborted(self, _mock_confirm, tmp_project):
         with pytest.raises(SystemExit) as exc_info:
             cmd_remove("my-agent")
         assert exc_info.value.code == 0

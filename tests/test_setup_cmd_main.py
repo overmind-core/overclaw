@@ -151,8 +151,8 @@ class TestSetupCmdMainFast:
 
 class TestSetupCmdMainInteractive:
     @patch("overclaw.commands.setup_cmd.run_questionnaire")
-    @patch("overclaw.commands.setup_cmd.Confirm")
-    @patch("overclaw.commands.setup_cmd.Prompt")
+    @patch("overclaw.commands.setup_cmd.confirm_option")
+    @patch("overclaw.commands.setup_cmd.select_option")
     @patch("overclaw.commands.setup_cmd._run_data_phase")
     @patch("overclaw.commands.setup_cmd.generate_policy_from_code")
     @patch("overclaw.commands.setup_cmd.analyze_agent")
@@ -172,7 +172,7 @@ class TestSetupCmdMainInteractive:
         mock_analyze,
         mock_policy,
         mock_data_phase,
-        mock_prompt,
+        mock_select,
         mock_confirm,
         mock_questionnaire,
         tmp_path,
@@ -193,12 +193,11 @@ class TestSetupCmdMainInteractive:
         }
         mock_policy.return_value = ("# Policy", {"purpose": "test", "domain_rules": []})
 
-        # Provider pick (1/2/3) then policy mode pick (1/2).
-        mock_prompt.ask.side_effect = ["2", "2"]
-        mock_confirm.ask.side_effect = [
-            True,  # satisfied with policy
-            True,  # satisfied with criteria
-        ]
+        # select_option calls: provider pick (index 1 = Anthropic),
+        # then policy mode pick (index 1 = auto-generate from code).
+        mock_select.side_effect = [1, 1]
+        # confirm_option calls: satisfied with policy, satisfied with criteria.
+        mock_confirm.return_value = True
 
         monkeypatch.delenv("ANALYZER_MODEL", raising=False)
         monkeypatch.chdir(tmp_path)

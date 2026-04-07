@@ -18,6 +18,10 @@ render_logo(console, *, small=False)
 overmind_prompt(console, prompt, **kwargs) -> str
     Show the small logo then call Rich's Prompt.ask.
 
+select_option(options, *, title, default_index, console) -> int
+    Present a list of options that the user navigates with arrow keys.
+    Returns the selected index.
+
 Progress / paths
 ----------------
 make_spinner_progress(console, …)
@@ -36,6 +40,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt
 from rich.text import Text
+from simple_term_menu import TerminalMenu
 
 # ---------------------------------------------------------------------------
 # Brand colour
@@ -147,10 +152,72 @@ def make_spinner_progress(console: Console, *, transient: bool = False) -> Progr
     )
 
 
+def select_option(
+    options: list[str],
+    *,
+    title: str = "",
+    default_index: int = 0,
+    console: Console | None = None,
+) -> int:
+    """Present *options* as an arrow-key navigable menu and return the chosen index.
+
+    Falls back to a numbered ``Prompt.ask`` when the terminal doesn't support
+    the interactive menu (e.g. non-TTY / CI).
+    """
+    if console and title:
+        console.print(f"\n   [dim]{title}[/dim]")
+
+    menu = TerminalMenu(
+        options,
+        cursor_index=default_index,
+        menu_cursor="  ▸ ",
+        menu_cursor_style=("fg_yellow", "bold"),
+        menu_highlight_style=("fg_yellow", "bold"),
+    )
+    idx = menu.show()
+
+    if idx is None:
+        raise SystemExit(0)
+    if console:
+        console.print(f"   [bold]{options[idx]}[/bold]")
+        console.print()
+    return idx
+
+
+def confirm_option(
+    prompt: str,
+    *,
+    default: bool = True,
+    console: Console | None = None,
+) -> bool:
+    """Yes/No confirmation via arrow-key menu. Returns ``True`` for Yes."""
+    if console:
+        console.print(f"\n   [dim]{prompt}[/dim]")
+
+    choices = ["Yes", "No"]
+    menu = TerminalMenu(
+        choices,
+        cursor_index=0 if default else 1,
+        menu_cursor="  ▸ ",
+        menu_cursor_style=("fg_yellow", "bold"),
+        menu_highlight_style=("fg_yellow", "bold"),
+    )
+    idx = menu.show()
+
+    if idx is None:
+        raise SystemExit(0)
+    if console:
+        console.print(f"   [bold]{choices[idx]}[/bold]")
+        console.print()
+    return idx == 0
+
+
 __all__ = [
     "BRAND",
+    "confirm_option",
     "make_spinner_progress",
     "overmind_prompt",
     "rel",
     "render_logo",
+    "select_option",
 ]

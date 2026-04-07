@@ -10,7 +10,7 @@ from overclaw.core.constants import OVERCLAW_DIR_NAME
 
 
 class TestCollectConfigInteractive:
-    @patch("overclaw.optimize.config.Confirm")
+    @patch("overclaw.optimize.config.confirm_option")
     @patch("overclaw.optimize.config.IntPrompt")
     @patch("overclaw.optimize.config.prompt_for_catalog_litellm_model")
     @patch("overclaw.optimize.config.resolve_agent")
@@ -42,7 +42,7 @@ class TestCollectConfigInteractive:
         mock_resolve.return_value = (str(agent_file), "run")
         mock_picker.return_value = "openai/gpt-5.4"
         mock_int.ask.side_effect = [5, 3, 5]
-        mock_confirm.ask.side_effect = [
+        mock_confirm.side_effect = [
             True,  # use env analyzer model
             False,  # don't use judge
             True,  # parallel
@@ -57,7 +57,7 @@ class TestCollectConfigInteractive:
         assert cfg.agent_name == "test"
         assert cfg.iterations == 5
 
-    @patch("overclaw.optimize.config.Confirm")
+    @patch("overclaw.optimize.config.confirm_option")
     @patch("overclaw.optimize.config.IntPrompt")
     @patch("overclaw.optimize.config.Prompt")
     @patch("overclaw.optimize.config.prompt_for_catalog_litellm_model")
@@ -92,7 +92,7 @@ class TestCollectConfigInteractive:
         mock_picker.return_value = "openai/gpt-5.4"
         mock_int.ask.side_effect = [3, 2, 3, 2]
         mock_prompt.ask.side_effect = ["0.3", "0.2", "3", "0.7"]
-        mock_confirm.ask.side_effect = [
+        mock_confirm.side_effect = [
             True,  # use env analyzer
             False,  # no judge
             True,  # parallel
@@ -108,7 +108,7 @@ class TestCollectConfigInteractive:
         assert cfg.regression_threshold == 0.3
         assert cfg.holdout_ratio == 0.2
 
-    @patch("overclaw.optimize.config.Confirm")
+    @patch("overclaw.optimize.config.confirm_option")
     @patch("overclaw.optimize.config.IntPrompt")
     @patch("overclaw.optimize.config.prompt_for_catalog_litellm_model")
     @patch("overclaw.optimize.config.resolve_agent")
@@ -131,7 +131,7 @@ class TestCollectConfigInteractive:
         with pytest.raises(SystemExit):
             collect_config(agent_name="test", fast=False)
 
-    @patch("overclaw.optimize.config.Confirm")
+    @patch("overclaw.optimize.config.confirm_option")
     @patch("overclaw.optimize.config.IntPrompt")
     @patch("overclaw.optimize.config.prompt_for_catalog_litellm_model")
     @patch("overclaw.optimize.config.resolve_agent")
@@ -163,7 +163,7 @@ class TestCollectConfigInteractive:
         mock_resolve.return_value = (str(agent_file), "run")
         mock_picker.return_value = "openai/gpt-5.4"
         mock_int.ask.side_effect = [5, 3, 5]
-        mock_confirm.ask.side_effect = [
+        mock_confirm.side_effect = [
             True,  # use env analyzer
             False,  # no judge
             True,  # parallel

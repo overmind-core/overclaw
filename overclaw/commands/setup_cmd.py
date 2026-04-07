@@ -27,10 +27,17 @@ from dotenv import dotenv_values
 from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
-from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.prompt import IntPrompt, Prompt
 from rich.rule import Rule
 
-from overclaw.utils.display import BRAND, make_spinner_progress, rel, render_logo
+from overclaw.utils.display import (
+    BRAND,
+    confirm_option,
+    make_spinner_progress,
+    rel,
+    render_logo,
+    select_option,
+)
 from overclaw.core.constants import overclaw_rel
 from overclaw.utils.io import read_api_key_masked
 from overclaw.utils.model_picker import prompt_for_catalog_litellm_model
@@ -113,9 +120,10 @@ def _clear_existing_eval_spec(
                     "  [dim]Cleared setup artifacts in Overmind (fast mode).[/dim]"
                 )
                 return
-            if Confirm.ask(
+            if confirm_option(
                 "Delete existing setup artifacts in Overmind and start fresh?",
                 default=True,
+                console=console,
             ):
                 storage.clear_setup_spec()
                 console.print("  [dim]Cleared Overmind setup artifacts.[/dim]")
@@ -141,7 +149,11 @@ def _clear_existing_eval_spec(
         console.print("  [dim]Cleared (fast mode).[/dim]")
         return
 
-    if Confirm.ask("Delete existing setup spec files and start fresh?", default=True):
+    if confirm_option(
+        "Delete existing setup spec files and start fresh?",
+        default=True,
+        console=console,
+    ):
         shutil.rmtree(spec_dir)
         spec_dir.mkdir(parents=True, exist_ok=True)
         console.print("  [dim]Cleared.[/dim]")
@@ -272,11 +284,11 @@ def _run_beginning_smoke_test(
         return
 
     first_input = cases[0].get("input", cases[0])
-    console.print(
-        f"  [dim]Running pre-setup smoke test using "
-        f"[cyan]{existing_json[0].name}[/cyan] ({len(cases)} case(s))…[/dim]"
-    )
-    success, error = _smoke_test_agent(agent_path, fn_name, first_input)
+    with make_spinner_progress(console, transient=True) as progress:
+        progress.add_task(
+            f"  Smoke-testing agent using {existing_json[0].name} ({len(cases)} case(s))…"
+        )
+        success, error = _smoke_test_agent(agent_path, fn_name, first_input)
 
     if success:
         console.print(
@@ -312,10 +324,9 @@ def _run_end_smoke_test(
         return
 
     first_input = cases[0].get("input", cases[0])
-    console.print(
-        "  [dim]Running post-setup smoke test against first dataset case…[/dim]"
-    )
-    success, error = _smoke_test_agent(agent_path, fn_name, first_input)
+    with make_spinner_progress(console, transient=True) as progress:
+        progress.add_task("  Post-setup smoke test against first dataset case…")
+        success, error = _smoke_test_agent(agent_path, fn_name, first_input)
 
     if success:
         console.print(
@@ -373,9 +384,10 @@ def _resolve_datagen_model(console: Console, *, fast: bool = False) -> str:
         resolved = normalize_to_litellm_model_id(raw) or raw
         if fast:
             return resolved
-        if Confirm.ask(
-            f"  Use [cyan]{resolved}[/cyan] from {overclaw_rel('.env')} for data generation?",
+        if confirm_option(
+            f"Use {resolved} from {overclaw_rel('.env')} for data generation?",
             default=True,
+            console=console,
         ):
             return resolved
 
@@ -637,11 +649,12 @@ def _run_data_phase(
         )
         console.print()
 
-        if not Confirm.ask("  Use this seed data?", default=True):
+        if not confirm_option("Use this seed data?", default=True, console=console):
             # User rejected seed data — offer to generate from scratch
-            console.print()
-            if not Confirm.ask(
-                "  Generate a synthetic dataset from scratch?", default=True
+            if not confirm_option(
+                "Generate a synthetic dataset from scratch?",
+                default=True,
+                console=console,
             ):
                 console.print("  [dim]Skipping dataset generation.[/dim]")
                 return
@@ -667,6 +680,8 @@ def _run_data_phase(
 
         # User wants to use the seed data
         console.print()
+        console.print(Rule(style="dim"))
+        console.print()
         console.print(
             Panel(
                 "[dim]Recommended: run a quick quality pass before this becomes "
@@ -689,9 +704,10 @@ def _run_data_phase(
             )
         )
         console.print()
-        if not Confirm.ask(
-            "  Run validation, coverage analysis, and optional augmentation?",
+        if not confirm_option(
+            "Run validation, coverage analysis, and optional augmentation?",
             default=True,
+            console=console,
         ):
             console.print(
                 f"  [dim]Using seed data as-is ({len(seed_data)} cases).[/dim]"
@@ -725,8 +741,8 @@ def _run_data_phase(
         # No seed data at all
         console.print("  [dim]No seed data found.[/dim]")
         console.print()
-        if not Confirm.ask(
-            "  Generate a synthetic dataset from scratch?", default=True
+        if not confirm_option(
+            "Generate a synthetic dataset from scratch?", default=True, console=console
         ):
             console.print("  [dim]Skipping dataset generation.[/dim]")
             return
@@ -1025,10 +1041,13 @@ def _collect_agent_provider_config(agent_name: str, console: Console) -> None:
                     f"  [dim]Looks like this agent is set up for:[/dim] "
                     f"{escape(provider_hint)}"
                 )
-            if not Confirm.ask("  Reconfigure agent model provider?", default=False):
+            if not confirm_option(
+                "Reconfigure agent model provider?", default=False, console=console
+            ):
                 return
 
     console.print()
+    console.print(Rule(style="dim"))
     console.print(Rule("[bold]Agent model provider[/bold]", style=BRAND))
     console.print(
         "  [dim]Which provider does your agent use to call its LLM?\n"
@@ -1037,15 +1056,14 @@ def _collect_agent_provider_config(agent_name: str, console: Console) -> None:
         + "[/cyan] and loaded automatically when the agent runs.[/dim]"
     )
 
-    console.print(f"\n     [bold {BRAND}][1][/bold {BRAND}] OpenAI")
-    console.print(f"     [bold {BRAND}][2][/bold {BRAND}] Anthropic")
-    console.print(f"     [bold {BRAND}][3][/bold {BRAND}] Other")
-
-    pick = Prompt.ask(
-        "\n   Select provider (number)", choices=["1", "2", "3"], default="1"
+    pick = select_option(
+        ["OpenAI", "Anthropic", "Other"],
+        title="Select provider:",
+        default_index=0,
+        console=console,
     )
 
-    if pick == "1":  # OpenAI
+    if pick == 0:  # OpenAI
         existing_key = os.getenv("OPENAI_API_KEY", "").strip()
         if existing_key:
             console.print(
@@ -1062,7 +1080,7 @@ def _collect_agent_provider_config(agent_name: str, console: Console) -> None:
             f" → [dim]{rel(env_path)}[/dim]"
         )
 
-    elif pick == "2":  # Anthropic
+    elif pick == 1:  # Anthropic
         existing_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
         if existing_key:
             console.print(
@@ -1080,8 +1098,10 @@ def _collect_agent_provider_config(agent_name: str, console: Console) -> None:
         )
 
     else:  # Other provider
-        if Confirm.ask(
-            "\n  Is your provider compatible with the OpenAI SDK?", default=True
+        if confirm_option(
+            "Is your provider compatible with the OpenAI SDK?",
+            default=True,
+            console=console,
         ):
             console.print(
                 "\n  [dim]Enter the base URL for your OpenAI-compatible endpoint "
@@ -1110,10 +1130,11 @@ def _collect_agent_provider_config(agent_name: str, console: Console) -> None:
                 "    MY_PROVIDER_API_KEY=sk-...\n"
                 "    MY_PROVIDER_BASE_URL=https://api.example.com/v1[/dim]"
             )
-            Confirm.ask(
-                "\n  Confirm once you've added your env variables to the file\n"
-                "  (press Enter to continue — safe to skip if no env vars are needed)",
+            confirm_option(
+                "Confirm once you've added your env variables to the file"
+                " (select Yes to continue — safe to skip if no env vars are needed)",
                 default=True,
+                console=console,
             )
             # load_agent_dotenv() is called immediately after this function returns in
             # main(), so any variables the user just saved will be loaded before the
@@ -1150,6 +1171,8 @@ def main(
 
     # Ask which provider the agent uses and save its credentials to the agent .env.
     # Skip interactive prompt in fast mode; always load whatever is already on disk.
+    console.print()
+    console.print(Rule(style="dim"))
     if not fast:
         _collect_agent_provider_config(agent_name, console)
     load_agent_dotenv(agent_name)
@@ -1184,6 +1207,8 @@ def main(
         console.print(f"\n  [red]Error:[/red] Policy file {policy} does not exist.")
         raise SystemExit(1)
 
+    console.print()
+    console.print(Rule(style="dim"))
     _run_beginning_smoke_test(agent_path, fn_name, console, fast=fast)
 
     if fast:
@@ -1215,16 +1240,19 @@ def main(
     _clear_existing_eval_spec(agent_name, console, fast=fast)
 
     if not fast:
+        console.print()
+        console.print(Rule(style="dim"))
         raw_model = os.getenv("ANALYZER_MODEL", "").strip()
         if raw_model:
             model = normalize_to_litellm_model_id(raw_model) or raw_model
             display = model.split("/", 1)[-1] if "/" in model else model
             console.print(
-                f"\n  [dim]ANALYZER_MODEL is set to[/dim] [cyan]{display}[/cyan]"
+                f"\n  [dim]ANALYZER_MODEL is already set to[/dim] [cyan]{display}[/cyan]"
             )
-            if not Confirm.ask(
-                f"  Use [cyan]{display}[/cyan] as the analyzer model?",
+            if not confirm_option(
+                f"Use {display} as the analyzer model?",
                 default=True,
+                console=console,
             ):
                 model = prompt_for_catalog_litellm_model(
                     console,
@@ -1252,6 +1280,8 @@ def main(
 
     # ---- Phase 1: Agent Analysis ----
     console.print()
+    console.print(Rule(style="dim"))
+    console.print()
     console.print(
         Panel(
             "[bold]Phase 1 \u00b7 Agent Analysis[/bold]\n"
@@ -1263,6 +1293,8 @@ def main(
     analysis = analyze_agent(agent_path, model, console, entrypoint_fn=fn_name)
 
     # ---- Phase 2: Policy Definition ----
+    console.print()
+    console.print(Rule(style="dim"))
     console.print()
     console.print(
         Panel(
@@ -1290,6 +1322,8 @@ def main(
             )
 
         # ---- Phase 3 (fast): Dataset ----
+        console.print()
+        console.print(Rule(style="dim"))
         console.print()
         console.print(
             Panel(
@@ -1322,6 +1356,8 @@ def main(
 
         if change_summary:
             console.print()
+            console.print(Rule(style="dim"))
+            console.print()
             console.print(
                 Panel(
                     "[bold]Suggested Improvements[/bold]\n\n" + change_summary,
@@ -1333,18 +1369,17 @@ def main(
         display_policy(improved_md, improved_data, console)
 
         console.print()
-        console.print("  [bold]Which policy would you like to use?[/bold]\n")
-        console.print(
-            f"    [bold {BRAND}][1][/bold {BRAND}] Use the improved policy "
-            "[dim](with suggested changes)[/dim]"
+        pol_choice = select_option(
+            [
+                "Use the improved policy (with suggested changes)",
+                "Keep my original policy (no changes)",
+            ],
+            title="Which policy would you like to use?",
+            default_index=0,
+            console=console,
         )
-        console.print(
-            f"    [bold {BRAND}][2][/bold {BRAND}] Keep my original policy [dim](no changes)[/dim]"
-        )
-        console.print()
-        pol_choice = Prompt.ask("  Choice", choices=["1", "2"], default="1")
 
-        if pol_choice == "1":
+        if pol_choice == 0:
             policy_md, policy_data = improved_md, improved_data
         else:
             from overclaw.setup.policy_generator import generate_policy_from_document
@@ -1357,22 +1392,19 @@ def main(
         # Ask whether the user wants to define policies interactively or let
         # the system infer them from code.
         console.print("  [dim]No policy document provided.[/dim]\n")
-        console.print("  [bold]How would you like to define the agent policy?[/bold]\n")
-        console.print(
-            f"    [bold {BRAND}][1][/bold {BRAND}] Define policies interactively "
-            "[dim](recommended — describe your domain rules)[/dim]"
+        pol_input_choice = select_option(
+            [
+                "Define policies interactively (recommended — describe your domain rules)",
+                "Auto-generate from agent code (faster, less accurate)",
+            ],
+            title="How would you like to define the agent policy?",
+            default_index=1,
+            console=console,
         )
-        console.print(
-            f"    [bold {BRAND}][2][/bold {BRAND}] Auto-generate from agent code "
-            "[dim](faster, less accurate)[/dim]"
-        )
-        console.print()
-        pol_input_choice = Prompt.ask("  Choice", choices=["1", "2"], default="2")
 
-        if pol_input_choice == "1":
+        if pol_input_choice == 0:
             policy_md, policy_data = elicit_policy(analysis, model, console)
         else:
-            console.print("  [dim]Inferring policy from agent code…[/dim]\n")
             policy_md, policy_data = generate_policy_from_code(analysis, model, console)
             display_policy(policy_md, policy_data, console)
 
@@ -1380,7 +1412,9 @@ def main(
     policy_round = 0
     while True:
         console.print()
-        if Confirm.ask("Are you satisfied with this policy?", default=True):
+        if confirm_option(
+            "Are you satisfied with this policy?", default=True, console=console
+        ):
             save_policy(policy_md, pol_path)
             console.print(
                 f"\n  [dim]You can always edit the policy later at "
@@ -1389,6 +1423,8 @@ def main(
             break
 
         policy_round += 1
+        console.print()
+        console.print(Rule(style="dim"))
         console.print()
         console.print(
             Panel(
@@ -1402,6 +1438,8 @@ def main(
 
     # ---- Phase 3: Dataset ----
     console.print()
+    console.print(Rule(style="dim"))
+    console.print()
     console.print(
         Panel(
             "[bold]Phase 3 \u00b7 Dataset[/bold]\n"
@@ -1412,6 +1450,8 @@ def main(
     _run_data_phase(analysis, policy_data, agent_path, agent_name, model, console)
 
     # ---- Phase 4: Evaluation Criteria ----
+    console.print()
+    console.print(Rule(style="dim"))
     console.print()
     console.print(
         Panel(
@@ -1429,7 +1469,11 @@ def main(
     iteration = 0
     while True:
         console.print()
-        if Confirm.ask("Are you satisfied with the evaluation criteria?", default=True):
+        if confirm_option(
+            "Are you satisfied with the evaluation criteria?",
+            default=True,
+            console=console,
+        ):
             spec = generate_spec_from_proposal(analysis, policy_data=policy_data)
             _save_and_finish(
                 spec,
@@ -1443,17 +1487,17 @@ def main(
             return
 
         console.print()
-        console.print(Rule("[bold]Refinement Options[/bold]", style=BRAND))
-        console.print(
-            f"    [bold {BRAND}][1][/bold {BRAND}] Refine criteria through conversation"
+        choice = select_option(
+            [
+                "Refine criteria through conversation",
+                "Save now and edit the spec manually",
+            ],
+            title="Refinement Options:",
+            default_index=0,
+            console=console,
         )
-        console.print(
-            f"    [bold {BRAND}][2][/bold {BRAND}] Save now and edit the spec manually"
-        )
-        console.print()
-        choice = Prompt.ask("  Choice", choices=["1", "2"], default="1")
 
-        if choice == "2":
+        if choice == 1:
             spec = generate_spec_from_proposal(analysis, policy_data=policy_data)
             _save_and_finish(
                 spec,
@@ -1472,6 +1516,8 @@ def main(
             return
 
         iteration += 1
+        console.print()
+        console.print(Rule(style="dim"))
         console.print()
         console.print(
             Panel(

@@ -155,6 +155,8 @@ class Optimizer:
 
         # ---- Phase 1: Baseline ----
         self.console.print()
+        self.console.print(Rule(style="dim"))
+        self.console.print()
         self.console.print(
             Panel(
                 "[bold]Phase 1 · Establishing Baseline[/bold]\n"
@@ -219,6 +221,8 @@ class Optimizer:
 
         # ---- Phase 2: Optimization loop ----
         n_candidates = getattr(self.config, "candidates_per_iteration", 3)
+        self.console.print()
+        self.console.print(Rule(style="dim"))
         self.console.print()
         self.console.print(
             Panel(
@@ -739,6 +743,8 @@ class Optimizer:
         # ---- Holdout evaluation (blended-score generalization check) ----
         if holdout_set:
             self.console.print()
+            self.console.print(Rule(style="dim"))
+            self.console.print()
             self.console.print(
                 Panel(
                     "[bold]Holdout Evaluation · Generalization Check[/bold]\n"
@@ -900,6 +906,8 @@ class Optimizer:
         # ---- Phase 3: Model backtesting (optional) ----
         if self.config.model_backtesting and self.config.backtest_models:
             backtest_data = holdout_set if holdout_set else train_set
+            self.console.print()
+            self.console.print(Rule(style="dim"))
             self.console.print()
             self.console.print(
                 Panel(
@@ -1958,6 +1966,8 @@ class Optimizer:
                 self.console.print(f"    {display:>18}: {val:.1f} / {max_val:.0f}")
 
     def _generate_report(self):
+        self.console.print()
+        self.console.print(Rule(style="dim"))
         self.console.print()
         self.console.print(
             Panel(

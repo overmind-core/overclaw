@@ -114,9 +114,8 @@ class TestClearExistingExperiments:
         assert exp_dir.exists()
         assert not list(exp_dir.iterdir())  # cleaned
 
-    @patch("overclaw.optimize.config.Confirm")
-    def test_interactive_user_confirms(self, mock_confirm, overclaw_tmp_project: Path):
-        mock_confirm.ask.return_value = True
+    @patch("overclaw.optimize.config.confirm_option", return_value=True)
+    def test_interactive_user_confirms(self, _mock_confirm, overclaw_tmp_project: Path):
         exp_dir = (
             overclaw_tmp_project / OVERCLAW_DIR_NAME / "agents" / "x" / "experiments"
         )
@@ -126,9 +125,8 @@ class TestClearExistingExperiments:
         _clear_existing_experiments("x", console)
         assert not list(exp_dir.iterdir())
 
-    @patch("overclaw.optimize.config.Confirm")
-    def test_interactive_user_declines(self, mock_confirm, overclaw_tmp_project: Path):
-        mock_confirm.ask.return_value = False
+    @patch("overclaw.optimize.config.confirm_option", return_value=False)
+    def test_interactive_user_declines(self, _mock_confirm, overclaw_tmp_project: Path):
         exp_dir = (
             overclaw_tmp_project / OVERCLAW_DIR_NAME / "agents" / "x" / "experiments"
         )

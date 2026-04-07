@@ -20,6 +20,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Prompt
+from rich.rule import Rule
 
 from overclaw.utils.display import BRAND, overmind_prompt
 from overclaw.utils.llm import llm_completion
@@ -163,6 +164,9 @@ def elicit_policy(
     description = analysis.get("description", "AI agent")
     agent_name = description.split(":")[0].strip() if ":" in description else "Agent"
 
+    console.print()
+    console.print(Rule(style="dim"))
+    console.print()
     console.print(
         Panel(
             "[bold]Agent Policy Definition[/bold]\n"
@@ -486,6 +490,8 @@ def save_policy(md_text: str, path: str) -> None:
 
 def display_policy(md_text: str, policy_data: dict, console: Console) -> None:
     """Show the generated policy to the user."""
+    console.print()
+    console.print(Rule(style="dim"))
     console.print()
     console.print(
         Panel(

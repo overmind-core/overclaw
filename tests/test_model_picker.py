@@ -9,18 +9,16 @@ from overclaw.utils.model_picker import prompt_for_catalog_litellm_model
 
 
 class TestPromptForCatalogLitellmModel:
-    @patch("overclaw.utils.model_picker.Prompt")
-    def test_picks_model(self, mock_prompt):
-        mock_prompt.ask.return_value = "1"
+    @patch("overclaw.utils.model_picker.select_option", return_value=0)
+    def test_picks_model(self, _mock_select):
         console = MagicMock()
         result = prompt_for_catalog_litellm_model(
             console, select_prompt="Pick", env_default=None
         )
         assert "/" in result
 
-    @patch("overclaw.utils.model_picker.Prompt")
-    def test_with_env_default(self, mock_prompt):
-        mock_prompt.ask.return_value = "1"
+    @patch("overclaw.utils.model_picker.select_option", return_value=0)
+    def test_with_env_default(self, _mock_select):
         console = MagicMock()
         result = prompt_for_catalog_litellm_model(
             console,

@@ -19,10 +19,9 @@ from pathlib import Path
 from dotenv import dotenv_values, load_dotenv
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Confirm
 from rich.rule import Rule
 
-from overclaw.utils.display import BRAND, render_logo as _render_logo
+from overclaw.utils.display import BRAND, confirm_option, render_logo as _render_logo
 from overclaw.core.constants import OVERCLAW_DIR_NAME, overclaw_rel
 from overclaw.utils.io import read_api_key_masked
 from overclaw.core.registry import init_project_root
@@ -120,6 +119,7 @@ def _collect_openai(console: Console, env: dict[str, str]) -> None:
         )
         return
     console.print()
+    console.print(Rule(style="dim"))
     console.print(Rule("[bold]OpenAI[/bold]", style=BRAND))
     _prompt_optional_api_key(console, label="OpenAI", env_key="OPENAI_API_KEY", env=env)
 
@@ -131,6 +131,7 @@ def _collect_anthropic(console: Console, env: dict[str, str]) -> None:
         )
         return
     console.print()
+    console.print(Rule(style="dim"))
     console.print(Rule("[bold]Anthropic[/bold]", style=BRAND))
     _prompt_optional_api_key(
         console, label="Anthropic", env_key="ANTHROPIC_API_KEY", env=env
@@ -140,6 +141,7 @@ def _collect_anthropic(console: Console, env: dict[str, str]) -> None:
 def _collect_overmind_backend(console: Console, env: dict[str, str]) -> None:
     """Configure Overmind API token used by storage backend auto-selection."""
     console.print()
+    console.print(Rule(style="dim"))
     console.print(Rule("[bold]Overmind backend (recommended)[/bold]", style=BRAND))
     console.print(
         "  [dim]OverClaw can store setup/optimization artifacts in Overmind for tracking "
@@ -152,7 +154,9 @@ def _collect_overmind_backend(console: Console, env: dict[str, str]) -> None:
             "  [dim]OVERMIND_API_TOKEN is already set — Overmind backend will be preferred "
             "when OVERMIND_API_URL is also configured.[/dim]"
         )
-        if Confirm.ask("  Replace existing Overmind API token?", default=False):
+        if confirm_option(
+            "Replace existing Overmind API token?", default=False, console=console
+        ):
             token = read_api_key_masked("Overmind API key")
             env["OVERMIND_API_TOKEN"] = token
             if token:
@@ -186,6 +190,7 @@ def _collect_overmind_backend(console: Console, env: dict[str, str]) -> None:
 
 def _collect_analyzer_model(console: Console, env: dict[str, str]) -> str:
     console.print()
+    console.print(Rule(style="dim"))
     console.print(Rule("[bold]Analyzer model[/bold]", style=BRAND))
     console.print(
         "  [dim]Used to diagnose failures and propose code changes during optimization.[/dim]"
@@ -194,9 +199,10 @@ def _collect_analyzer_model(console: Console, env: dict[str, str]) -> str:
     if raw:
         normalized = normalize_to_litellm_model_id(raw) or raw
         display = model_name_for_env_storage(normalized)
-        if Confirm.ask(
-            f"  Use [cyan]{display}[/cyan] from the environment as the analyzer model?",
+        if confirm_option(
+            f"Use {display} from the environment as the analyzer model?",
             default=True,
+            console=console,
         ):
             return normalized or raw
     else:
@@ -216,14 +222,16 @@ def _collect_synthetic_datagen_model(
     console: Console, env: dict[str, str]
 ) -> str | None:
     console.print()
+    console.print(Rule(style="dim"))
     console.print(Rule("[bold]Synthetic data generation[/bold]", style=BRAND))
     console.print(
         "  [dim]When enabled, the optimizer can generate synthetic test cases from "
         "your agent spec (see optimize / config data source).[/dim]"
     )
-    if not Confirm.ask(
-        "  Configure a model for synthetic data generation in your pipeline?",
+    if not confirm_option(
+        "Configure a model for synthetic data generation in your pipeline?",
         default=False,
+        console=console,
     ):
         return None
 
@@ -231,9 +239,10 @@ def _collect_synthetic_datagen_model(
     if raw:
         normalized = normalize_to_litellm_model_id(raw) or raw
         display = model_name_for_env_storage(normalized)
-        if Confirm.ask(
-            f"  Use [cyan]{display}[/cyan] from the environment for synthetic data generation?",
+        if confirm_option(
+            f"Use {display} from the environment for synthetic data generation?",
             default=True,
+            console=console,
         ):
             return normalized or raw
     else:
@@ -333,6 +342,7 @@ def main() -> None:
         _warn_missing_key_for_model(console, env["SYNTHETIC_DATAGEN_MODEL"], env)
 
     console.print()
+    console.print(Rule(style="dim"))
 
     for k in KEYS_TO_COLLECT:
         env.setdefault(k, "")

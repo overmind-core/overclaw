@@ -8,11 +8,11 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.prompt import IntPrompt, Prompt
 from rich.rule import Rule
 from rich.table import Table
 
-from overclaw.utils.display import BRAND, rel, render_logo
+from overclaw.utils.display import BRAND, confirm_option, rel, render_logo
 from overclaw.core.constants import overclaw_rel
 from overclaw.utils.model_picker import prompt_for_catalog_litellm_model
 from overclaw.utils.models import (
@@ -63,7 +63,11 @@ def _clear_existing_experiments(
         console.print("  [dim]Cleared (fast mode).[/dim]")
         return
 
-    if Confirm.ask("Delete existing experiment results and start fresh?", default=True):
+    if confirm_option(
+        "Delete existing experiment results and start fresh?",
+        default=True,
+        console=console,
+    ):
         shutil.rmtree(exp_dir)
         exp_dir.mkdir(parents=True, exist_ok=True)
         console.print("  [dim]Cleared.[/dim]")
@@ -249,6 +253,9 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
 
     console.print(f"\n  [dim]Agent: {rel(cfg.agent_path)}[/dim]")
 
+    console.print()
+    console.print(Rule(style="dim"))
+
     # ---- Check for existing experiments ----
     _clear_existing_experiments(cfg.agent_name, console)
 
@@ -302,6 +309,7 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
 
     # ---- Analyzer model ----
     console.print()
+    console.print(Rule(style="dim"))
     console.print(Rule("[bold]Analyzer Model[/bold]", style=BRAND))
     console.print(
         "   [dim]The analyzer model diagnoses failures and generates improvements.[/dim]"
@@ -311,9 +319,10 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
     if env_analyzer:
         normalized = normalize_to_litellm_model_id(env_analyzer)
         display = normalized or env_analyzer
-        if Confirm.ask(
-            f"Use [cyan]{display}[/cyan] from {overclaw_rel('.env')} as analyzer model?",
+        if confirm_option(
+            f"Use {display} from {overclaw_rel('.env')} as analyzer model?",
             default=True,
+            console=console,
         ):
             cfg.analyzer_model = normalized or env_analyzer
         else:
@@ -338,12 +347,15 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
 
     # ---- LLM-as-Judge ----
     console.print()
+    console.print(Rule(style="dim"))
     console.print(Rule("[bold]Evaluation Settings[/bold]", style=BRAND))
     console.print(
         "   [dim]LLM-as-Judge adds semantic quality scoring alongside mechanical matching.[/dim]"
     )
-    use_judge = Confirm.ask(
-        "Enable LLM-as-Judge scoring? (adds ~10% eval cost)", default=False
+    use_judge = confirm_option(
+        "Enable LLM-as-Judge scoring? (adds ~10% eval cost)",
+        default=False,
+        console=console,
     )
     if use_judge:
         console.print(
@@ -358,6 +370,7 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
 
     # ---- Optimization settings ----
     console.print()
+    console.print(Rule(style="dim"))
     console.print(Rule("[bold]Optimization Settings[/bold]", style=BRAND))
     console.print(
         "   [dim]Each iteration: improve from the current best agent, evaluate "
@@ -375,13 +388,15 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
         "   Candidates per iteration (best-of-N)", default=3
     )
 
-    cfg.parallel = Confirm.ask("Run agent in parallel?", default=True)
+    cfg.parallel = confirm_option(
+        "Run agent in parallel?", default=True, console=console
+    )
     if cfg.parallel:
         cfg.max_workers = IntPrompt.ask("   Max parallel workers", default=5)
 
     # ---- Advanced settings ----
     console.print()
-    if Confirm.ask("Configure advanced settings?", default=False):
+    if confirm_option("Configure advanced settings?", default=False, console=console):
         console.print()
         console.print(Rule("[bold]Advanced[/bold]", style="dim"))
         cfg.runs_per_eval = IntPrompt.ask(
@@ -408,8 +423,10 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
         except ValueError:
             cfg.holdout_ratio = 0.2
 
-        cfg.holdout_enforcement = Confirm.ask(
-            "Enforce holdout (revert if holdout degrades)?", default=True
+        cfg.holdout_enforcement = confirm_option(
+            "Enforce holdout (revert if holdout degrades)?",
+            default=True,
+            console=console,
         )
 
         console.print(
@@ -435,6 +452,8 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
             cfg.diagnosis_case_fraction = 0.7
 
     # ---- Summary ----
+    console.print()
+    console.print(Rule(style="dim"))
     console.print()
     table = Table(title="Configuration Summary", border_style="cyan")
     table.add_column("Setting", style="bold")
@@ -473,7 +492,9 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
     console.print(table)
     console.print()
 
-    if not Confirm.ask("Proceed with these settings?", default=True):
+    if not confirm_option(
+        "Proceed with these settings?", default=True, console=console
+    ):
         raise SystemExit("Aborted by user.")
 
     return cfg

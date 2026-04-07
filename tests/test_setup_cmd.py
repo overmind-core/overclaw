@@ -78,18 +78,16 @@ class TestClearExistingEvalSpec:
         _clear_existing_eval_spec("x", console, fast=True)
         assert not (spec_dir / "spec.json").exists()
 
-    @patch("overclaw.commands.setup_cmd.Confirm")
-    def test_interactive_confirm(self, mock_confirm, overclaw_tmp_project: Path):
-        mock_confirm.ask.return_value = True
+    @patch("overclaw.commands.setup_cmd.confirm_option", return_value=True)
+    def test_interactive_confirm(self, _mock_confirm, overclaw_tmp_project: Path):
         spec_dir = agent_setup_spec_dir("x")
         spec_dir.mkdir(parents=True)
         (spec_dir / "spec.json").write_text("{}")
         console = MagicMock()
         _clear_existing_eval_spec("x", console)
 
-    @patch("overclaw.commands.setup_cmd.Confirm")
-    def test_interactive_decline(self, mock_confirm, overclaw_tmp_project: Path):
-        mock_confirm.ask.return_value = False
+    @patch("overclaw.commands.setup_cmd.confirm_option", return_value=False)
+    def test_interactive_decline(self, _mock_confirm, overclaw_tmp_project: Path):
         spec_dir = agent_setup_spec_dir("x")
         spec_dir.mkdir(parents=True)
         (spec_dir / "spec.json").write_text("{}")
@@ -159,10 +157,9 @@ class TestResolveDategenModel:
         with pytest.raises(SystemExit):
             _resolve_datagen_model(console, fast=True)
 
-    @patch("overclaw.commands.setup_cmd.Confirm")
-    def test_interactive_with_env(self, mock_confirm, monkeypatch):
+    @patch("overclaw.commands.setup_cmd.confirm_option", return_value=True)
+    def test_interactive_with_env(self, _mock_confirm, monkeypatch):
         monkeypatch.setenv("SYNTHETIC_DATAGEN_MODEL", "gpt-5.4")
-        mock_confirm.ask.return_value = True
         console = MagicMock()
         result = _resolve_datagen_model(console, fast=False)
         assert "gpt-5.4" in result

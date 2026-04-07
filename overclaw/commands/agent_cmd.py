@@ -13,10 +13,9 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Confirm
 from rich.table import Table
 
-from overclaw.utils.display import BRAND
+from overclaw.utils.display import BRAND, confirm_option
 from overclaw.core.paths import agent_experiments_dir, agent_setup_spec_dir
 from overclaw.core.constants import overclaw_rel
 from overclaw.core.registry import (
@@ -60,11 +59,11 @@ def _confirm_duplicate_entrypoint(
         "different names; eval data stays separate per name.\n"
     )
     prompt = (
-        "  Point this agent at that shared entrypoint anyway?"
+        "Point this agent at that shared entrypoint anyway?"
         if for_update
-        else "  Register this entrypoint for another agent name anyway?"
+        else "Register this entrypoint for another agent name anyway?"
     )
-    if not Confirm.ask(prompt, default=False):
+    if not confirm_option(prompt, default=False, console=console):
         console.print("  [dim]Aborted.[/dim]\n")
         raise SystemExit(0)
 
@@ -147,7 +146,9 @@ def cmd_remove(name: str) -> None:
     console.print(
         f"\n  Agent '[bold]{name}[/bold]'  [dim]{registry[name]['entrypoint']}[/dim]"
     )
-    if not Confirm.ask(f"  Remove '{name}' from the registry?", default=True):
+    if not confirm_option(
+        f"Remove '{name}' from the registry?", default=True, console=console
+    ):
         console.print("  [dim]Aborted.[/dim]\n")
         raise SystemExit(0)
 
