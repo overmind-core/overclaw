@@ -19,8 +19,12 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
+import logging
+
 from overclaw.utils.llm import llm_completion
 from overclaw.prompts.analyzer import (
+    AGENTIC_CODEGEN_FOCUS,
+    AGENTIC_CODEGEN_INSTRUCTION,
     CODEGEN_FOCUS_DIRECTIVE,
     CODEGEN_PROMPT,
     DIAGNOSIS_FOCUS_DIRECTIVE,
@@ -34,6 +38,8 @@ from overclaw.prompts.analyzer import (
 
 if TYPE_CHECKING:
     from overclaw.utils.code import AgentBundle
+
+_log = logging.getLogger("overclaw.optimize.analyzer")
 
 
 # ---------------------------------------------------------------------------
@@ -894,6 +900,135 @@ def _run_codegen(
 
 
 # ---------------------------------------------------------------------------
+# Agentic codegen (coding-agent-based code generation)
+# ---------------------------------------------------------------------------
+
+
+def _build_agentic_instruction(
+    diagnosis: dict,
+    eval_spec: dict | None,
+    policy_constraints: str,
+    entrypoint_fn: str,
+    entry_file: str,
+    agent_files: dict[str, str],
+    focus_area: str | None = None,
+) -> str:
+    """Build the user instruction for the coding agent from a diagnosis."""
+    file_listing = "\n".join(
+        f"- `{rel}` ({len(src.splitlines())} lines)" for rel, src in agent_files.items()
+    )
+
+    policy_section = (
+        f"- Policy constraints: {policy_constraints}" if policy_constraints else ""
+    )
+
+    focus_directive = ""
+    if focus_area:
+        labels = {
+            k: v.format(entrypoint_fn=entrypoint_fn) if "{" in v else v
+            for k, v in FOCUS_LABELS.items()
+        }
+        focus_desc = labels.get(focus_area, focus_area)
+        focus_directive = AGENTIC_CODEGEN_FOCUS.format(
+            focus_area=focus_area,
+            focus_desc=focus_desc,
+        )
+
+    return AGENTIC_CODEGEN_INSTRUCTION.format(
+        diagnosis_json=json.dumps(diagnosis, indent=2),
+        entrypoint_fn=entrypoint_fn,
+        policy_constraints_section=policy_section,
+        entry_file=entry_file,
+        file_listing=file_listing,
+        focus_directive=focus_directive,
+    )
+
+
+def _run_codegen_agentic(
+    agent_files: dict[str, str],
+    diagnosis: dict,
+    model: str,
+    eval_spec: dict | None = None,
+    policy_constraints: str = "",
+    *,
+    entrypoint_fn: str,
+    entry_file: str,
+    focus_area: str | None = None,
+    max_steps: int = 50,
+) -> dict:
+    """Run the coding agent to generate one candidate.
+
+    Returns a candidate dict compatible with the optimizer's expectations.
+    """
+    from overclaw.coding_agent import apply_code_changes
+
+    instruction = _build_agentic_instruction(
+        diagnosis,
+        eval_spec,
+        policy_constraints,
+        entrypoint_fn,
+        entry_file,
+        agent_files,
+        focus_area=focus_area,
+    )
+
+    try:
+        result = apply_code_changes(
+            agent_files=agent_files,
+            instruction=instruction,
+            model=model,
+            entry_file=entry_file,
+            max_steps=max_steps,
+        )
+    except Exception as exc:
+        _log.warning("Agentic codegen failed: %s", exc)
+        return {
+            "analysis": f"Coding agent error: {exc}",
+            "suggestions": [],
+            "updated_code": None,
+            "method": "agentic_error",
+            "_debug": {"error": str(exc)},
+        }
+
+    suggestions = [c.get("action", "") for c in diagnosis.get("changes", [])]
+
+    if not result.file_updates:
+        entry_source = agent_files.get(entry_file)
+        return {
+            "analysis": diagnosis.get("root_cause", ""),
+            "suggestions": suggestions,
+            "updated_code": entry_source,
+            "method": "agentic_no_changes",
+            "diagnosis": diagnosis,
+            "_debug": {
+                "steps": result.steps_taken,
+                "usage": result.usage,
+            },
+        }
+
+    entry_source = result.file_updates.get(entry_file, agent_files.get(entry_file))
+
+    is_multi_file = len(agent_files) > 1
+
+    return {
+        "analysis": diagnosis.get("root_cause", ""),
+        "suggestions": suggestions,
+        "updated_code": entry_source,
+        "bundle_updates": (
+            {"file_updates": result.file_updates} if is_multi_file else None
+        ),
+        "_resolved_files": result.file_updates if is_multi_file else None,
+        "method": f"agentic({focus_area or 'general'})",
+        "diagnosis": diagnosis,
+        "_debug": {
+            "steps": result.steps_taken,
+            "usage": result.usage,
+            "files_updated": len(result.file_updates),
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -916,6 +1051,9 @@ def generate_candidates(
     *,
     entrypoint_fn: str,
     bundle: AgentBundle | None = None,
+    agent_files: dict[str, str] | None = None,
+    codegen_model: str = "",
+    codegen_max_steps: int = 50,
 ) -> list[dict]:
     """Generate *num_candidates* improved agent versions.
 
@@ -923,6 +1061,10 @@ def generate_candidates(
     failure patterns and change instructions, then N parallel codegen calls
     each apply those instructions with a different focus area for diversity.
     Falls back to single-pass if diagnosis fails.
+
+    When *agent_files* is provided, the codegen phase uses an agentic tool
+    loop (read/edit/grep/etc.) instead of single-shot LLM code generation.
+    This produces higher-quality, targeted edits rather than full file rewrites.
 
     When *bundle* is provided, prompts use the virtual bundle representation
     and outputs are parsed as targeted piece updates.
@@ -1125,6 +1267,73 @@ def generate_candidates(
         else:
             focus_assignments.append(None)
 
+    # Resolve the entry file path for the agentic path
+    _entry_file = (
+        bundle.entry_file
+        if bundle is not None
+        else next(iter(agent_files), "agent.py")
+        if agent_files
+        else "agent.py"
+    )
+
+    # Choose the codegen model — fall back to the diagnosis model
+    effective_codegen_model = codegen_model or model
+
+    # ---- Agentic codegen path ----
+    if agent_files:
+
+        def _agentic_fork(
+            focus: str | None,
+            use_diag: dict | None = None,
+        ) -> dict:
+            return _run_codegen_agentic(
+                agent_files=agent_files,
+                diagnosis=use_diag or diag,
+                model=effective_codegen_model,
+                eval_spec=eval_spec,
+                policy_constraints=policy_constraints,
+                entrypoint_fn=entrypoint_fn,
+                entry_file=_entry_file,
+                focus_area=focus,
+                max_steps=codegen_max_steps,
+            )
+
+        all_results: list[dict] = []
+        if num_candidates <= 1:
+            all_results.append(_agentic_fork(None))
+        else:
+            with ThreadPoolExecutor(max_workers=min(num_candidates, 5)) as pool:
+                futures = []
+                for idx, focus in enumerate(focus_assignments):
+                    is_last = idx == len(focus_assignments) - 1
+                    if is_last and independent_diag:
+                        futures.append(
+                            pool.submit(_agentic_fork, None, independent_diag)
+                        )
+                    else:
+                        futures.append(pool.submit(_agentic_fork, focus))
+                all_results = [f.result() for f in futures]
+
+        has_any_output = any(
+            r.get("updated_code") or r.get("bundle_updates") for r in all_results
+        )
+        if not has_any_output:
+            sp_result = _gen_single_pass()
+            if sp_result.get("updated_code") or sp_result.get("bundle_updates"):
+                return [sp_result]
+            return [
+                {
+                    "analysis": "No candidates produced valid code.",
+                    "suggestions": [],
+                    "updated_code": None,
+                    "method": "failed",
+                    "_debug": [r.get("_debug", {}) for r in all_results],
+                }
+            ]
+        return all_results
+
+    # ---- Legacy single-shot codegen path (no agent_files provided) ----
+
     def _codegen_for_focus(focus: str | None, use_diag: dict | None = None) -> dict:
         effective_diag = use_diag or diag
         effective_suggestions = [
@@ -1143,9 +1352,7 @@ def generate_candidates(
         )
         is_independent = use_diag is not None
 
-        # Determine what came back from codegen
         if isinstance(result, dict):
-            # Bundle mode: file-level or piece-level updates
             return {
                 "analysis": effective_diag.get("root_cause", ""),
                 "suggestions": effective_suggestions,
@@ -1166,7 +1373,6 @@ def generate_candidates(
                 },
             }
 
-        # Single-file mode (result is str or None)
         code = result
         return {
             "analysis": effective_diag.get("root_cause", ""),
@@ -1202,7 +1408,6 @@ def generate_candidates(
                     futures.append(pool.submit(_codegen_for_focus, focus))
             all_results = [f.result() for f in futures]
 
-    # If all codegen forks failed, fall back to single-pass
     has_any_output = any(
         r.get("updated_code") or r.get("bundle_updates") for r in all_results
     )

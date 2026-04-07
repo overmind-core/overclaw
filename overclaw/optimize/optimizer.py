@@ -270,6 +270,11 @@ class Optimizer:
                 task = progress.add_task("  Diagnosing and generating improvements…")
 
                 try:
+                    # Build agent_files for the coding agent: use the
+                    # current best multi-file state, or fall back to the
+                    # single entry file.
+                    _agent_files = self._current_agent_files(current_code)
+
                     candidates = generate_candidates(
                         current_code,
                         case_results=latest_case_results,
@@ -292,6 +297,9 @@ class Optimizer:
                         policy_constraints=self._policy_codegen,
                         entrypoint_fn=self.config.entrypoint_fn,
                         bundle=self._bundle,
+                        agent_files=_agent_files,
+                        codegen_model=getattr(self.config, "codegen_model", ""),
+                        codegen_max_steps=getattr(self.config, "codegen_max_steps", 50),
                     )
                 except Exception as exc:
                     progress.update(task, description=f"  [red]Analyzer error: {exc}")
@@ -1446,6 +1454,33 @@ class Optimizer:
     # ------------------------------------------------------------------
     # Multi-file bundle helpers
     # ------------------------------------------------------------------
+
+    def _current_agent_files(self, current_code: str) -> dict[str, str]:
+        """Return the current file set for the coding agent.
+
+        For multi-file agents, uses ``_best_files``.  For single-file,
+        derives a ``{relative_path: source}`` dict from the entry file.
+        """
+        if self._best_files:
+            # Ensure the entry file has the latest code read from the
+            # working path (which is the source of truth each iteration).
+            result = dict(self._best_files)
+            if self._bundle:
+                result[self._bundle.entry_file] = current_code
+            return result
+
+        # Single-file fallback: derive relative path from the agent path
+        from overclaw.core.registry import project_root_from_agent_file
+
+        pr = project_root_from_agent_file(self.config.agent_path)
+        if pr:
+            try:
+                rel = str(Path(self.config.agent_path).resolve().relative_to(pr))
+            except ValueError:
+                rel = Path(self.config.agent_path).name
+        else:
+            rel = Path(self.config.agent_path).name
+        return {rel: current_code}
 
     def _build_bundle(self) -> AgentBundle | None:
         """Build an ``AgentBundle`` from the current config."""

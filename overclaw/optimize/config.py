@@ -108,6 +108,10 @@ class Config:
     # Multi-file optimization scope: relative paths of files the LLM may
     # modify.  When empty, only the entry file is optimizable.
     optimizable_scope: list[str] = field(default_factory=list)
+    # Coding agent settings: model and step budget for the agentic codegen loop.
+    # When codegen_model is empty, falls back to analyzer_model.
+    codegen_model: str = ""
+    codegen_max_steps: int = 50
 
 
 def _select_backtest_models(console: Console) -> list[str]:

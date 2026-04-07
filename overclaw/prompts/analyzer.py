@@ -73,6 +73,47 @@ Rules:
 - Preserve the original indentation style."""
 
 # ---------------------------------------------------------------------------
+# Agentic codegen instruction (used by the coding agent instead of the
+# single-shot codegen prompt)
+# ---------------------------------------------------------------------------
+
+AGENTIC_CODEGEN_INSTRUCTION = """\
+You are optimizing an AI agent's code based on analysis of its test performance.
+
+## Diagnosis
+
+The following diagnosis describes what is wrong and what changes to make:
+
+```json
+{diagnosis_json}
+```
+
+## Constraints
+
+- The entry function `{entrypoint_fn}` MUST remain callable with its current signature.
+- Do NOT change any evaluation infrastructure, only the agent's logic.
+{policy_constraints_section}
+
+## File context
+
+The entry file is: `{entry_file}`
+{file_listing}
+
+## Task
+
+Read the relevant source files, understand the current implementation, and apply
+the changes described in the diagnosis. Be precise — only change what the
+diagnosis asks for. Verify each edit is correct before moving on.
+{focus_directive}"""
+
+AGENTIC_CODEGEN_FOCUS = (
+    "\n\n**FOCUS**: Your primary changes MUST target **{focus_area}** — "
+    "specifically, {focus_desc}. Apply the diagnosis changes that target "
+    "{focus_area} first, and include secondary changes only if they "
+    "support the primary focus."
+)
+
+# ---------------------------------------------------------------------------
 # Diagnosis prompt
 # ---------------------------------------------------------------------------
 
