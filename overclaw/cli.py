@@ -8,7 +8,7 @@ Commands:
     overclaw agent remove <name>                       Remove a registered agent
     overclaw agent update <name> <module:function>     Update a registered agent's entrypoint
     overclaw agent show <name>                         Show agent registration and pipeline status
-    overclaw setup <name> [--fast]                     Analyze agent and define eval criteria
+    overclaw setup <name> [--data PATH] [--fast]      Analyze agent and define eval criteria
     overclaw optimize <name> [--fast]                  Run the optimization loop
     overclaw sync [name]                               Sync local setup artifacts to Overmind
     overclaw sync-optimize [name]                      Sync local optimize artifacts to Overmind
@@ -216,12 +216,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "Flags:\n"
             "  --fast      Skips all interactive prompts. Requires ANALYZER_MODEL\n"
             f"              and SYNTHETIC_DATAGEN_MODEL set in {overclaw_rel('.env')}.\n"
+            "  --data      JSON seed dataset file or a directory of *.json files.\n"
+            "              Omit this flag to choose in the wizard (or run without seed).\n"
             "  --policy    Path to an existing policy document (.md or .txt).\n"
             "              OverClaw will analyze it against your agent code and\n"
             "              suggest improvements before using it.\n"
             "\n"
             "Examples:\n"
             "  overclaw setup lead-qualification\n"
+            "  overclaw setup lead-qualification --data ./data/cases.json\n"
+            "  overclaw setup lead-qualification --data ./seed_data/\n"
             "  overclaw setup lead-qualification --fast\n"
             "  overclaw setup lead-qualification --policy docs/domain-rules.md\n"
         ),
@@ -244,6 +248,15 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="POLICY_PATH",
         help="path to an existing policy/domain document (.md, .txt)",
+    )
+    setup_p.add_argument(
+        "--data",
+        default=None,
+        metavar="PATH",
+        help=(
+            "path to a JSON seed dataset file or a directory of *.json files "
+            "(optional; wizard can remind you of this flag)"
+        ),
     )
 
     # ── optimize ─────────────────────────────────────────────────────────────
@@ -376,7 +389,12 @@ def main() -> None:
         elif args.command == "setup":
             from overclaw.commands.setup_cmd import main as _setup
 
-            _setup(agent_name=args.agent, fast=args.fast, policy=args.policy)
+            _setup(
+                agent_name=args.agent,
+                fast=args.fast,
+                policy=args.policy,
+                data=args.data,
+            )
 
         elif args.command == "optimize":
             from overclaw.commands.optimize_cmd import main as _optimize

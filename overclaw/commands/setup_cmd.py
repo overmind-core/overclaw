@@ -12,11 +12,14 @@ The setup flow:
 
 Usage:
     overclaw setup <agent-name>
+    overclaw setup <agent-name> --data path/to/seed.json
+    overclaw setup <agent-name> --data path/to/json_dir/
     overclaw setup <agent-name> --fast
 """
 
 import json
 import os
+import shlex
 import signal
 import shutil
 from contextlib import suppress
@@ -245,27 +248,107 @@ def _smoke_test_agent(
         return False, str(exc)
 
 
+def _resolve_seed_json_files(data_arg: str | None, *, console: Console) -> list[Path]:
+    """Resolve ``--data`` to a list of JSON seed files (single file or ``*.json`` in a directory)."""
+    if not (data_arg or "").strip():
+        return []
+    raw = data_arg.strip()
+    p = Path(raw).expanduser()
+    try:
+        p = p.resolve()
+    except OSError as exc:
+        console.print(
+            f"\n  [red]Error:[/red] Could not resolve [bold]--data[/bold] path "
+            f"[cyan]{raw}[/cyan] [dim]({exc})[/dim]"
+        )
+        raise SystemExit(1) from exc
+    if not p.exists():
+        console.print(
+            f"\n  [red]Error:[/red] [bold]--data[/bold] path does not exist: [cyan]{raw}[/cyan]"
+        )
+        raise SystemExit(1)
+    if p.is_file():
+        if p.suffix.lower() != ".json":
+            console.print(
+                f"\n  [red]Error:[/red] [bold]--data[/bold] must be a [bold].json[/bold] file or a "
+                f"directory of JSON files; got [cyan]{p.name}[/cyan]"
+            )
+            raise SystemExit(1)
+        return [p]
+    if p.is_dir():
+        found = sorted(p.glob("*.json"))
+        if not found:
+            console.print(
+                f"  [yellow]Warning:[/yellow] No [bold].json[/bold] files in [cyan]{rel(p)}[/cyan] "
+                "— continuing without seed files from this path."
+            )
+        return found
+    console.print(
+        f"\n  [red]Error:[/red] [bold]--data[/bold] must be a file or directory: [cyan]{raw}[/cyan]"
+    )
+    raise SystemExit(1)
+
+
+def _prompt_seed_data_flag_early(agent_name: str, *, console: Console) -> None:
+    """Explain seed data, ask about ``--data``; if yes, print the command and exit setup."""
+    console.print(
+        "  [dim]It looks like no seed data was provided ([bold]--data[/bold] was not set). "
+        "Seed JSON (real or representative inputs) lets OverClaw smoke-test your agent early, "
+        "shape the evaluation dataset around your domain, and validate or augment cases "
+        "against your policy. Without it, setup relies on synthetic data only (or you can skip "
+        "dataset steps later), which may not match your true payloads or edge cases.[/dim]"
+    )
+    console.print()
+    if not confirm_option(
+        "Do you want to provide seed data using --data?",
+        default=False,
+        console=console,
+    ):
+        return
+    quoted = shlex.quote(agent_name)
+    console.print()
+    console.print(
+        "  [dim]Re-run setup with [bold]--data[/bold] pointing at a JSON file or a directory "
+        "of [bold]*.json[/bold] files:[/dim]"
+    )
+    console.print(
+        f"    [bold cyan]overclaw setup {quoted} --data path/to/cases.json[/bold cyan]"
+    )
+    console.print(
+        f"    [bold cyan]overclaw setup {quoted} --data path/to/dataset_folder/[/bold cyan]"
+    )
+    console.print()
+    console.print(
+        "  [dim]Exiting setup — run the command above when your seed files are ready.[/dim]\n"
+    )
+    raise SystemExit(0)
+
+
 def _run_beginning_smoke_test(
-    agent_path: str, fn_name: str, console: Console, *, fast: bool = False
+    agent_path: str,
+    fn_name: str,
+    console: Console,
+    *,
+    fast: bool = False,
+    data_path: str | None = None,
 ) -> None:
-    """Smoke-test the agent with the first seed case if seed data is available.
+    """Smoke-test the agent with the first seed case when ``--data`` supplies JSON.
 
     Hard-fails (SystemExit 1) when seed data exists but the agent crashes.
-    Silently skips when there is no seed data — end-of-setup will cover it.
+    Skips when ``--data`` is omitted — use ``--data`` for an early smoke check.
     """
-    data_dir = _data_dir(agent_path)
-    console.print(
-        f"  [dim]Looking for seed data in [cyan]{rel(data_dir)}[/cyan]…[/dim]"
-    )
-    existing_json = sorted(data_dir.glob("*.json")) if data_dir.is_dir() else []
+    existing_json = _resolve_seed_json_files(data_path, console=console)
 
     if not existing_json:
         console.print(
-            f"  [dim]No seed data found at [cyan]{rel(data_dir)}[/cyan] — "
-            "skipping pre-setup smoke test. "
-            "Agent will be validated after the dataset is built.[/dim]"
+            "  [dim]Skipping pre-setup smoke test with seed data "
+            "(pass [bold]--data[/bold] with a JSON file or directory of JSON files).[/dim]"
         )
         return
+
+    console.print(
+        f"  [dim]Using seed data from [cyan]{rel(existing_json[0])}[/cyan] for smoke test…[/dim]"
+    )
 
     try:
         cases = load_data(str(existing_json[0]))
@@ -347,7 +430,7 @@ def _run_end_smoke_test(
 
 
 def _data_dir(agent_path: str) -> Path:
-    """Directory where the user's own seed data lives (read-only for setup)."""
+    """Historical default sibling ``data/`` directory (no longer used unless you pass ``--data``)."""
     return Path(agent_path).resolve().parent / "data"
 
 
@@ -417,10 +500,10 @@ def _resolve_datagen_model(console: Console, *, fast: bool = False) -> str:
         )
     return prompt_for_catalog_litellm_model(
         console,
-        select_prompt="   Select model for data generation (number)",
+        select_prompt="  Select model for data generation (number)",
         env_default=None,
         default_model=DEFAULT_DATAGEN_MODEL,
-        no_catalog_prompt="   Enter model for data generation (provider/model)",
+        no_catalog_prompt="  Enter model for data generation (provider/model)",
     )
 
 
@@ -596,19 +679,21 @@ def _run_data_phase(
     console: Console,
     *,
     fast: bool = False,
+    data_path: str | None = None,
 ) -> None:
     """Phase 3: Generate or analyze+augment the test dataset.
 
     This runs after policy is finalized and before eval criteria generation.
-    f"""
+    """
     agent_code = analysis.get("_agent_code_section") or Path(agent_path).read_text()
     description = analysis.get("description", "")
     policy_context = format_for_synthetic_data(policy_data) if policy_data else None
     eval_stub = _build_eval_spec_stub(analysis, policy_data)
 
-    data_dir = _data_dir(agent_path)
-    existing_json = sorted(data_dir.glob("*.json")) if data_dir.is_dir() else []
-    has_seed_data = bool(existing_json)
+    seed_files: list[Path] = []
+    if (data_path or "").strip():
+        seed_files = _resolve_seed_json_files(data_path.strip(), console=console)
+    has_seed_data = bool(seed_files)
 
     # ── Fast mode ──────────────────────────────────────────────────────────
     if fast:
@@ -620,7 +705,7 @@ def _run_data_phase(
             agent_name,
         )
         if has_seed_data:
-            seed_cases = load_data(str(existing_json[0]))
+            seed_cases = load_data(str(seed_files[0]))
             console.print(
                 f"  [dim]Seed data found ({len(seed_cases)} cases)"
                 " — copying to setup_spec/dataset.json[/dim]"
@@ -641,7 +726,7 @@ def _run_data_phase(
 
     # ── Interactive mode ───────────────────────────────────────────────────
     if has_seed_data:
-        seed_path = existing_json[0]
+        seed_path = seed_files[0]
         seed_data = load_data(str(seed_path))
         console.print(
             f"  [bold {BRAND}]Seed data found[/bold {BRAND}]"
@@ -738,8 +823,10 @@ def _run_data_phase(
         )
 
     else:
-        # No seed data at all
-        console.print("  [dim]No seed data found.[/dim]")
+        # No seed files from --data / empty directory / user skipped seed path
+        console.print(
+            "  [dim]No seed data in use — you can generate a synthetic dataset or skip.[/dim]"
+        )
         console.print()
         if not confirm_option(
             "Generate a synthetic dataset from scratch?", default=True, console=console
@@ -862,7 +949,7 @@ def _handle_no_data_path(
         "  [dim]The number of user personas determines how many distinct user types, roles, or scenarios the generated test cases will represent—for example, SME, GC, end user, or distinct legal/commercial stances.[/dim]"
     )
     num_personas = IntPrompt.ask(
-        "  How many usersity? (More = broader coverage)",
+        "  How many user personas? (More = broader coverage)",
         default=5,
         show_default=True,
         console=console,
@@ -958,20 +1045,16 @@ _PROVIDER_API_KEY: dict[str, str] = {
 
 
 def _describe_configured_agent_llm_provider(existing: dict[str, str]) -> str | None:
-    """Infer which LLM provider the agent env targets from keys only (no secret values)."""
+    """Summarize LLM provider from env keys and ``ANALYZER_MODEL`` (no secret values)."""
     oai_key = (existing.get("OPENAI_API_KEY") or "").strip()
     ant_key = (existing.get("ANTHROPIC_API_KEY") or "").strip()
     base_url = (existing.get("OPENAI_BASE_URL") or "").strip()
     analyzer = (existing.get("ANALYZER_MODEL") or "").strip()
 
+    label: str | None = None
+
     if base_url and oai_key:
         label = "Other (OpenAI-compatible SDK, custom base URL)"
-    elif oai_key and ant_key:
-        label = "OpenAI and Anthropic"
-    elif ant_key:
-        label = "Anthropic"
-    elif oai_key:
-        label = "OpenAI"
     elif analyzer and "/" in analyzer:
         prefix, _, _rest = analyzer.partition("/")
         pl = prefix.lower()
@@ -981,9 +1064,16 @@ def _describe_configured_agent_llm_provider(existing: dict[str, str]) -> str | N
             label = "OpenAI"
         else:
             label = f"Provider {prefix}"
-    elif analyzer:
-        return f"Analyzer model: {analyzer}"
-    else:
+    elif oai_key and ant_key:
+        label = "OpenAI and Anthropic"
+    elif ant_key:
+        label = "Anthropic"
+    elif oai_key:
+        label = "OpenAI"
+
+    if label is None:
+        if analyzer:
+            return f"Analyzer model: {analyzer}"
         return None
 
     if analyzer:
@@ -1107,7 +1197,7 @@ def _collect_agent_provider_config(agent_name: str, console: Console) -> None:
                 "\n  [dim]Enter the base URL for your OpenAI-compatible endpoint "
                 "(e.g. https://api.example.com/v1).[/dim]"
             )
-            base_url = Prompt.ask("   OPENAI_BASE_URL").strip()
+            base_url = Prompt.ask("  OPENAI_BASE_URL").strip()
             console.print("  [dim]Enter the API key for your provider.[/dim]")
             key = read_api_key_masked("OPENAI_API_KEY")
             _write_agent_env(
@@ -1145,6 +1235,7 @@ def main(
     agent_name: str,
     fast: bool = False,
     policy: str | None = None,
+    data: str | None = None,
 ) -> None:
     load_overclaw_dotenv()
 
@@ -1168,6 +1259,11 @@ def main(
         )
 
     agent_path, fn_name = resolve_agent(agent_name)
+
+    data_opt = (data or "").strip() or None
+    if not fast and not data_opt:
+        console.print()
+        _prompt_seed_data_flag_early(agent_name, console=console)
 
     # Ask which provider the agent uses and save its credentials to the agent .env.
     # Skip interactive prompt in fast mode; always load whatever is already on disk.
@@ -1209,7 +1305,9 @@ def main(
 
     console.print()
     console.print(Rule(style="dim"))
-    _run_beginning_smoke_test(agent_path, fn_name, console, fast=fast)
+    _run_beginning_smoke_test(
+        agent_path, fn_name, console, fast=fast, data_path=data_opt
+    )
 
     if fast:
         raw_model = os.getenv("ANALYZER_MODEL", "").strip()
@@ -1256,10 +1354,10 @@ def main(
             ):
                 model = prompt_for_catalog_litellm_model(
                     console,
-                    select_prompt="   Select model for agent analysis (number)",
+                    select_prompt="  Select model for agent analysis (number)",
                     env_default=model,
                     default_model=DEFAULT_ANALYZER_MODEL,
-                    no_catalog_prompt="   Enter model for analysis (provider/model)",
+                    no_catalog_prompt="  Enter model for analysis (provider/model)",
                 )
         else:
             console.print(
@@ -1268,10 +1366,10 @@ def main(
             )
             model = prompt_for_catalog_litellm_model(
                 console,
-                select_prompt="   Select model for agent analysis (number)",
+                select_prompt="  Select model for agent analysis (number)",
                 env_default=None,
                 default_model=DEFAULT_ANALYZER_MODEL,
-                no_catalog_prompt="   Enter model for analysis (provider/model)",
+                no_catalog_prompt="  Enter model for analysis (provider/model)",
             )
         _pin_model_to_agent_env(
             model, "ANALYZER_MODEL", agent_env_path(agent_name), agent_name
@@ -1333,7 +1431,14 @@ def main(
             )
         )
         _run_data_phase(
-            analysis, policy_data, agent_path, agent_name, model, console, fast=True
+            analysis,
+            policy_data,
+            agent_path,
+            agent_name,
+            model,
+            console,
+            fast=True,
+            data_path=data_opt,
         )
 
         spec = generate_spec_from_proposal(analysis, policy_data=policy_data)
@@ -1447,7 +1552,15 @@ def main(
             border_style=BRAND,
         )
     )
-    _run_data_phase(analysis, policy_data, agent_path, agent_name, model, console)
+    _run_data_phase(
+        analysis,
+        policy_data,
+        agent_path,
+        agent_name,
+        model,
+        console,
+        data_path=data_opt,
+    )
 
     # ---- Phase 4: Evaluation Criteria ----
     console.print()

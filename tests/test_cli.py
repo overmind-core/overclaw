@@ -140,6 +140,7 @@ class TestBuildParser:
         assert args.agent == "my-agent"
         assert args.fast is False
         assert args.policy is None
+        assert args.data is None
 
     def test_setup_with_fast(self):
         parser = _build_parser()
@@ -150,6 +151,11 @@ class TestBuildParser:
         parser = _build_parser()
         args = parser.parse_args(["setup", "my-agent", "--policy", "/path/to/doc.md"])
         assert args.policy == "/path/to/doc.md"
+
+    def test_setup_with_data(self):
+        parser = _build_parser()
+        args = parser.parse_args(["setup", "my-agent", "--data", "/path/to/seed.json"])
+        assert args.data == "/path/to/seed.json"
 
     def test_setup_missing_agent(self):
         parser = _build_parser()
@@ -163,6 +169,7 @@ class TestBuildParser:
         out = capsys.readouterr().out
         assert "setup" in out.lower()
         assert "--fast" in out
+        assert "--data" in out
 
     # ── optimize ──────────────────────────────────────────────────────────
 
@@ -316,11 +323,12 @@ class TestMainDispatch:
             mock_args.agent = "my-agent"
             mock_args.fast = True
             mock_args.policy = None
+            mock_args.data = None
             mock_parser.return_value.parse_args.return_value = mock_args
             with patch("overclaw.commands.setup_cmd.main") as mock_fn:
                 main()
                 mock_fn.assert_called_once_with(
-                    agent_name="my-agent", fast=True, policy=None
+                    agent_name="my-agent", fast=True, policy=None, data=None
                 )
 
     def test_optimize_dispatches(self):

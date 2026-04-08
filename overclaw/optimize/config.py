@@ -122,14 +122,14 @@ def _select_backtest_models(console: Console) -> list[str]:
         defaults = get_default_models_for_provider(provider)
         default_indices = [str(i + 1) for i, m in enumerate(models) if m in defaults]
 
-        console.print(f"\n   [bold]{provider.title()}[/bold]")
+        console.print(f"\n  [bold]{provider.title()}[/bold]")
         for i, name in enumerate(models, 1):
             tag = " [dim](default)[/dim]" if name in defaults else ""
-            console.print(f"     [{i}] {name}{tag}")
+            console.print(f"    [{i}] {name}{tag}")
 
         raw = (
             Prompt.ask(
-                "   Select models (comma-separated numbers, 'all', or 'none')",
+                "  Select models (comma-separated numbers, 'all', or 'none')",
                 default=",".join(default_indices),
             )
             .strip()
@@ -316,7 +316,7 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
     console.print(Rule(style="dim"))
     console.print(Rule("[bold]Analyzer Model[/bold]", style=BRAND))
     console.print(
-        "   [dim]The analyzer model diagnoses failures and generates improvements.[/dim]"
+        "  [dim]The analyzer model diagnoses failures and generates improvements.[/dim]"
     )
 
     env_analyzer = os.getenv("ANALYZER_MODEL", "").strip()
@@ -332,21 +332,21 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
         else:
             cfg.analyzer_model = prompt_for_catalog_litellm_model(
                 console,
-                select_prompt="   Select analyzer model (number)",
+                select_prompt="  Select analyzer model (number)",
                 env_default=_analyzer_default_from_env(),
                 default_model=DEFAULT_ANALYZER_MODEL,
-                no_catalog_prompt="   Enter analyzer model",
+                no_catalog_prompt="  Enter analyzer model",
             )
     else:
         console.print(
-            f"   [yellow]No ANALYZER_MODEL found in {overclaw_rel('.env')}[/yellow]"
+            f"  [yellow]No ANALYZER_MODEL found in {overclaw_rel('.env')}[/yellow]"
         )
         cfg.analyzer_model = prompt_for_catalog_litellm_model(
             console,
-            select_prompt="   Select analyzer model (number)",
+            select_prompt="  Select analyzer model (number)",
             env_default=_analyzer_default_from_env(),
             default_model=DEFAULT_ANALYZER_MODEL,
-            no_catalog_prompt="   Enter analyzer model",
+            no_catalog_prompt="  Enter analyzer model",
         )
 
     # ---- LLM-as-Judge ----
@@ -354,7 +354,7 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
     console.print(Rule(style="dim"))
     console.print(Rule("[bold]Evaluation Settings[/bold]", style=BRAND))
     console.print(
-        "   [dim]LLM-as-Judge adds semantic quality scoring alongside mechanical matching.[/dim]"
+        "  [dim]LLM-as-Judge adds semantic quality scoring alongside mechanical matching.[/dim]"
     )
     use_judge = confirm_option(
         "Enable LLM-as-Judge scoring? (adds ~10% eval cost)",
@@ -363,7 +363,7 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
     )
     if use_judge:
         console.print(
-            "   [dim]Using the analyzer model for judging. "
+            "  [dim]Using the analyzer model for judging. "
             f"You can also set LLM_JUDGE_MODEL in {overclaw_rel('.env')}.[/dim]"
         )
         judge_env = os.getenv("LLM_JUDGE_MODEL", "").strip()
@@ -377,26 +377,26 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
     console.print(Rule(style="dim"))
     console.print(Rule("[bold]Optimization Settings[/bold]", style=BRAND))
     console.print(
-        "   [dim]Each iteration: improve from the current best agent, evaluate "
+        "  [dim]Each iteration: improve from the current best agent, evaluate "
         "candidates on the same dataset and criteria, promote the best accepted "
         "change, then repeat—until this many rounds or early stopping.[/dim]"
     )
-    cfg.iterations = IntPrompt.ask("   Optimization iterations", default=5)
+    cfg.iterations = IntPrompt.ask("  Optimization iterations", default=5)
     console.print(
-        "   [dim]Same eval goal for every variant; parallel passes bias edits toward "
+        "  [dim]Same eval goal for every variant; parallel passes bias edits toward "
         "tools, core logic, input handling, then system prompt (broader if N is larger). "
         "If N≥3, the last uses a second diagnosis for diversity. Higher N costs more "
         "but improves best-of-N odds.[/dim]"
     )
     cfg.candidates_per_iteration = IntPrompt.ask(
-        "   Candidates per iteration (best-of-N)", default=3
+        "  Candidates per iteration (best-of-N)", default=3
     )
 
     cfg.parallel = confirm_option(
         "Run agent in parallel?", default=True, console=console
     )
     if cfg.parallel:
-        cfg.max_workers = IntPrompt.ask("   Max parallel workers", default=5)
+        cfg.max_workers = IntPrompt.ask("  Max parallel workers", default=5)
 
     # ---- Advanced settings ----
     console.print()
@@ -404,24 +404,22 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
         console.print()
         console.print(Rule("[bold]Advanced[/bold]", style="dim"))
         cfg.runs_per_eval = IntPrompt.ask(
-            "   Runs per evaluation (for stability, 1=fast, 2-3=robust)", default=1
+            "  Runs per evaluation (for stability, 1=fast, 2-3=robust)", default=1
         )
         console.print(
-            "   [dim]Regression threshold: max fraction of cases that can regress.[/dim]"
+            "  [dim]Regression threshold: max fraction of cases that can regress.[/dim]"
         )
-        threshold_str = Prompt.ask("   Regression threshold (0.0-1.0)", default="0.2")
+        threshold_str = Prompt.ask("  Regression threshold (0.0-1.0)", default="0.2")
         try:
             cfg.regression_threshold = float(threshold_str)
         except ValueError:
             cfg.regression_threshold = 0.2
 
         console.print(
-            "   [dim]Holdout ratio: fraction of data withheld from the optimizer "
+            "  [dim]Holdout ratio: fraction of data withheld from the optimizer "
             "to detect overfitting.[/dim]"
         )
-        holdout_str = Prompt.ask(
-            "   Holdout ratio (0.0-0.4, 0=disabled)", default="0.2"
-        )
+        holdout_str = Prompt.ask("  Holdout ratio (0.0-0.4, 0=disabled)", default="0.2")
         try:
             cfg.holdout_ratio = max(0.0, min(0.4, float(holdout_str)))
         except ValueError:
@@ -434,22 +432,20 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
         )
 
         console.print(
-            "   [dim]Early stopping patience: stop after N consecutive "
+            "  [dim]Early stopping patience: stop after N consecutive "
             "iterations without improvement.[/dim]"
         )
-        patience_str = Prompt.ask(
-            "   Early stopping patience (0=disabled)", default="3"
-        )
+        patience_str = Prompt.ask("  Early stopping patience (0=disabled)", default="3")
         try:
             cfg.early_stopping_patience = max(0, int(patience_str))
         except ValueError:
             cfg.early_stopping_patience = 3
 
         console.print(
-            "   [dim]Diagnosis case fraction: fraction of training cases shown "
+            "  [dim]Diagnosis case fraction: fraction of training cases shown "
             "to the analyzer (lower = less overfitting risk).[/dim]"
         )
-        fraction_str = Prompt.ask("   Diagnosis case fraction (0.5-1.0)", default="0.7")
+        fraction_str = Prompt.ask("  Diagnosis case fraction (0.5-1.0)", default="0.7")
         try:
             cfg.diagnosis_case_fraction = max(0.5, min(1.0, float(fraction_str)))
         except ValueError:

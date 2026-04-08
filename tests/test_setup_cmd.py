@@ -15,7 +15,9 @@ from overclaw.commands.setup_cmd import (
     _clear_existing_eval_spec,
     _data_dir,
     _display_proposed_criteria,
+    _prompt_seed_data_flag_early,
     _resolve_datagen_model,
+    _resolve_seed_json_files,
     _run_beginning_smoke_test,
     _run_end_smoke_test,
     _save_and_finish,
@@ -240,16 +242,63 @@ class TestSmokeTestAgent:
         assert "wrong input" in err2
 
 
+class TestPromptSeedDataFlagEarly:
+    @patch("overclaw.commands.setup_cmd.confirm_option", return_value=True)
+    def test_yes_prints_command_and_exits_zero(self, _mock_confirm):
+        console = MagicMock()
+        with pytest.raises(SystemExit) as exc:
+            _prompt_seed_data_flag_early("my-agent", console=console)
+        assert exc.value.code == 0
+
+    @patch("overclaw.commands.setup_cmd.confirm_option", return_value=False)
+    def test_no_does_not_exit(self, _mock_confirm):
+        console = MagicMock()
+        _prompt_seed_data_flag_early("my-agent", console=console)
+
+
+class TestResolveSeedJsonFiles:
+    def test_none_returns_empty(self):
+        console = MagicMock()
+        assert _resolve_seed_json_files(None, console=console) == []
+        assert _resolve_seed_json_files("", console=console) == []
+        assert _resolve_seed_json_files("   ", console=console) == []
+
+    def test_single_json_file(self, tmp_path):
+        f = tmp_path / "a.json"
+        f.write_text("[]")
+        console = MagicMock()
+        assert _resolve_seed_json_files(str(f), console=console) == [f.resolve()]
+
+    def test_directory_glob(self, tmp_path):
+        (tmp_path / "z.json").write_text("[]")
+        (tmp_path / "a.json").write_text("[]")
+        console = MagicMock()
+        got = _resolve_seed_json_files(str(tmp_path), console=console)
+        assert [p.name for p in got] == ["a.json", "z.json"]
+
+    def test_missing_path_exits(self, tmp_path):
+        console = MagicMock()
+        with pytest.raises(SystemExit):
+            _resolve_seed_json_files(str(tmp_path / "nope.json"), console=console)
+
+    def test_non_json_file_exits(self, tmp_path):
+        f = tmp_path / "x.txt"
+        f.write_text("hi")
+        console = MagicMock()
+        with pytest.raises(SystemExit):
+            _resolve_seed_json_files(str(f), console=console)
+
+
 class TestRunBeginningSmokTest:
-    def test_no_seed_dir_skips(self, tmp_path):
-        """When no data/ directory exists the test is skipped, no exit."""
+    def test_no_data_flag_skips(self, tmp_path):
+        """Without --data the pre-setup smoke test does not load seed JSON."""
         agent = tmp_path / "agent.py"
         agent.write_text("def run(x): return {}\n")
         console = MagicMock()
         _run_beginning_smoke_test(str(agent), "run", console)
-        # Should not raise; first call should mention the data path being checked
         first_call_args = console.print.call_args_list[0][0][0]
-        assert "data" in first_call_args
+        assert "Skipping" in first_call_args
+        assert "--data" in first_call_args
 
     def test_empty_seed_file_skips(self, tmp_path):
         data_dir = tmp_path / "data"
@@ -258,7 +307,7 @@ class TestRunBeginningSmokTest:
         agent = tmp_path / "agent.py"
         agent.write_text("def run(x): return {}\n")
         console = MagicMock()
-        _run_beginning_smoke_test(str(agent), "run", console)
+        _run_beginning_smoke_test(str(agent), "run", console, data_path=str(data_dir))
         # Should mention the file name in the skip message
         all_output = " ".join(str(c) for c in console.print.call_args_list)
         assert "cases.json" in all_output
@@ -272,7 +321,7 @@ class TestRunBeginningSmokTest:
         agent = tmp_path / "agent.py"
         agent.write_text("def run(x): return {'y': x.get('x')}\n")
         console = MagicMock()
-        _run_beginning_smoke_test(str(agent), "run", console)
+        _run_beginning_smoke_test(str(agent), "run", console, data_path=str(data_dir))
         # Should not raise
 
     def test_failure_exits(self, tmp_path):
@@ -285,7 +334,9 @@ class TestRunBeginningSmokTest:
         agent.write_text("def run(x): raise RuntimeError('agent broken')\n")
         console = MagicMock()
         with pytest.raises(SystemExit) as exc_info:
-            _run_beginning_smoke_test(str(agent), "run", console)
+            _run_beginning_smoke_test(
+                str(agent), "run", console, data_path=str(data_dir)
+            )
         assert exc_info.value.code == 1
 
     def test_unreadable_seed_file_skips(self, tmp_path):
@@ -296,7 +347,7 @@ class TestRunBeginningSmokTest:
         agent.write_text("def run(x): return {}\n")
         console = MagicMock()
         # Should not raise — bad JSON is treated as unreadable, silently skipped
-        _run_beginning_smoke_test(str(agent), "run", console)
+        _run_beginning_smoke_test(str(agent), "run", console, data_path=str(data_dir))
 
     def test_seed_case_without_input_key(self, tmp_path):
         """Cases stored as flat dicts (no 'input' wrapper) should still work."""
@@ -308,7 +359,7 @@ class TestRunBeginningSmokTest:
         agent = tmp_path / "agent.py"
         agent.write_text("def run(x): return {'ok': True}\n")
         console = MagicMock()
-        _run_beginning_smoke_test(str(agent), "run", console)
+        _run_beginning_smoke_test(str(agent), "run", console, data_path=str(data_dir))
 
 
 class TestRunEndSmokeTest:

@@ -2,7 +2,7 @@
 
 import re
 
-from agents.agent4.original_agent.data import (
+from examples.agents.agent4.original_agent.data import (
     COMPARABLE_SALES,
     DEFAULT_MARKET,
     MARKET_TRENDS,

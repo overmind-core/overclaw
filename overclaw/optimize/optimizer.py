@@ -38,7 +38,7 @@ from rich.progress import (
 
 from overclaw.utils.code import AgentBundle
 from overclaw.core.paths import agent_experiments_dir
-from overclaw.utils.display import BRAND, make_spinner_progress
+from overclaw.utils.display import BRAND, make_spinner_progress, rel
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
@@ -1774,6 +1774,18 @@ class Optimizer:
     # Code update animation
     # ------------------------------------------------------------------
 
+    def _applying_changes_panel_title(self) -> Text:
+        """Title for the diff panel: file whose content is being shown."""
+        if self._bundle and self._bundle.is_multi_file():
+            label = self._bundle.entry_file
+        else:
+            label = rel(Path(self.config.agent_path))
+        title = Text()
+        title.append("Applying changes")
+        title.append(" · ")
+        title.append(label, style="cyan")
+        return title
+
     def _animate_code_update(self, old_code: str, new_code: str) -> None:
         old_lines = old_code.splitlines(keepends=True)
         new_lines = new_code.splitlines(keepends=True)
@@ -1819,22 +1831,21 @@ class Optimizer:
 
         rendered = Text()
         delay = max(0.03, min(0.12, 6.0 / len(visible)))
+        panel_title = self._applying_changes_panel_title()
 
         with Live(
-            Panel(rendered, title="Applying changes", border_style=BRAND),
+            Panel(rendered, title=panel_title, border_style=BRAND),
             console=self.console,
             refresh_per_second=30,
         ) as live:
             for kind, line in visible:
                 if kind == "remove":
-                    rendered.append(f"- {line}\n", style="red strikethrough")
+                    rendered.append(f"- {line}\n", style="bold red")
                 elif kind == "add":
                     rendered.append(f"+ {line}\n", style="bold green")
                 else:
                     rendered.append(f"  {line}\n", style="dim")
-                live.update(
-                    Panel(rendered, title="Applying changes", border_style=BRAND)
-                )
+                live.update(Panel(rendered, title=panel_title, border_style=BRAND))
                 time.sleep(delay)
 
         self.console.print()

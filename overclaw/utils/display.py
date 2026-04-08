@@ -165,7 +165,7 @@ def select_option(
     the interactive menu (e.g. non-TTY / CI).
     """
     if console and title:
-        console.print(f"\n   [dim]{title}[/dim]")
+        console.print(f"\n  [dim]{title}[/dim]")
 
     menu = TerminalMenu(
         options,
@@ -179,7 +179,7 @@ def select_option(
     if idx is None:
         raise SystemExit(0)
     if console:
-        console.print(f"   [bold]{options[idx]}[/bold]")
+        console.print(f"  [bold]{options[idx]}[/bold]")
         console.print()
     return idx
 
@@ -192,7 +192,7 @@ def confirm_option(
 ) -> bool:
     """Yes/No confirmation via arrow-key menu. Returns ``True`` for Yes."""
     if console:
-        console.print(f"\n   [dim]{prompt}[/dim]")
+        console.print(f"\n  [dim]{prompt}[/dim]")
 
     choices = ["Yes", "No"]
     menu = TerminalMenu(
@@ -207,7 +207,7 @@ def confirm_option(
     if idx is None:
         raise SystemExit(0)
     if console:
-        console.print(f"   [bold]{choices[idx]}[/bold]")
+        console.print(f"  [bold]{choices[idx]}[/bold]")
         console.print()
     return idx == 0
 
