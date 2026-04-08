@@ -196,8 +196,14 @@ class TestSetupCmdMainInteractive:
         # select_option calls: provider pick (index 1 = Anthropic),
         # then policy mode pick (index 1 = auto-generate from code).
         mock_select.side_effect = [1, 1]
-        # confirm_option calls: satisfied with policy, satisfied with criteria.
-        mock_confirm.return_value = True
+
+        # First confirm is seed-data (--data); decline so setup continues. Later: policy & criteria.
+        def _confirm_side_effect(prompt: str, **kwargs):
+            if "seed data" in prompt.lower() and "--data" in prompt:
+                return False
+            return True
+
+        mock_confirm.side_effect = _confirm_side_effect
 
         monkeypatch.delenv("ANALYZER_MODEL", raising=False)
         monkeypatch.chdir(tmp_path)

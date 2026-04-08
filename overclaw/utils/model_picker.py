@@ -18,7 +18,7 @@ def prompt_for_catalog_litellm_model(
     select_prompt: str = "",
     env_default: str | None = None,
     default_model: str | None = None,
-    no_catalog_prompt: str = "   Enter model (provider/model)",
+    no_catalog_prompt: str = "  Enter model (provider/model)",
 ) -> str:
     """First ask which provider, then which model; return the chosen ``provider/model`` id.
 

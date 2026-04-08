@@ -4,9 +4,9 @@ import json
 
 from overclaw.core.tracer import call_llm, call_tool
 
-from agents.agent4.original_agent.config import MODEL, SYSTEM_PROMPT, TOOLS
-from agents.agent4.original_agent.parsing import format_input, parse_output
-from agents.agent4.original_agent.tools_impl import TOOL_FUNCTIONS
+from examples.agents.agent4.original_agent.config import MODEL, SYSTEM_PROMPT, TOOLS
+from examples.agents.agent4.original_agent.parsing import format_input, parse_output
+from examples.agents.agent4.original_agent.tools_impl import TOOL_FUNCTIONS
 
 
 def run(input_data: dict) -> dict:
