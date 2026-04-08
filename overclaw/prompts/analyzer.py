@@ -23,11 +23,23 @@ performance and tool usage to produce precise, actionable diagnoses.
 FOCUS_LABELS = {
     "tool_description": "improving tool parameter descriptions and schemas",
     "agent_logic": (
-        "modifying the {entrypoint_fn}() function (tool call ordering, "
-        "post-processing, validation, retry logic)"
+        "modifying the {entrypoint_fn}() function (control flow, "
+        "orchestration, validation, pre/post-processing, retry logic)"
     ),
     "format_input": "restructuring how input data is formatted for the LLM",
     "system_prompt": "refining system prompt instructions (but keep it concise)",
+    "tool_implementation": (
+        "improving tool execution logic, fixing tool functions in supporting "
+        "modules, adding data processing helpers"
+    ),
+    "helper_module": (
+        "adding or modifying utility functions in supporting files "
+        "(data validation, parsing, transformation)"
+    ),
+    "error_handling": (
+        "adding retry logic, fallback strategies, input validation, "
+        "and graceful error recovery"
+    ),
 }
 
 DIAGNOSIS_FOCUS_DIRECTIVE = (
@@ -92,18 +104,38 @@ The following diagnosis describes what is wrong and what changes to make:
 
 - The entry function `{entrypoint_fn}` MUST remain callable with its current signature.
 - Do NOT change any evaluation infrastructure, only the agent's logic.
+- Do NOT hardcode responses for specific test inputs or patterns.
+- Do NOT add post-processing that recomputes numeric output fields using a
+  formula (e.g., value = avg_price * sqft) and overwrites the LLM's output.
+  The LLM often produces correct values through judgment (anchoring on
+  assessed values, adjusting for conditions, etc.). A mechanical formula will
+  destroy those correct outputs. Improve prompt instructions instead.
+- Prefer structural improvements (new helpers, better data processing) over
+  adding conditional branches.
 {policy_constraints_section}
 
 ## File context
 
 The entry file is: `{entry_file}`
+
+### Files in this agent
 {file_listing}
+
+### Import relationships
+{import_graph}
 
 ## Task
 
-Read the relevant source files, understand the current implementation, and apply
-the changes described in the diagnosis. Be precise — only change what the
-diagnosis asks for. Verify each edit is correct before moving on.
+1. Start by reading the entry file and any supporting files relevant to the
+   diagnosis. Understand the codebase architecture before making changes.
+2. Apply the changes described in the diagnosis.
+3. **Critically**: check whether your changes require corresponding updates in
+   other files (updated imports, changed function signatures, new helpers, etc.).
+4. If the diagnosis mentions tool implementation issues, find and fix the actual
+   tool functions — they may be in supporting modules, not just the entry file.
+5. If adding a helper function would be cleaner than inline logic, create it in
+   the appropriate module.
+6. Verify each edit is correct before moving on.
 {focus_directive}"""
 
 AGENTIC_CODEGEN_FOCUS = (
@@ -137,6 +169,20 @@ for each optimizable component:
 {component_lines}
 
 Prioritize your diagnosis toward the highest-impact components above.\
+"""
+
+MULTI_FILE_AWARENESS_SECTION = """\
+
+## Multi-File Architecture
+
+This agent spans multiple files. When diagnosing issues:
+- Tool implementation bugs may live in supporting modules, not the entry file.
+- Data processing issues may require changes to helper functions in other files.
+- Consider whether the fix belongs in the entry file or a supporting module.
+- Propose changes to the SPECIFIC file where the code lives.
+- If a new utility function would improve the code, suggest which file it belongs in.
+- When targeting **tool_implementation** or **helper_module**, always specify the \
+exact file path in the ``files`` field of your change instructions.
 """
 
 # ---------------------------------------------------------------------------
@@ -206,41 +252,55 @@ derived from the test data.
 empty-field defaults) is fine. Post-processing that SUBSTITUTES hardcoded decisions \
 for the LLM's analysis (e.g., "if X then set field to Y") is overfitting.
 
-2. **DO NOT TAMPER WITH THE AGENT PIPELINE (CRITICAL)** — The agent's existing \
-call_llm → tool_calls → call_llm loop is the pipeline. You must NOT:
-   - Inject, fabricate, or synthetically insert tool calls outside that loop.
-   - Inject synthetic "user" or "assistant" messages into the conversation after \
-the loop finishes (e.g., adding a "summary" user message to force re-scoring).
-   - Add extra call_llm calls after the main loop to "re-evaluate" or "re-score".
-   - Add code that tracks tool results in order to build post-hoc scoring prompts.
-   - Pre-call tools before the LLM loop and stitch results into the conversation.
-   - Add helper functions (e.g., _inject_tool_call, _get_called_tools) that \
-manipulate the message list outside the normal LLM interaction loop.
-   If the LLM isn't calling a tool or isn't scoring correctly, fix the \
-**system prompt** or **tool descriptions** so it behaves correctly on its own. \
-The LLM must make all decisions organically through its normal tool-calling loop.
+2. **NO EVALUATION GAMING (CRITICAL)** — Do NOT game the evaluation system:
+   - Do NOT fabricate or inject synthetic tool calls outside the agent's loop.
+   - Do NOT inject synthetic "user" or "assistant" messages to trick scoring.
+   - Do NOT add extra call_llm calls solely to "re-score" or "re-evaluate" \
+after the main loop.
+   - Do NOT pre-call tools before the LLM loop and stitch results into the \
+conversation to bypass the agent's natural decision-making.
+   However, you ARE encouraged to make genuine structural improvements:
+   - Adding helper functions for data processing, validation, and transformation.
+   - Improving tool implementation logic in supporting modules.
+   - Adding pre-processing that enriches input data before the LLM sees it.
+   - Adding post-processing that validates and normalizes output structure.
+   - Improving error handling and retry logic.
 
-3. **PROMPT BLOAT** — The system prompt is already {prompt_char_count} chars. \
+3. **NO DETERMINISTIC OVERRIDE OF LLM OUTPUT (CRITICAL)** — Do NOT add \
+post-processing that recomputes numeric output fields using a formula \
+(e.g., computing estimated_value = avg_comp_price * sqft) and unconditionally \
+overwriting the LLM's output. The LLM often produces correct values through \
+judgment — anchoring on assessed values, adjusting for property condition, \
+market context, etc. A mechanical formula will destroy those correct outputs. \
+Instead, improve the **system prompt instructions** to guide the LLM toward \
+better reasoning. Post-processing for **validation** (range checks, ordering \
+enforcement, type coercion) is fine — post-processing that **substitutes a \
+formula for the LLM's analysis** is harmful.
+
+4. **PROMPT BLOAT** — The system prompt is already {prompt_char_count} chars. \
 If the system prompt has grown significantly from the original, consider \
 SIMPLIFYING it rather than piling on more rules. Prompt changes are fine when \
 they add genuinely missing instructions, but avoid case-specific decision rules.
 
-4. **CHANGE PRIORITY** — Prefer changes in this order, but use your judgment — \
-combining changes across multiple targets is fine when they reinforce each other:
+5. **CHANGE PRIORITY** — Consider changes across the full codebase. Combine \
+changes across multiple targets when they reinforce each other:
    a. **Tool descriptions** — improve parameter descriptions, add constraints, \
 clarify expected values.
-   b. **format_input** — restructure how input data is presented to the LLM.
-   c. **System prompt** — add or clarify instructions that help the LLM make \
+   b. **Tool implementation** — fix bugs or improve logic in tool functions \
+(these may live in supporting modules, not the entry file).
+   c. **format_input** — restructure how input data is presented to the LLM.
+   d. **System prompt** — add or clarify instructions that help the LLM make \
 better decisions. Avoid case-specific rules.
-   d. **Agent logic** — ONLY for lightweight changes: enforce tool call ordering \
-within the existing loop, add output validation/normalization. Do NOT add new \
-helper functions, do NOT add code that manipulates the message list, do NOT add \
-extra LLM calls.
-   e. **Model** — only if the current model clearly lacks capability.
+   e. **Agent logic** — improve orchestration, add validation, error handling, \
+helper functions for data processing. Keep changes purposeful and general.
+   f. **Helper modules** — add or modify utility functions in supporting files.
+   g. **Model** — only if the current model clearly lacks capability.
+   Prefer structural improvements (new functions, better processing pipelines) \
+over adding conditional branches.
 
-5. **CONSERVATISM** — Suggest 1–3 targeted changes, not a complete rewrite.
+6. **CONSERVATISM** — Suggest 1–4 targeted changes, not a complete rewrite.
 
-6. **POLICY COMPLIANCE** — If an Agent Policy section is provided above, \
+7. **POLICY COMPLIANCE** — If an Agent Policy section is provided above, \
 ensure proposed changes align with the stated decision rules and constraints. \
 When diagnosing failures, check whether the agent violated policy rules — \
 policy violations are high-priority fixes.
@@ -262,7 +322,7 @@ Produce a JSON diagnosis:
   ],
   "changes": [
     {{
-      "target": "system_prompt|tool_description|format_input|agent_logic|model",
+      "target": "system_prompt|tool_description|format_input|agent_logic|tool_implementation|helper_module|error_handling|model",
       "action": "<specific instruction: what to add/remove/modify>",
       "rationale": "<why this will help>",
       "files": ["<relative path(s) of file(s) affected>"]
@@ -309,29 +369,32 @@ supporting changes (e.g., a prompt clarification that complements a tool \
 description fix) if they naturally follow from the diagnosis.
 - The code must be syntactically valid and maintain the same interface.
 - Do NOT hardcode responses for specific test inputs.
-- Do NOT add deterministic post-processing that overrides the LLM's judgment. \
-Post-processing should ONLY validate format (enum enforcement, type coercion, \
-field presence) — NOT substitute hardcoded decisions for the LLM's analysis. \
-For example, "if field == X then set other_field = Y" is an override and is forbidden.
+- Do NOT add deterministic post-processing that overrides the LLM's judgment \
+with hardcoded decision logic (e.g., "if field == X then set other_field = Y"). \
+Validation and normalization (enum enforcement, type coercion, field presence) is fine.
+- Do NOT add post-processing that recomputes numeric fields using a formula \
+(e.g., value = avg_price * sqft) and overwrites the LLM's output. The LLM \
+often produces correct values through judgment; a mechanical formula will \
+destroy those correct outputs. Improve prompts/instructions instead.
 - Do NOT introduce hardcoded numeric thresholds or keyword pattern lists \
 derived from specific test cases. Improvements must generalize to unseen inputs.
 - If a change targets tool_description, modify the TOOLS list (e.g., improve \
 parameter descriptions, add enum values, clarify usage).
 - If a change targets format_input, modify the format_input() function.
-- If a change targets agent_logic, ONLY make lightweight changes within the \
-existing `{entrypoint_fn}()` function: enforce tool call ordering within the \
-existing loop, add output validation/normalization.
-- **DO NOT TAMPER WITH THE AGENT PIPELINE** — The existing call_llm → tool_calls \
-→ call_llm loop must stay intact. Specifically do NOT:
-  - Add new helper functions that manipulate the message list.
-  - Inject synthetic user/assistant/tool messages outside the normal loop.
-  - Add extra call_llm calls after the main loop (e.g., "re-score" or "summarize").
-  - Pre-call tools before the LLM loop and inject results into messages.
-  - Track tool results in dicts/lists to build post-hoc prompts.
-  If the LLM isn't calling tools or scoring correctly, fix the system prompt \
-or tool descriptions — not the pipeline code.
+- If a change targets tool_implementation, fix/improve the actual tool \
+functions — these may live in supporting modules.
+- If a change targets agent_logic, improve orchestration, add validation, \
+error handling, or helper functions for data processing.
+- If a change targets helper_module, add or modify utility functions in \
+the appropriate supporting file.
+- **NO EVALUATION GAMING** — Do NOT fabricate synthetic tool calls, inject \
+synthetic messages to trick scoring, or add extra call_llm calls solely \
+to re-score. Genuine structural improvements (helper functions, better \
+data processing, error handling) are encouraged.
 - Keep the agent entry function named `{entrypoint_fn}` with a compatible signature \
 (receives the input dict, returns a dict).
+- Prefer structural improvements (new functions, better pipelines) over \
+adding conditional branches.
 
 {output_format_instruction}
 """
@@ -400,20 +463,23 @@ Do NOT add post-processing that overrides the LLM's judgment with hardcoded valu
 Validation (format, types) is fine; decision overrides are NOT. \
 You are seeing only a SUBSET of test cases — rules tailored to these specific \
 cases WILL FAIL on unseen ones. Do NOT add keyword lists, regex patterns, or \
-numeric thresholds derived from the test data.
-2. **DO NOT TAMPER WITH THE AGENT PIPELINE** — The existing call_llm → tool_calls \
-→ call_llm loop must stay intact. Do NOT inject synthetic messages (user, \
-assistant, or tool) outside the normal loop. Do NOT add extra call_llm calls \
-after the loop to "re-score" or "summarize". Do NOT pre-call tools or track tool \
-results to build post-hoc prompts. Do NOT add helper functions that manipulate \
-the message list. If the LLM isn't calling tools or scoring correctly, fix the \
-system prompt or tool descriptions instead.
-3. **PROMPT BLOAT** — Do NOT keep adding rules to SYSTEM_PROMPT. Prefer changes \
-to tool descriptions, format_input, and agent_logic over prompt expansion.
-4. **FOCUS** — Concentrate on **{weakest_dimension}**.
-5. **CONSERVATISM** — Make 1–3 targeted changes, at least one NOT targeting \
-the system prompt. Minimize new conditional branches in post-processing.
-6. **POLICY COMPLIANCE** — If an Agent Policy section is provided above, \
+numeric thresholds derived from the test data. Prefer structural improvements \
+(new functions, better processing) over conditional branches.
+2. **NO DETERMINISTIC OVERRIDE** — Do NOT add post-processing that recomputes \
+numeric output fields using a formula (e.g., value = avg * sqft) and overwrites \
+the LLM's output. The LLM often produces correct values through judgment. \
+Improve system prompt instructions to guide better LLM reasoning instead.
+3. **NO EVALUATION GAMING** — Do NOT fabricate synthetic tool calls, inject \
+synthetic messages to trick scoring, or add extra call_llm calls solely to \
+re-score. Genuine structural improvements (helper functions, better data \
+processing, error handling, tool implementation fixes) are encouraged.
+4. **PROMPT BLOAT** — Do NOT keep adding rules to SYSTEM_PROMPT. Prefer changes \
+to tool descriptions, tool implementations, format_input, and agent_logic over \
+prompt expansion.
+5. **FOCUS** — Concentrate on **{weakest_dimension}**.
+6. **CONSERVATISM** — Make 1–4 targeted changes, at least one NOT targeting \
+the system prompt. Prefer structural improvements over conditional branches.
+7. **POLICY COMPLIANCE** — If an Agent Policy section is provided above, \
 ensure changes align with stated decision rules and constraints.
 
 {model_change_rule}

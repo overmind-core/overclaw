@@ -33,6 +33,7 @@ from overclaw.prompts.analyzer import (
     DIAGNOSIS_SYSTEM_PROMPT,
     FAILURE_CLUSTERS_SECTION,
     FOCUS_LABELS,
+    MULTI_FILE_AWARENESS_SECTION,
     SINGLE_PASS_PROMPT,
     _BUNDLE_OUTPUT_INSTRUCTION,
     _SINGLE_FILE_OUTPUT_INSTRUCTION,
@@ -94,20 +95,37 @@ def _format_scoring_mechanics(eval_spec: dict | None) -> str:
                 )
         elif ftype == "number":
             bands = config.get("tolerance_bands", [])
+            field_range = config.get("range", [])
             if bands:
-                parts = [
-                    f"\u00b1{b['within']}\u2192{b['score_pct'] * 100:.0f}%"
-                    for b in bands
-                ]
+                parts = [f"±{b['within']} → {b['score_pct'] * 100:.0f}%" for b in bands]
+                range_note = ""
+                if field_range and len(field_range) == 2:
+                    lo, hi = field_range
+                    range_note = f" Field range: [{lo:,}–{hi:,}]."
+                    tightest = min(b["within"] for b in bands)
+                    widest = max(b["within"] for b in bands)
+                    if hi > 0 and tightest > 0:
+                        pct_tight = tightest / hi * 100
+                        if pct_tight < 1.0:
+                            range_note += (
+                                f" WARNING: tolerances are ABSOLUTE values — "
+                                f"the tightest band (±{tightest:g}) is "
+                                f"{pct_tight:.4f}% of the field range, "
+                                f"so the output must NEARLY EXACTLY match "
+                                f"the expected value. Any value beyond "
+                                f"±{widest:g} absolute scores 0."
+                            )
                 lines.append(
                     f"**{label}: {weight} pts** (number) — "
-                    f"Proximity bands: {', '.join(parts)}. Beyond = 0."
+                    f"ABSOLUTE proximity bands: {', '.join(parts)}. "
+                    f"Beyond = 0.{range_note}"
                 )
             else:
                 tol = config.get("tolerance", 10)
                 lines.append(
                     f"**{label}: {weight} pts** (number) — "
-                    f"Within \u00b1{tol} = full, \u00b1{tol * 2} = half, beyond = 0."
+                    f"Within ±{tol} absolute = full, "
+                    f"±{tol * 2} absolute = half, beyond = 0."
                 )
         elif ftype == "text":
             mode = config.get("eval_mode", "non_empty")
@@ -140,9 +158,10 @@ def _format_per_case_results(
 ) -> str:
     """Format per-case results for the analyzer.
 
-    Expected outputs are redacted to prevent the analyzer from
-    reverse-engineering ground-truth values into hardcoded rules.
-    Only pass/fail status per dimension is shown.
+    Expected values are shown for failing numeric fields so the diagnosis
+    can identify scoring patterns (e.g., expected values correlating with
+    tool-returned data).  Anti-overfitting rules in the prompt prevent
+    hardcoding specific case values.
     """
     if not case_results:
         return "(no results available)"
@@ -222,11 +241,29 @@ def _format_per_case_results(
                         )
                     else:
                         pct = fs / mx * 100 if mx > 0 else 0
-                        lines.append(
-                            f"  [{mark}] {fname}: FAIL — "
-                            f"got {act!r}, off target ({pct:.0f}% credit, "
-                            f"{fs:.1f}/{mx})"
-                        )
+                        exp_val = case.get("expected", {}).get(fname)
+                        if exp_val is not None:
+                            try:
+                                diff = float(act) - float(exp_val)
+                                sign = "+" if diff >= 0 else ""
+                                lines.append(
+                                    f"  [{mark}] {fname}: FAIL — "
+                                    f"got {act}, expected {exp_val}, "
+                                    f"diff={sign}{diff:.0f} "
+                                    f"({pct:.0f}% credit, {fs:.1f}/{mx})"
+                                )
+                            except (ValueError, TypeError):
+                                lines.append(
+                                    f"  [{mark}] {fname}: FAIL — "
+                                    f"got {act!r}, off target ({pct:.0f}% "
+                                    f"credit, {fs:.1f}/{mx})"
+                                )
+                        else:
+                            lines.append(
+                                f"  [{mark}] {fname}: FAIL — "
+                                f"got {act!r}, off target ({pct:.0f}% credit, "
+                                f"{fs:.1f}/{mx})"
+                            )
                 elif ftype == "text":
                     if act and str(act).strip():
                         lines.append(
@@ -438,6 +475,40 @@ def _format_failed_attempts(failed: list[dict] | None, max_entries: int = 8) -> 
         return "(none yet)"
     recent = failed[-max_entries:]
     lines: list[str] = []
+
+    all_suggestions = []
+    for att in recent:
+        all_suggestions.extend(att.get("suggestions", []))
+    sugg_lower = [s.lower() for s in all_suggestions]
+
+    repeated_patterns: list[str] = []
+    for keyword, label in [
+        ("recomput", "deterministic recomputation/override of LLM output"),
+        ("post-process", "post-processing overrides"),
+        ("_recompute", "helper function to recompute values"),
+        ("overwrite", "overwriting LLM output with formulas"),
+        ("unconditionally set", "unconditionally overriding LLM fields"),
+    ]:
+        count = sum(1 for s in sugg_lower if keyword in s)
+        if count >= 2:
+            repeated_patterns.append(
+                f"'{label}' attempted {count}x and FAILED every time"
+            )
+
+    if repeated_patterns:
+        lines.append(
+            "⚠️  REPEATEDLY FAILED APPROACHES (try something fundamentally different):"
+        )
+        for rp in repeated_patterns:
+            lines.append(f"  - {rp}")
+        lines.append(
+            "Do NOT propose variations of the above approaches. "
+            "They consistently make things worse. Try a completely "
+            "different strategy (e.g., improving system prompt instructions, "
+            "restructuring input formatting, improving tool descriptions)."
+        )
+        lines.append("")
+
     for i, att in enumerate(recent, 1):
         reason = att.get("reason", "no improvement")
         score = att.get("score", 0)
@@ -776,6 +847,9 @@ def _run_diagnosis(
         prompt_line_count=prompt_lines,
     )
 
+    if bundle is not None and bundle.is_multi_file():
+        prompt += MULTI_FILE_AWARENESS_SECTION
+
     if cluster_context:
         prompt += FAILURE_CLUSTERS_SECTION.format(
             formatted_clusters=cluster_context,
@@ -919,6 +993,54 @@ def _run_codegen(
 # ---------------------------------------------------------------------------
 
 
+def _extract_imports_from_source(source: str, known_files: set[str]) -> list[str]:
+    """Extract imports from *source* that reference files in *known_files*."""
+    import ast as _ast
+
+    try:
+        tree = _ast.parse(source)
+    except SyntaxError:
+        return []
+
+    stems = {}
+    for kf in known_files:
+        parts = kf.replace("/", ".").replace("\\", ".")
+        if parts.endswith(".py"):
+            parts = parts[:-3]
+        for segment in parts.split("."):
+            stems[segment] = kf
+
+    imported: list[str] = []
+    for node in _ast.iter_child_nodes(tree):
+        if isinstance(node, _ast.Import):
+            for alias in node.names:
+                for seg in alias.name.split("."):
+                    if seg in stems and stems[seg] not in imported:
+                        imported.append(stems[seg])
+        elif isinstance(node, _ast.ImportFrom):
+            module = node.module or ""
+            for seg in module.split("."):
+                if seg in stems and stems[seg] not in imported:
+                    imported.append(stems[seg])
+            for alias in node.names:
+                if alias.name in stems and stems[alias.name] not in imported:
+                    imported.append(stems[alias.name])
+    return imported
+
+
+def _build_import_graph(agent_files: dict[str, str]) -> str:
+    """Build a human-readable import graph for the agent files."""
+    known = set(agent_files.keys())
+    lines: list[str] = []
+    for rel, src in agent_files.items():
+        imports = _extract_imports_from_source(src, known - {rel})
+        if imports:
+            lines.append(
+                f"- `{rel}` imports from: {', '.join(f'`{i}`' for i in imports)}"
+            )
+    return "\n".join(lines) if lines else "(single file — no cross-file imports)"
+
+
 def _build_agentic_instruction(
     diagnosis: dict,
     eval_spec: dict | None,
@@ -927,11 +1049,23 @@ def _build_agentic_instruction(
     entry_file: str,
     agent_files: dict[str, str],
     focus_area: str | None = None,
+    *,
+    optimizable_files: set[str] | None = None,
 ) -> str:
     """Build the user instruction for the coding agent from a diagnosis."""
-    file_listing = "\n".join(
-        f"- `{rel}` ({len(src.splitlines())} lines)" for rel, src in agent_files.items()
-    )
+    if optimizable_files is not None:
+        file_listing = "\n".join(
+            f"- `{rel}` ({len(src.splitlines())} lines) "
+            f"{'[OPTIMIZABLE]' if rel in optimizable_files else '[READ-ONLY]'}"
+            for rel, src in agent_files.items()
+        )
+    else:
+        file_listing = "\n".join(
+            f"- `{rel}` ({len(src.splitlines())} lines)"
+            for rel, src in agent_files.items()
+        )
+
+    import_graph = _build_import_graph(agent_files)
 
     policy_section = (
         f"- Policy constraints: {policy_constraints}" if policy_constraints else ""
@@ -955,6 +1089,7 @@ def _build_agentic_instruction(
         policy_constraints_section=policy_section,
         entry_file=entry_file,
         file_listing=file_listing,
+        import_graph=import_graph,
         focus_directive=focus_directive,
     )
 
@@ -970,6 +1105,7 @@ def _run_codegen_agentic(
     entry_file: str,
     focus_area: str | None = None,
     max_steps: int = 50,
+    optimizable_files: set[str] | None = None,
 ) -> dict:
     """Run the coding agent to generate one candidate.
 
@@ -985,6 +1121,7 @@ def _run_codegen_agentic(
         entry_file,
         agent_files,
         focus_area=focus_area,
+        optimizable_files=optimizable_files,
     )
 
     try:
@@ -1050,10 +1187,29 @@ def _run_codegen_agentic(
 
 def _extract_focus_from_method(method: str) -> str | None:
     """Extract the focus area name from a candidate's method string."""
-    for focus in ("tool_description", "agent_logic", "format_input", "system_prompt"):
+    for focus in (
+        "tool_description",
+        "agent_logic",
+        "format_input",
+        "system_prompt",
+        "tool_implementation",
+        "helper_module",
+        "error_handling",
+    ):
         if focus in method:
             return focus
     return None
+
+
+_ALL_FOCUS_AREAS = (
+    "tool_description",
+    "agent_logic",
+    "format_input",
+    "system_prompt",
+    "tool_implementation",
+    "helper_module",
+    "error_handling",
+)
 
 
 def compute_focus_weights(
@@ -1063,27 +1219,26 @@ def compute_focus_weights(
     failure_registry: FailureRegistry | None = None,
     successful_changes: list[dict] | None = None,
     failed_attempts: list[dict] | None = None,
+    *,
+    is_multi_file: bool = False,
 ) -> dict[str, float]:
     """Score each focus area 0-1 based on multi-signal failure analysis.
 
     Signals:
-    1. Tool trace errors → tool_description
-    2. Field-specific failures → agent_logic / format_input
-    3. Historical effectiveness → boost what worked, dampen what didn't
-    4. Failure cluster mechanisms (when available)
+    1. Tool trace errors → tool_description + tool_implementation
+    2. Field-specific failures → agent_logic / format_input / helper_module
+    3. Runtime errors / crashes → error_handling
+    4. Historical effectiveness → boost what worked, dampen what didn't
+    5. Failure cluster mechanisms (when available)
     """
-    weights: dict[str, float] = {
-        "tool_description": 0.0,
-        "agent_logic": 0.0,
-        "format_input": 0.0,
-        "system_prompt": 0.0,
-    }
+    weights: dict[str, float] = {k: 0.0 for k in _ALL_FOCUS_AREAS}
+
     if not case_results:
         return weights
 
     n_cases = max(len(case_results), 1)
 
-    # Signal 1: Tool trace errors
+    # Signal 1: Tool trace errors → tool_description + tool_implementation
     tool_errors = 0
     missing_tools = 0
     for case in case_results:
@@ -1102,6 +1257,7 @@ def compute_focus_weights(
 
     tool_signal = (tool_errors + missing_tools) / n_cases
     weights["tool_description"] += min(tool_signal, 1.0)
+    weights["tool_implementation"] += min(tool_signal * 0.8, 1.0)
 
     # Signal 2: Field-specific failure analysis
     if eval_spec:
@@ -1112,50 +1268,56 @@ def compute_focus_weights(
 
         fields = eval_spec.get("output_fields", {})
         n_fields = max(len(fields), 1)
+        severe_field_failures = 0
         for fname, cfg in fields.items():
             avg = evaluation_results.get(f"avg_{fname}", 0)
             mx = float(cfg.get("weight", 0))
             if mx > 0 and avg / mx < 0.7:
-                weights["agent_logic"] += (1.0 - avg / mx) / n_fields
+                gap = 1.0 - avg / mx
+                weights["agent_logic"] += gap / n_fields
+                if avg / mx < 0.5:
+                    severe_field_failures += 1
 
-    # Signal 3: Historical effectiveness of focus areas
+        if is_multi_file and severe_field_failures > 0:
+            weights["helper_module"] += min(severe_field_failures * 0.3, 1.0)
+
+    # Signal 3: Runtime errors / crashes → error_handling
+    crash_count = sum(
+        1 for c in case_results if c.get("output") is None or c.get("output") == {}
+    )
+    if crash_count > 0:
+        weights["error_handling"] += min(crash_count / n_cases, 1.0)
+
+    # Signal 4: Historical effectiveness of focus areas
     for change in (successful_changes or [])[-10:]:
         focus = _extract_focus_from_method(change.get("method", ""))
         if not focus:
             for sug in change.get("suggestions", []):
-                for f in (
-                    "tool_description",
-                    "agent_logic",
-                    "format_input",
-                    "system_prompt",
-                ):
-                    if f.replace("_", " ") in str(sug).lower():
+                sug_lower = str(sug).lower()
+                for f in _ALL_FOCUS_AREAS:
+                    if f.replace("_", " ") in sug_lower:
                         focus = f
                         break
                 if focus:
                     break
-        if focus:
+        if focus and focus in weights:
             weights[focus] += 0.12
 
     for attempt in (failed_attempts or [])[-5:]:
         focus = _extract_focus_from_method(attempt.get("method", ""))
         if not focus:
             for sug in attempt.get("suggestions", []):
-                for f in (
-                    "tool_description",
-                    "agent_logic",
-                    "format_input",
-                    "system_prompt",
-                ):
-                    if f.replace("_", " ") in str(sug).lower():
+                sug_lower = str(sug).lower()
+                for f in _ALL_FOCUS_AREAS:
+                    if f.replace("_", " ") in sug_lower:
                         focus = f
                         break
                 if focus:
                     break
-        if focus:
+        if focus and focus in weights:
             weights[focus] -= 0.08
 
-    # Signal 4: Failure cluster mechanisms
+    # Signal 5: Failure cluster mechanisms
     if failure_registry is not None:
         cluster_weights = failure_registry.compute_component_weights()
         for k, v in cluster_weights.items():
@@ -1175,9 +1337,12 @@ def format_component_weights(weights: dict[str, float]) -> str:
     """Format component weights into a human-readable prompt section."""
     labels = {
         "tool_description": "tool_description (tool schemas, parameter descriptions)",
-        "agent_logic": "agent_logic (control flow, post-processing, validation)",
+        "agent_logic": "agent_logic (control flow, orchestration, validation)",
         "format_input": "format_input (input data structuring for the LLM)",
         "system_prompt": "system_prompt (system prompt instructions)",
+        "tool_implementation": "tool_implementation (tool execution logic in supporting modules)",
+        "helper_module": "helper_module (utility functions, data processing helpers)",
+        "error_handling": "error_handling (retry logic, fallbacks, input validation)",
     }
     sorted_w = sorted(weights.items(), key=lambda x: -x[1])
     lines: list[str] = []
@@ -1247,12 +1412,7 @@ def generate_candidates(
         else "Do NOT change the MODEL constant."
     )
 
-    FOCUS_AREAS_DEFAULT = [
-        "tool_description",
-        "agent_logic",
-        "format_input",
-        "system_prompt",
-    ]
+    FOCUS_AREAS_DEFAULT = list(_ALL_FOCUS_AREAS)
 
     # Resolve effective focus ordering: use dynamic weights if provided,
     # otherwise fall back to the default static order.
@@ -1441,12 +1601,25 @@ def generate_candidates(
         )
 
     # --- Parallel codegen forks with different focus areas ---
+    # Ensure exploration diversity: when the dominant focus area has >70%
+    # weight, force at least one candidate to use a non-dominant focus area
+    # so the pipeline doesn't get stuck in a single strategy.
     focus_assignments: list[str | None] = []
     for idx in range(num_candidates):
         if idx < len(FOCUS_AREAS):
             focus_assignments.append(FOCUS_AREAS[idx])
         else:
             focus_assignments.append(None)
+
+    if focus_weights and num_candidates >= 2 and len(FOCUS_AREAS) >= 1:
+        dominant = FOCUS_AREAS[0]
+        dominant_weight = focus_weights.get(dominant, 0)
+        if dominant_weight > 0.70:
+            non_dominant = [fa for fa in FOCUS_AREAS_DEFAULT if fa != dominant]
+            if non_dominant:
+                explore_idx = num_candidates - 2 if num_candidates >= 3 else 0
+                explore_focus = random.Random(iteration_seed).choice(non_dominant)
+                focus_assignments[explore_idx] = explore_focus
 
     # Resolve the entry file path for the agentic path
     _entry_file = (
@@ -1459,6 +1632,11 @@ def generate_candidates(
 
     # Choose the codegen model — fall back to the diagnosis model
     effective_codegen_model = codegen_model or model
+
+    # Resolve optimizable file set for the agentic path
+    _opt_files: set[str] | None = None
+    if bundle is not None:
+        _opt_files = bundle.optimizable_files
 
     # ---- Agentic codegen path ----
     if agent_files:
@@ -1477,6 +1655,7 @@ def generate_candidates(
                 entry_file=_entry_file,
                 focus_area=focus,
                 max_steps=codegen_max_steps,
+                optimizable_files=_opt_files,
             )
 
         all_results: list[dict] = []

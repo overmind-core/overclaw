@@ -339,6 +339,9 @@ class Optimizer:
                     self._failure_registry,
                     self.successful_changes,
                     self.failed_attempts,
+                    is_multi_file=(
+                        self._bundle is not None and self._bundle.is_multi_file()
+                    ),
                 )
                 _component_ctx = format_component_weights(_focus_weights)
 
@@ -732,6 +735,50 @@ class Optimizer:
                         f"{reason}; regression gate: {reg_fail}/{n_reg} minor "
                         f"regressions (within threshold)"
                     )
+
+            # --- Step 4.5: Periodic holdout probe (overfitting early detection) ---
+            holdout_probe_interval = getattr(self.config, "holdout_probe_interval", 3)
+            if (
+                accept
+                and holdout_set
+                and i % holdout_probe_interval == 0
+                and best_cand is not None
+            ):
+                self.console.print(f"  [dim]Holdout probe (iteration {i})…[/dim]")
+                probe_path = self._write_candidate_to_disk(best_cand)
+                try:
+                    probe_eval, _, _ = self._run_agent_on_dataset(
+                        str(probe_path),
+                        holdout_set,
+                        f"holdout_probe_{i:03d}",
+                    )
+                    probe_score = probe_eval["avg_total"]
+                    train_gap = best_cand_score - probe_score
+                    overfit_threshold = getattr(
+                        self.config, "holdout_probe_gap_threshold", 15.0
+                    )
+                    if train_gap > overfit_threshold:
+                        accept = False
+                        reason = (
+                            f"Holdout probe: train={best_cand_score:.1f} vs "
+                            f"holdout={probe_score:.1f} "
+                            f"(gap={train_gap:.1f} > {overfit_threshold:.1f}) "
+                            f"— likely overfitting"
+                        )
+                        self.console.print(
+                            f"    [yellow]Holdout gap {train_gap:.1f} exceeds "
+                            f"threshold — rejecting[/yellow]"
+                        )
+                    else:
+                        self.console.print(
+                            f"    [dim]Holdout probe OK: train={best_cand_score:.1f}, "
+                            f"holdout={probe_score:.1f} "
+                            f"(gap={train_gap:.1f})[/dim]"
+                        )
+                except Exception:
+                    pass
+                finally:
+                    self._cleanup_candidate(probe_path, best_cand)
 
             if accept:
                 improvement = best_cand_score - self.best_score
@@ -1152,16 +1199,27 @@ class Optimizer:
                     overshoot = code_ratio - max_ratio
                     penalty += min(5.0, overshoot**2 * 1.5)
 
-        # 3. New conditional branches (vs original baseline)
+        # 3. New conditional branches (vs original baseline, size-adaptive)
+        new_branches = 0
         if self._baseline_code:
             baseline_branches = self._count_conditional_branches(self._baseline_code)
             candidate_branches = self._count_conditional_branches(candidate_code)
             new_branches = candidate_branches - baseline_branches
-            if new_branches > 20:
-                overshoot = new_branches - 20
-                penalty += min(3.0, overshoot**2 * 0.01)
+            branch_threshold = max(8, baseline_branches // 3)
+            if new_branches > branch_threshold:
+                overshoot = new_branches - branch_threshold
+                penalty += min(4.0, overshoot**2 * 0.03)
 
-        # 4. Hardcoded expected-output literals from training data
+        # 4. Conditional-to-structural ratio: many new branches without new
+        # functions is a strong overfitting signal.
+        if self._baseline_code and new_branches > 5:
+            baseline_funcs = self._count_function_defs(self._baseline_code)
+            candidate_funcs = self._count_function_defs(candidate_code)
+            new_funcs = candidate_funcs - baseline_funcs
+            if new_funcs <= 0:
+                penalty += min(2.0, (new_branches - 5) * 0.15)
+
+        # 5. Hardcoded expected-output literals from training data
         if train_set and self._baseline_code:
             leakage = self._detect_data_leakage(candidate_code, train_set)
             if leakage > 0:
@@ -1250,6 +1308,15 @@ class Optimizer:
             1
             for line in code.splitlines()
             if line.strip().startswith(("if ", "elif ", "if(", "elif("))
+        )
+
+    @staticmethod
+    def _count_function_defs(code: str) -> int:
+        """Count top-level and nested function/method definitions."""
+        return sum(
+            1
+            for line in code.splitlines()
+            if line.strip().startswith(("def ", "async def "))
         )
 
     # ------------------------------------------------------------------
