@@ -27,9 +27,11 @@ from overclaw.prompts.analyzer import (
     AGENTIC_CODEGEN_INSTRUCTION,
     CODEGEN_FOCUS_DIRECTIVE,
     CODEGEN_PROMPT,
+    COMPONENT_IMPACT_SECTION,
     DIAGNOSIS_FOCUS_DIRECTIVE,
     DIAGNOSIS_PROMPT,
     DIAGNOSIS_SYSTEM_PROMPT,
+    FAILURE_CLUSTERS_SECTION,
     FOCUS_LABELS,
     SINGLE_PASS_PROMPT,
     _BUNDLE_OUTPUT_INSTRUCTION,
@@ -37,6 +39,7 @@ from overclaw.prompts.analyzer import (
 )
 
 if TYPE_CHECKING:
+    from overclaw.optimize.failure_registry import FailureRegistry
     from overclaw.utils.code import AgentBundle
 
 _log = logging.getLogger("overclaw.optimize.analyzer")
@@ -722,6 +725,8 @@ def _run_diagnosis(
     entrypoint_fn: str,
     max_cases: int = 20,
     bundle: AgentBundle | None = None,
+    cluster_context: str = "",
+    component_weights_context: str = "",
 ) -> dict | None:
     """Pass 1: Produce a structured diagnosis.
 
@@ -770,6 +775,16 @@ def _run_diagnosis(
         prompt_char_count=prompt_chars,
         prompt_line_count=prompt_lines,
     )
+
+    if cluster_context:
+        prompt += FAILURE_CLUSTERS_SECTION.format(
+            formatted_clusters=cluster_context,
+        )
+
+    if component_weights_context:
+        prompt += COMPONENT_IMPACT_SECTION.format(
+            component_lines=component_weights_context,
+        )
 
     if focus_area:
         labels = {
@@ -1029,6 +1044,152 @@ def _run_codegen_agentic(
 
 
 # ---------------------------------------------------------------------------
+# Automated focus targeting
+# ---------------------------------------------------------------------------
+
+
+def _extract_focus_from_method(method: str) -> str | None:
+    """Extract the focus area name from a candidate's method string."""
+    for focus in ("tool_description", "agent_logic", "format_input", "system_prompt"):
+        if focus in method:
+            return focus
+    return None
+
+
+def compute_focus_weights(
+    case_results: list[dict],
+    evaluation_results: dict,
+    eval_spec: dict | None = None,
+    failure_registry: FailureRegistry | None = None,
+    successful_changes: list[dict] | None = None,
+    failed_attempts: list[dict] | None = None,
+) -> dict[str, float]:
+    """Score each focus area 0-1 based on multi-signal failure analysis.
+
+    Signals:
+    1. Tool trace errors → tool_description
+    2. Field-specific failures → agent_logic / format_input
+    3. Historical effectiveness → boost what worked, dampen what didn't
+    4. Failure cluster mechanisms (when available)
+    """
+    weights: dict[str, float] = {
+        "tool_description": 0.0,
+        "agent_logic": 0.0,
+        "format_input": 0.0,
+        "system_prompt": 0.0,
+    }
+    if not case_results:
+        return weights
+
+    n_cases = max(len(case_results), 1)
+
+    # Signal 1: Tool trace errors
+    tool_errors = 0
+    missing_tools = 0
+    for case in case_results:
+        trace = case.get("tool_trace", [])
+        for t in trace:
+            if t.get("error"):
+                tool_errors += 1
+        expected_tools = (
+            (eval_spec or {}).get("tool_config", {}).get("expected_tools", [])
+        )
+        called = {t.get("name") for t in trace}
+        for et in expected_tools:
+            name = et if isinstance(et, str) else et.get("name", "")
+            if name and name not in called:
+                missing_tools += 1
+
+    tool_signal = (tool_errors + missing_tools) / n_cases
+    weights["tool_description"] += min(tool_signal, 1.0)
+
+    # Signal 2: Field-specific failure analysis
+    if eval_spec:
+        struct_score = evaluation_results.get("avg_structure", 0)
+        struct_max = float(eval_spec.get("structure_weight", 20))
+        if struct_max > 0 and struct_score / struct_max < 0.8:
+            weights["format_input"] += 1.0 - (struct_score / struct_max)
+
+        fields = eval_spec.get("output_fields", {})
+        n_fields = max(len(fields), 1)
+        for fname, cfg in fields.items():
+            avg = evaluation_results.get(f"avg_{fname}", 0)
+            mx = float(cfg.get("weight", 0))
+            if mx > 0 and avg / mx < 0.7:
+                weights["agent_logic"] += (1.0 - avg / mx) / n_fields
+
+    # Signal 3: Historical effectiveness of focus areas
+    for change in (successful_changes or [])[-10:]:
+        focus = _extract_focus_from_method(change.get("method", ""))
+        if not focus:
+            for sug in change.get("suggestions", []):
+                for f in (
+                    "tool_description",
+                    "agent_logic",
+                    "format_input",
+                    "system_prompt",
+                ):
+                    if f.replace("_", " ") in str(sug).lower():
+                        focus = f
+                        break
+                if focus:
+                    break
+        if focus:
+            weights[focus] += 0.12
+
+    for attempt in (failed_attempts or [])[-5:]:
+        focus = _extract_focus_from_method(attempt.get("method", ""))
+        if not focus:
+            for sug in attempt.get("suggestions", []):
+                for f in (
+                    "tool_description",
+                    "agent_logic",
+                    "format_input",
+                    "system_prompt",
+                ):
+                    if f.replace("_", " ") in str(sug).lower():
+                        focus = f
+                        break
+                if focus:
+                    break
+        if focus:
+            weights[focus] -= 0.08
+
+    # Signal 4: Failure cluster mechanisms
+    if failure_registry is not None:
+        cluster_weights = failure_registry.compute_component_weights()
+        for k, v in cluster_weights.items():
+            if k in weights:
+                weights[k] += v * 0.5
+
+    # Normalize to 0-1 range
+    max_w = max(weights.values()) if weights else 1.0
+    if max_w > 0:
+        for k in weights:
+            weights[k] = max(0.0, min(1.0, weights[k] / max_w))
+
+    return weights
+
+
+def format_component_weights(weights: dict[str, float]) -> str:
+    """Format component weights into a human-readable prompt section."""
+    labels = {
+        "tool_description": "tool_description (tool schemas, parameter descriptions)",
+        "agent_logic": "agent_logic (control flow, post-processing, validation)",
+        "format_input": "format_input (input data structuring for the LLM)",
+        "system_prompt": "system_prompt (system prompt instructions)",
+    }
+    sorted_w = sorted(weights.items(), key=lambda x: -x[1])
+    lines: list[str] = []
+    for k, v in sorted_w:
+        pct = v * 100
+        label = labels.get(k, k)
+        bar = "\u2588" * int(pct / 5) + "\u2591" * (20 - int(pct / 5))
+        lines.append(f"- {label}: {pct:.0f}% {bar}")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -1054,6 +1215,9 @@ def generate_candidates(
     agent_files: dict[str, str] | None = None,
     codegen_model: str = "",
     codegen_max_steps: int = 50,
+    cluster_context: str = "",
+    component_weights_context: str = "",
+    focus_weights: dict[str, float] | None = None,
 ) -> list[dict]:
     """Generate *num_candidates* improved agent versions.
 
@@ -1068,6 +1232,9 @@ def generate_candidates(
 
     When *bundle* is provided, prompts use the virtual bundle representation
     and outputs are parsed as targeted piece updates.
+
+    When *focus_weights* is provided, focus areas are assigned by descending
+    weight instead of the default static round-robin order.
     """
 
     agent_model, capability = _detect_agent_model(agent_code)
@@ -1080,12 +1247,22 @@ def generate_candidates(
         else "Do NOT change the MODEL constant."
     )
 
-    FOCUS_AREAS = [
+    FOCUS_AREAS_DEFAULT = [
         "tool_description",
         "agent_logic",
         "format_input",
         "system_prompt",
     ]
+
+    # Resolve effective focus ordering: use dynamic weights if provided,
+    # otherwise fall back to the default static order.
+    if focus_weights:
+        sorted_focuses = sorted(focus_weights.items(), key=lambda x: -x[1])
+        FOCUS_AREAS = [k for k, v in sorted_focuses if v > 0.05]
+        if not FOCUS_AREAS:
+            FOCUS_AREAS = list(FOCUS_AREAS_DEFAULT)
+    else:
+        FOCUS_AREAS = list(FOCUS_AREAS_DEFAULT)
 
     use_bundle = bundle is not None and bundle.is_multi_file()
 
@@ -1218,6 +1395,8 @@ def generate_candidates(
         entrypoint_fn=entrypoint_fn,
         max_cases=adaptive_max_cases,
         bundle=bundle,
+        cluster_context=cluster_context,
+        component_weights_context=component_weights_context,
     )
 
     if not diag:
@@ -1257,6 +1436,8 @@ def generate_candidates(
             entrypoint_fn=entrypoint_fn,
             max_cases=adaptive_max_cases,
             bundle=bundle,
+            cluster_context=cluster_context,
+            component_weights_context=component_weights_context,
         )
 
     # --- Parallel codegen forks with different focus areas ---

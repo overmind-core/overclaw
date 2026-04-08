@@ -114,6 +114,32 @@ AGENTIC_CODEGEN_FOCUS = (
 )
 
 # ---------------------------------------------------------------------------
+# Failure cluster and component targeting prompt sections
+# ---------------------------------------------------------------------------
+
+FAILURE_CLUSTERS_SECTION = """\
+
+## Known Failure Clusters (prioritized by impact)
+
+The system has identified recurring failure patterns across iterations. \
+Focus your diagnosis on the highest-priority unresolved clusters.
+
+{formatted_clusters}
+"""
+
+COMPONENT_IMPACT_SECTION = """\
+
+## Component Impact Analysis (automated)
+
+Based on failure pattern analysis, these are the estimated impact weights \
+for each optimizable component:
+
+{component_lines}
+
+Prioritize your diagnosis toward the highest-impact components above.\
+"""
+
+# ---------------------------------------------------------------------------
 # Diagnosis prompt
 # ---------------------------------------------------------------------------
 

@@ -37,20 +37,29 @@ from rich.progress import (
 )
 
 from overclaw.utils.code import AgentBundle
-from overclaw.core.paths import agent_experiments_dir
+from overclaw.core.paths import agent_experiments_dir, agent_run_state_path
 from overclaw.utils.display import BRAND, make_spinner_progress, rel
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
 from overclaw.client import ApiReporter, flush_pending_api_updates
-from overclaw.optimize.analyzer import generate_candidates
+from overclaw.optimize.analyzer import (
+    compute_focus_weights,
+    format_component_weights,
+    generate_candidates,
+)
 from overclaw.optimize.config import Config
 from overclaw.optimize.data import load_data
 from overclaw.optimize.evaluator import (
     SpecEvaluator,
     load_evaluator,
 )
+from overclaw.optimize.failure_registry import (
+    FailureRegistry,
+    format_clusters_for_diagnosis,
+)
+from overclaw.optimize.run_state import RunState, RunSummary
 from overclaw.utils.policy import (
     format_for_codegen,
     format_for_diagnosis,
@@ -108,6 +117,31 @@ class Optimizer:
         self._best_files: dict[str, str] = {}
         self._baseline_files: dict[str, str] = {}
 
+        # --- Cross-run state & failure clustering ---
+        use_persistence = getattr(config, "cross_run_persistence", True)
+        if use_persistence:
+            self._run_state = RunState.load(
+                agent_run_state_path(config.agent_name),
+                config.agent_name,
+            )
+            self.failed_attempts = self._run_state.seed_failed_attempts()
+            self.successful_changes = self._run_state.seed_successful_changes()
+        else:
+            self._run_state = RunState(
+                agent_run_state_path(config.agent_name),
+                config.agent_name,
+            )
+
+        use_clustering = getattr(config, "failure_clustering", True)
+        if use_clustering and use_persistence:
+            self._failure_registry = self._run_state.failure_registry
+        else:
+            self._failure_registry = FailureRegistry()
+
+        self._run_id = self._run_state.begin_run()
+        self._session_failed: list[dict] = []
+        self._session_successful: list[dict] = []
+
     # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
@@ -150,6 +184,17 @@ class Optimizer:
             info_lines += (
                 f"\n  [dim]Policy:[/dim] {n_rules} rule(s), "
                 f"{n_constraints} constraint(s)"
+            )
+        if self._run_state.has_prior_runs:
+            n_runs = len(self._run_state.run_history)
+            n_reg = len(self._run_state.regression_cases)
+            n_clusters = len(self._failure_registry.clusters)
+            best_prior = self._run_state.best_prior_score
+            info_lines += (
+                f"\n  [dim]History:[/dim] {n_runs} prior run(s), "
+                f"best {best_prior:.1f}, "
+                f"{n_reg} regression case(s), "
+                f"{n_clusters} failure cluster(s)"
             )
         self.console.print(info_lines)
 
@@ -202,6 +247,21 @@ class Optimizer:
 
         self._log_result("baseline", baseline_eval, "keep", "Initial baseline")
         self._print_eval(baseline_eval, "Baseline (train)", prev_evaluation=None)
+
+        # Ingest baseline failures into the failure registry
+        if getattr(self.config, "failure_clustering", True):
+            baseline_case_results = self._build_case_results(baseline_items, train_set)
+            touched = self._failure_registry.ingest_iteration(
+                0,
+                baseline_case_results,
+                self.evaluator.spec,
+            )
+            if touched:
+                open_n = self._failure_registry.get_open_count()
+                self.console.print(
+                    f"  [dim]Failure clusters: {len(touched)} identified, "
+                    f"{open_n} open[/dim]"
+                )
 
         # Baseline diagnostics
         self._print_baseline_diagnostics(baseline_eval, baseline_items)
@@ -261,6 +321,33 @@ class Optimizer:
                     "  [yellow]Detected stall — increasing exploration[/yellow]"
                 )
 
+            # --- Compute focus weights & cluster context ---
+            _cluster_ctx = ""
+            _component_ctx = ""
+            _focus_weights: dict[str, float] | None = None
+
+            if getattr(self.config, "failure_clustering", True):
+                priority_clusters = self._failure_registry.get_priority_clusters()
+                if priority_clusters:
+                    _cluster_ctx = format_clusters_for_diagnosis(priority_clusters)
+
+            if getattr(self.config, "adaptive_focus", True):
+                _focus_weights = compute_focus_weights(
+                    latest_case_results,
+                    latest_eval,
+                    self.evaluator.spec,
+                    self._failure_registry,
+                    self.successful_changes,
+                    self.failed_attempts,
+                )
+                _component_ctx = format_component_weights(_focus_weights)
+
+                top_focus = max(_focus_weights, key=_focus_weights.get)  # type: ignore[arg-type]
+                top_pct = _focus_weights[top_focus] * 100
+                self.console.print(
+                    f"  [dim]Focus targeting:[/dim] {top_focus} ({top_pct:.0f}%)"
+                )
+
             # --- Step 1: Diagnosis & candidate generation ---
             self.console.print(
                 f"  [dim]Step 1:[/dim] Analyzing failures and generating "
@@ -300,6 +387,9 @@ class Optimizer:
                         agent_files=_agent_files,
                         codegen_model=getattr(self.config, "codegen_model", ""),
                         codegen_max_steps=getattr(self.config, "codegen_max_steps", 50),
+                        cluster_context=_cluster_ctx,
+                        component_weights_context=_component_ctx,
+                        focus_weights=_focus_weights,
                     )
                 except Exception as exc:
                     progress.update(task, description=f"  [red]Analyzer error: {exc}")
@@ -625,6 +715,24 @@ class Optimizer:
                 train_set,
             )
 
+            # Cross-run regression gate: check that previously-fixed failures
+            # stay fixed (only when the within-run gate passed).
+            if accept and self._run_state.regression_cases:
+                reg_fail = self._check_regression_suite(best_cand, train_set)
+                reg_threshold = getattr(self.config, "regression_gate_threshold", 0.2)
+                n_reg = len(self._run_state.regression_cases)
+                if reg_fail > n_reg * reg_threshold:
+                    accept = False
+                    reason = (
+                        f"Regression gate: {reg_fail}/{n_reg} previously-fixed "
+                        f"cases regressed (threshold: {reg_threshold:.0%})"
+                    )
+                elif reg_fail > 0:
+                    reason = (
+                        f"{reason}; regression gate: {reg_fail}/{n_reg} minor "
+                        f"regressions (within threshold)"
+                    )
+
             if accept:
                 improvement = best_cand_score - self.best_score
                 self.console.print(
@@ -635,18 +743,19 @@ class Optimizer:
                     self.console.print(f"    [dim]{reason}[/dim]")
                 self._animate_code_update(self.best_code, best_cand["updated_code"])
                 dim_deltas = self._compute_dimension_deltas(latest_eval, best_cand_eval)
-                self.successful_changes.append(
-                    {
-                        "suggestions": best_cand.get("suggestions", []),
-                        "improvement": (
-                            f"+{improvement:.1f} "
-                            f"({self.best_score:.1f} \u2192 {best_cand_score:.1f})"
-                        ),
-                        "score_before": self.best_score,
-                        "score_after": best_cand_score,
-                        "dimension_deltas": dim_deltas,
-                    }
-                )
+                change_record = {
+                    "suggestions": best_cand.get("suggestions", []),
+                    "improvement": (
+                        f"+{improvement:.1f} "
+                        f"({self.best_score:.1f} \u2192 {best_cand_score:.1f})"
+                    ),
+                    "score_before": self.best_score,
+                    "score_after": best_cand_score,
+                    "dimension_deltas": dim_deltas,
+                    "method": best_cand.get("method", ""),
+                }
+                self.successful_changes.append(change_record)
+                self._session_successful.append(change_record)
                 self.best_score = best_cand_score
                 self.best_code = best_cand["updated_code"]
                 self.best_case_scores = best_cand_case_scores
@@ -671,6 +780,32 @@ class Optimizer:
                 latest_case_results = self._build_case_results(
                     best_cand_items, train_set
                 )
+
+                # Update failure registry: ingest new results and check resolutions
+                if getattr(self.config, "failure_clustering", True):
+                    self._failure_registry.ingest_iteration(
+                        i,
+                        latest_case_results,
+                        self.evaluator.spec,
+                    )
+                    newly_resolved = self._failure_registry.update_resolution_status(
+                        i,
+                        latest_case_results,
+                        self.evaluator.spec,
+                        change_summary=desc,
+                    )
+                    if newly_resolved:
+                        self.console.print(
+                            f"    [green]\u2713 Resolved {len(newly_resolved)} "
+                            f"failure cluster(s)[/green]"
+                        )
+                        self._promote_resolved_to_regression(
+                            newly_resolved,
+                            latest_case_results,
+                            train_set,
+                            i,
+                        )
+
                 self._log_result(f"iter_{i:03d}", best_cand_eval, "keep", desc)
                 if self._reporter:
                     dim_scores = {
@@ -709,14 +844,15 @@ class Optimizer:
                         dimension_scores=dim_scores,
                     )
                 dim_deltas = self._compute_dimension_deltas(latest_eval, best_cand_eval)
-                self.failed_attempts.append(
-                    {
-                        "suggestions": best_cand.get("suggestions", []),
-                        "score": best_cand_score,
-                        "reason": reason or f"No improvement ({best_cand_score:.1f})",
-                        "dimension_deltas": dim_deltas,
-                    }
-                )
+                fail_record = {
+                    "suggestions": best_cand.get("suggestions", []),
+                    "score": best_cand_score,
+                    "reason": reason or f"No improvement ({best_cand_score:.1f})",
+                    "dimension_deltas": dim_deltas,
+                    "method": best_cand.get("method", ""),
+                }
+                self.failed_attempts.append(fail_record)
+                self._session_failed.append(fail_record)
                 self.stall_count += 1
 
             self._print_eval(
@@ -940,6 +1076,31 @@ class Optimizer:
                 backtest_results=self.backtest_results or None,
             )
             flush_pending_api_updates(timeout=20.0)
+
+        # ---- Persist cross-run state ----
+        if getattr(self.config, "cross_run_persistence", True):
+            self._run_state.accumulate_failed(self._session_failed)
+            self._run_state.accumulate_successful(self._session_successful)
+            iters_done = len(self._session_successful) + len(self._session_failed)
+            self._run_state.end_run(
+                RunSummary(
+                    run_id=self._run_id,
+                    started_at=0,
+                    finished_at=time.time(),
+                    baseline_score=self._baseline_train_score,
+                    final_score=self.best_score,
+                    iterations_completed=iters_done,
+                    accepted_changes=len(self._session_successful),
+                    rejected_changes=len(self._session_failed),
+                ),
+            )
+            self._run_state.save()
+            n_reg = len(self._run_state.regression_cases)
+            n_clusters = len(self._failure_registry.clusters)
+            self.console.print(
+                f"\n  [dim]Cross-run state saved: {n_clusters} cluster(s), "
+                f"{n_reg} regression case(s)[/dim]"
+            )
 
     # ------------------------------------------------------------------
     # Complexity penalty (prompt bloat + code growth + override detection)
@@ -1317,6 +1478,94 @@ class Optimizer:
         return True, (
             f"{improvements} improved, {regressions} regressed out of {n} cases"
         )
+
+    # ------------------------------------------------------------------
+    # Cross-run regression gate
+    # ------------------------------------------------------------------
+
+    def _check_regression_suite(
+        self,
+        candidate: dict,
+        train_set: list[dict],
+    ) -> int:
+        """Evaluate a candidate against the cross-run regression suite.
+
+        Returns the number of regression cases that fail (score below
+        their stored min_score).  The caller decides whether this exceeds
+        the configured threshold.
+        """
+        if not self._run_state.regression_cases:
+            return 0
+
+        tmp_path = self._write_candidate_to_disk(candidate)
+        try:
+            agent = self._load_agent_module(str(tmp_path))
+        except Exception:
+            self._cleanup_candidate(tmp_path, candidate)
+            return len(self._run_state.regression_cases)
+
+        failures = 0
+        for rc in self._run_state.regression_cases:
+            tracer = Tracer(trace_id="regression_check")
+            set_current_tracer(tracer)
+            try:
+                output = getattr(agent, self.config.entrypoint_fn)(rc.case_input)
+            except Exception:
+                failures += 1
+                continue
+            finally:
+                tracer.finish()
+                set_current_tracer(None)
+
+            tool_trace = [
+                {
+                    "name": span.name,
+                    "args": span.metadata.get("args", {}),
+                    "result": span.metadata.get("result", {}),
+                    "error": span.error,
+                    "latency_ms": span.latency_ms,
+                }
+                for span in tracer.trace.spans
+                if hasattr(span, "span_type") and span.span_type == "tool_call"
+            ]
+            score = self.evaluator.evaluate_output(
+                output,
+                rc.expected_output,
+                input_data=rc.case_input,
+                tool_trace=tool_trace,
+                _skip_judge=True,
+            )
+            if score["total"] < rc.min_score:
+                failures += 1
+
+        self._cleanup_candidate(tmp_path, candidate)
+        return failures
+
+    def _promote_resolved_to_regression(
+        self,
+        resolved_clusters: list,
+        case_results: list[dict],
+        train_set: list[dict],
+        iteration: int,
+    ) -> None:
+        """Promote resolved failure cluster exemplars to the regression suite."""
+        for cluster in resolved_clusters:
+            for case_idx in cluster.exemplar_case_indices:
+                if case_idx >= len(case_results) or case_idx >= len(train_set):
+                    continue
+                case_data = train_set[case_idx]
+                case_result = case_results[case_idx]
+                score = case_result.get("score", {}).get("total", 60.0)
+                self._run_state.add_regression_case(
+                    case_input=case_data.get("input", {}),
+                    expected_output=case_data.get(
+                        "expected_output", case_data.get("expected", {})
+                    ),
+                    min_score=max(score * 0.8, 50.0),
+                    run_id=self._run_id,
+                    iteration=iteration,
+                    cluster_id=cluster.cluster_id,
+                )
 
     # ------------------------------------------------------------------
     # Multi-run evaluation

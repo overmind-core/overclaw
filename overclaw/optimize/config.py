@@ -112,6 +112,18 @@ class Config:
     # When codegen_model is empty, falls back to analyzer_model.
     codegen_model: str = ""
     codegen_max_steps: int = 50
+    # Cross-run persistence: carry failure clusters, regression suite, and
+    # change history across ``overclaw optimize`` invocations.
+    cross_run_persistence: bool = True
+    # Failure clustering: group failed cases by structural signature and
+    # track resolution status across iterations.
+    failure_clustering: bool = True
+    # Regression gate threshold: max fraction of cross-run regression cases
+    # that may fail before a candidate is rejected (0.0 = strict, 1.0 = off).
+    regression_gate_threshold: float = 0.2
+    # Automated focus targeting: dynamically weight codegen focus areas
+    # based on failure analysis instead of static round-robin.
+    adaptive_focus: bool = True
 
 
 def _select_backtest_models(console: Console) -> list[str]:
@@ -451,6 +463,24 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
         except ValueError:
             cfg.diagnosis_case_fraction = 0.7
 
+        cfg.cross_run_persistence = confirm_option(
+            "Enable cross-run persistence? (carry knowledge across optimize runs)",
+            default=True,
+            console=console,
+        )
+
+        cfg.failure_clustering = confirm_option(
+            "Enable failure clustering? (group failures by root cause)",
+            default=True,
+            console=console,
+        )
+
+        cfg.adaptive_focus = confirm_option(
+            "Enable adaptive focus targeting? (auto-weight codegen focus areas)",
+            default=True,
+            console=console,
+        )
+
     # ---- Summary ----
     console.print()
     console.print(Rule(style="dim"))
@@ -489,6 +519,15 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
         table.add_row(
             "Diagnosis visibility", f"{cfg.diagnosis_case_fraction:.0%} of cases"
         )
+    features: list[str] = []
+    if cfg.cross_run_persistence:
+        features.append("cross-run persistence")
+    if cfg.failure_clustering:
+        features.append("failure clustering")
+    if cfg.adaptive_focus:
+        features.append("adaptive focus")
+    if features:
+        table.add_row("Smart features", ", ".join(features))
     console.print(table)
     console.print()
 
