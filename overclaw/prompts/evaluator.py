@@ -1,5 +1,31 @@
 """Prompts for ``overclaw.optimize.evaluator``."""
 
+LLM_TEXT_FIELD_JUDGE_PROMPT = """\
+You are evaluating a single text field from an AI agent's output.
+
+## Field: {field_name}
+Description: {field_description}
+
+## Expected Output
+{expected_text}
+
+## Actual Output
+{actual_text}
+
+## Input Context
+{input_json}
+
+Score the actual output compared to the expected output on a scale of 0–10:
+- 10: Semantically equivalent, covering the same key points and conclusions
+- 7–9: Captures most key points, minor differences in detail or phrasing
+- 4–6: Partially correct, misses some important points or includes inaccuracies
+- 1–3: Mostly incorrect or irrelevant, but shows some understanding
+- 0: Completely wrong, empty, or irrelevant
+
+Return ONLY a JSON object:
+{{"score": <0-10>, "reason": "<one sentence>"}}
+"""
+
 LLM_JUDGE_PROMPT = """\
 You are an expert evaluator scoring an AI agent's output.
 

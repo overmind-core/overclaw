@@ -10,6 +10,7 @@ import pytest
 
 from overclaw.optimize.evaluator import (
     SpecEvaluator,
+    _JUDGE_FALLBACK_SCORE,
     has_entrypoint,
     has_run_entrypoint,
     load_evaluator,
@@ -183,34 +184,134 @@ class TestScoreNumber:
 
 
 # ---------------------------------------------------------------------------
-# SpecEvaluator._score_text
+# SpecEvaluator._score_text — all modes
 # ---------------------------------------------------------------------------
 
 
 class TestScoreText:
-    def test_non_empty_mode_with_content(self):
+    def test_non_empty_mode_with_content(self, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec)
         config = {"weight": 15, "eval_mode": "non_empty"}
-        assert SpecEvaluator._score_text("Some text", config) == 15.0
+        assert ev._score_text("Some text", None, config) == 15.0
 
-    def test_non_empty_mode_empty_string(self):
+    def test_non_empty_mode_empty_string(self, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec)
         config = {"weight": 15, "eval_mode": "non_empty"}
-        assert SpecEvaluator._score_text("", config) == 0.0
+        assert ev._score_text("", None, config) == 0.0
 
-    def test_non_empty_mode_whitespace_only(self):
+    def test_non_empty_mode_whitespace_only(self, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec)
         config = {"weight": 15, "eval_mode": "non_empty"}
-        assert SpecEvaluator._score_text("   ", config) == 0.0
+        assert ev._score_text("   ", None, config) == 0.0
 
-    def test_non_empty_mode_none(self):
+    def test_non_empty_mode_none(self, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec)
         config = {"weight": 15, "eval_mode": "non_empty"}
-        assert SpecEvaluator._score_text(None, config) == 0.0
+        assert ev._score_text(None, None, config) == 0.0
 
-    def test_skip_mode(self):
+    def test_skip_mode(self, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec)
         config = {"weight": 15, "eval_mode": "skip"}
-        assert SpecEvaluator._score_text("text", config) == 0.0
+        assert ev._score_text("text", None, config) == 0.0
 
-    def test_unknown_mode(self):
+    def test_unknown_mode(self, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec)
         config = {"weight": 15, "eval_mode": "unknown_mode"}
-        assert SpecEvaluator._score_text("text", config) == 0.0
+        assert ev._score_text("text", None, config) == 0.0
+
+
+class TestTextSimilarity:
+    def test_identical_text(self):
+        score = SpecEvaluator._text_similarity(
+            "Large budget enterprise company", "Large budget enterprise company"
+        )
+        assert score == pytest.approx(1.0)
+
+    def test_high_overlap(self):
+        score = SpecEvaluator._text_similarity(
+            "Large budget enterprise firm",
+            "Large budget enterprise company",
+        )
+        assert score > 0.6
+
+    def test_no_overlap(self):
+        score = SpecEvaluator._text_similarity(
+            "xyz abc 123", "Large budget enterprise company"
+        )
+        assert score < 0.2
+
+    def test_empty_actual(self):
+        assert SpecEvaluator._text_similarity("", "some expected text") == 0.0
+
+    def test_empty_expected(self):
+        assert SpecEvaluator._text_similarity("some text", "") == 1.0
+
+    def test_both_empty(self):
+        assert SpecEvaluator._text_similarity("", "") == 1.0
+
+    def test_none_values(self):
+        assert SpecEvaluator._text_similarity(None, "text") == 0.0
+        assert SpecEvaluator._text_similarity("text", None) == 1.0
+
+    def test_very_short_actual_penalized(self):
+        score = SpecEvaluator._text_similarity(
+            "a",
+            "This is a really long expected text with many details and specifics",
+        )
+        assert score < 0.3
+
+    def test_similarity_mode_integration(self, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec)
+        config = {"weight": 15, "eval_mode": "similarity"}
+        score = ev._score_text(
+            "Large budget enterprise lead",
+            "Large budget enterprise company",
+            config,
+        )
+        assert 0 < score <= 15.0
+
+
+class TestTextKeywordCoverage:
+    def test_full_coverage(self):
+        score = SpecEvaluator._text_keyword_coverage(
+            "The company has a large budget and is enterprise",
+            "large budget enterprise",
+        )
+        assert score == pytest.approx(1.0)
+
+    def test_partial_coverage(self):
+        score = SpecEvaluator._text_keyword_coverage(
+            "The company has a large budget",
+            "large budget enterprise premium",
+        )
+        assert 0.3 < score < 0.8
+
+    def test_no_coverage(self):
+        score = SpecEvaluator._text_keyword_coverage(
+            "xyz abc 123",
+            "large budget enterprise",
+        )
+        assert score == 0.0
+
+    def test_empty_actual(self):
+        assert SpecEvaluator._text_keyword_coverage("", "keywords here") == 0.0
+
+    def test_empty_expected(self):
+        assert SpecEvaluator._text_keyword_coverage("some text", "") == 1.0
+
+    def test_stopwords_only_expected(self):
+        score = SpecEvaluator._text_keyword_coverage("text", "the a an is")
+        assert score == 1.0
+
+    def test_keyword_mode_integration(self, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec)
+        config = {"weight": 15, "eval_mode": "keyword_coverage"}
+        score = ev._score_text(
+            "Large budget enterprise lead",
+            "large budget enterprise",
+            config,
+        )
+        assert score == pytest.approx(15.0)
 
 
 # ---------------------------------------------------------------------------
@@ -263,17 +364,76 @@ class TestEvaluateOutput:
         scores = ev.evaluate_output({}, {"qualification": "hot"})
         assert scores["structure"] == 0.0
 
-    def test_structure_partial(self, sample_eval_spec):
+    def test_structure_weighted_by_importance(self, sample_eval_spec):
+        """Structure score should weight critical fields more than minor ones."""
         ev = SpecEvaluator(sample_eval_spec)
-        output = {"qualification": "hot", "score": 50}
-        expected = {"qualification": "hot", "score": 50}
-        scores = ev.evaluate_output(output, expected)
-        assert 0 < scores["structure"] < 20.0
+        output_with_critical = {"qualification": "hot"}
+        output_with_minor = {"is_enterprise": True}
+        score_critical = ev.evaluate_output(output_with_critical, {})["structure"]
+        score_minor = ev.evaluate_output(output_with_minor, {})["structure"]
+        assert score_critical > score_minor
+
+    def test_structure_zero_is_valid(self, tmp_path):
+        """Numeric 0 should count as present (not empty)."""
+        spec = {
+            "output_fields": {
+                "count": {
+                    "type": "number",
+                    "weight": 50,
+                    "tolerance": 5,
+                    "range": [0, 100],
+                }
+            },
+            "structure_weight": 20,
+            "total_points": 70,
+        }
+        path = tmp_path / "spec.json"
+        path.write_text(json.dumps(spec))
+        ev = SpecEvaluator(str(path))
+        scores = ev.evaluate_output({"count": 0}, {"count": 0})
+        assert scores["structure"] == 20.0
 
     def test_total_non_negative(self, sample_eval_spec):
         ev = SpecEvaluator(sample_eval_spec)
         scores = ev.evaluate_output({}, {})
         assert scores["total"] >= 0.0
+
+    def test_type_correctness_penalty_present(self, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec)
+        scores = ev.evaluate_output(
+            {
+                "qualification": "hot",
+                "score": 85,
+                "reasoning": "ok",
+                "is_enterprise": True,
+            },
+            {
+                "qualification": "hot",
+                "score": 85,
+                "reasoning": "ok",
+                "is_enterprise": True,
+            },
+        )
+        assert "type_correctness_penalty" in scores
+        assert scores["type_correctness_penalty"] == 0.0
+
+    def test_type_error_penalized(self, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec)
+        scores = ev.evaluate_output(
+            {
+                "qualification": "hot",
+                "score": "not_a_number",
+                "reasoning": "ok",
+                "is_enterprise": True,
+            },
+            {
+                "qualification": "hot",
+                "score": 85,
+                "reasoning": "ok",
+                "is_enterprise": True,
+            },
+        )
+        assert scores["type_correctness_penalty"] < 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -333,6 +493,31 @@ class TestEvaluateBatch:
         batch_result = ev.evaluate_batch(results)
         assert batch_result["avg_total"] == 50.0
 
+    def test_batch_queues_pre_scored_items_for_judge(self, tmp_path):
+        """Pre-scored items missing llm_judge should be queued for batch judging."""
+        spec = {
+            "output_fields": {
+                "result": {"type": "text", "weight": 50, "eval_mode": "non_empty"}
+            },
+            "structure_weight": 20,
+            "total_points": 100,
+            "llm_judge_weight": 30,
+        }
+        path = tmp_path / "spec.json"
+        path.write_text(json.dumps(spec))
+        ev = SpecEvaluator(str(path), llm_judge_model="test-model")
+
+        pre_scored = {
+            "output": {"result": "test"},
+            "expected": {"result": "test"},
+            "input": {"q": "test"},
+            "score": {"total": 70.0, "structure": 20.0, "result": 50.0},
+        }
+        with patch.object(ev, "_score_with_llm_judge", return_value=0.8) as mock_judge:
+            result = ev.evaluate_batch([pre_scored])
+            mock_judge.assert_called_once()
+        assert result["individual_scores"][0]["llm_judge"] == pytest.approx(24.0)
+
 
 # ---------------------------------------------------------------------------
 # SpecEvaluator.get_dimension_labels / get_max_scores
@@ -346,11 +531,92 @@ class TestDimensionLabelsAndMaxScores:
         label_names = [lbl[0] for lbl in labels]
         assert "Structure" in label_names
 
+    def test_labels_include_type_correctness(self, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec)
+        labels = ev.get_dimension_labels()
+        label_names = [lbl[0] for lbl in labels]
+        assert "Type Correctness" in label_names
+
     def test_max_scores(self, sample_eval_spec):
         ev = SpecEvaluator(sample_eval_spec)
         maxes = ev.get_max_scores()
         assert maxes["avg_structure"] == 20.0
         assert maxes["avg_qualification"] == 30.0
+        assert maxes["avg_type_correctness_penalty"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Type correctness
+# ---------------------------------------------------------------------------
+
+
+class TestTypeCorrectness:
+    def test_all_correct_types(self, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec)
+        penalty = ev._check_type_correctness(
+            {
+                "qualification": "hot",
+                "score": 85,
+                "reasoning": "text here",
+                "is_enterprise": True,
+            }
+        )
+        assert penalty == 0.0
+
+    def test_wrong_number_type(self, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec)
+        penalty = ev._check_type_correctness(
+            {
+                "qualification": "hot",
+                "score": "eighty-five",
+                "reasoning": "ok",
+                "is_enterprise": True,
+            }
+        )
+        assert penalty == -2.0
+
+    def test_multiple_type_errors(self, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec)
+        penalty = ev._check_type_correctness(
+            {
+                "qualification": "invalid_value",
+                "score": "not_number",
+                "reasoning": 123,
+                "is_enterprise": "maybe",
+            }
+        )
+        assert penalty <= -6.0
+
+    def test_cap_at_minus_10(self, tmp_path):
+        spec = {
+            "output_fields": {
+                f"f{i}": {"type": "number", "weight": 5, "tolerance": 1}
+                for i in range(10)
+            },
+            "structure_weight": 10,
+            "total_points": 60,
+        }
+        path = tmp_path / "spec.json"
+        path.write_text(json.dumps(spec))
+        ev = SpecEvaluator(str(path))
+        penalty = ev._check_type_correctness(
+            {f"f{i}": "not_a_number" for i in range(10)}
+        )
+        assert penalty == -10.0
+
+    def test_none_values_not_penalized(self, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec)
+        penalty = ev._check_type_correctness({})
+        assert penalty == 0.0
+
+    def test_bool_accepts_01(self, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec)
+        penalty = ev._check_type_correctness(
+            {
+                "is_enterprise": 1,
+            }
+        )
+        assert penalty == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +709,74 @@ class TestCrossFieldConsistency:
         assert len(rules) > 0
         assert rules[0]["type"] == "correlation"
 
+    def test_ordering_rule_violation(self, tmp_path):
+        spec = {
+            "output_fields": {
+                "min_val": {
+                    "type": "number",
+                    "weight": 20,
+                    "tolerance": 5,
+                    "range": [0, 100],
+                },
+                "max_val": {
+                    "type": "number",
+                    "weight": 20,
+                    "tolerance": 5,
+                    "range": [0, 100],
+                },
+            },
+            "structure_weight": 20,
+            "total_points": 60,
+            "consistency_rules": [
+                {
+                    "field_a": "min_val",
+                    "field_b": "max_val",
+                    "type": "ordering",
+                    "operator": "<=",
+                    "penalty": 5.0,
+                }
+            ],
+        }
+        path = tmp_path / "spec.json"
+        path.write_text(json.dumps(spec))
+        ev = SpecEvaluator(str(path))
+        penalty = ev._check_cross_field_consistency({"min_val": 80, "max_val": 20}, {})
+        assert penalty == -5.0
+
+    def test_ordering_rule_satisfied(self, tmp_path):
+        spec = {
+            "output_fields": {
+                "min_val": {
+                    "type": "number",
+                    "weight": 20,
+                    "tolerance": 5,
+                    "range": [0, 100],
+                },
+                "max_val": {
+                    "type": "number",
+                    "weight": 20,
+                    "tolerance": 5,
+                    "range": [0, 100],
+                },
+            },
+            "structure_weight": 20,
+            "total_points": 60,
+            "consistency_rules": [
+                {
+                    "field_a": "min_val",
+                    "field_b": "max_val",
+                    "type": "ordering",
+                    "operator": "<=",
+                    "penalty": 5.0,
+                }
+            ],
+        }
+        path = tmp_path / "spec.json"
+        path.write_text(json.dumps(spec))
+        ev = SpecEvaluator(str(path))
+        penalty = ev._check_cross_field_consistency({"min_val": 20, "max_val": 80}, {})
+        assert penalty == 0.0
+
 
 # ---------------------------------------------------------------------------
 # _is_contradictory
@@ -519,6 +853,28 @@ class TestLlmJudge:
         assert 0.0 <= score <= 1.0
 
     @patch("overclaw.utils.llm.litellm")
+    def test_judge_retries_on_parse_failure(self, mock_litellm, sample_eval_spec):
+        ev = SpecEvaluator(sample_eval_spec, llm_judge_model="model")
+        fail_resp = MagicMock()
+        fail_resp.choices = [MagicMock()]
+        fail_resp.choices[0].message.content = "not json"
+
+        success_resp = MagicMock()
+        success_resp.choices = [MagicMock()]
+        success_resp.choices[0].message.content = json.dumps(
+            {
+                "semantic_correctness": 8,
+                "internal_consistency": 7,
+                "reasoning_quality": 9,
+            }
+        )
+        mock_litellm.completion.side_effect = [fail_resp, success_resp]
+
+        score = ev._score_with_llm_judge({"input": "test"}, {}, {})
+        assert score != _JUDGE_FALLBACK_SCORE
+        assert 0.0 <= score <= 1.0
+
+    @patch("overclaw.utils.llm.litellm")
     def test_judge_parse_failure_returns_fallback(self, mock_litellm, sample_eval_spec):
         ev = SpecEvaluator(sample_eval_spec, llm_judge_model="model")
         mock_resp = MagicMock()
@@ -527,12 +883,136 @@ class TestLlmJudge:
         mock_litellm.completion.return_value = mock_resp
 
         score = ev._score_with_llm_judge({}, {}, {})
-        assert score == 0.5
+        assert score == _JUDGE_FALLBACK_SCORE
 
     @patch("overclaw.utils.llm.litellm")
-    def test_judge_exception_returns_fallback(self, mock_litellm, sample_eval_spec):
+    def test_judge_exception_retries_then_fallback(
+        self, mock_litellm, sample_eval_spec
+    ):
         ev = SpecEvaluator(sample_eval_spec, llm_judge_model="model")
         mock_litellm.completion.side_effect = RuntimeError("boom")
 
         score = ev._score_with_llm_judge({}, {}, {})
-        assert score == 0.5
+        assert score == _JUDGE_FALLBACK_SCORE
+        assert mock_litellm.completion.call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# spec_generator
+# ---------------------------------------------------------------------------
+
+
+class TestSpecGenerator:
+    def test_auto_judge_weight_with_text_fields(self):
+        from overclaw.setup.spec_generator import generate_spec_from_proposal
+
+        analysis = {
+            "output_schema": {
+                "rating": {"type": "enum", "values": ["good", "bad"]},
+                "reason": {"type": "text", "description": "Explanation"},
+            },
+            "proposed_criteria": {
+                "structure_weight": 20,
+                "fields": {
+                    "rating": {"importance": "critical"},
+                    "reason": {"importance": "important"},
+                },
+            },
+        }
+        spec = generate_spec_from_proposal(analysis)
+        assert spec.get("llm_judge_weight", 0) == 10
+        assert spec["total_points"] == 100
+
+    def test_auto_judge_weight_with_policy(self):
+        from overclaw.setup.spec_generator import generate_spec_from_proposal
+
+        analysis = {
+            "output_schema": {
+                "rating": {"type": "enum", "values": ["good", "bad"]},
+            },
+            "proposed_criteria": {
+                "structure_weight": 20,
+                "fields": {
+                    "rating": {"importance": "critical"},
+                },
+            },
+        }
+        spec = generate_spec_from_proposal(analysis, policy_data={"rules": "test"})
+        assert spec.get("llm_judge_weight", 0) == 10
+
+    def test_no_judge_weight_without_text_or_policy(self):
+        from overclaw.setup.spec_generator import generate_spec_from_proposal
+
+        analysis = {
+            "output_schema": {
+                "value": {"type": "number", "range": [0, 100]},
+            },
+            "proposed_criteria": {
+                "structure_weight": 20,
+                "fields": {
+                    "value": {"importance": "important"},
+                },
+            },
+        }
+        spec = generate_spec_from_proposal(analysis)
+        assert spec.get("llm_judge_weight", 0) == 0
+
+    def test_text_default_eval_mode_similarity(self):
+        from overclaw.setup.spec_generator import generate_spec_from_proposal
+
+        analysis = {
+            "output_schema": {
+                "reason": {"type": "text", "description": "Explanation"},
+            },
+            "proposed_criteria": {
+                "structure_weight": 20,
+                "fields": {
+                    "reason": {"importance": "important"},
+                },
+            },
+        }
+        spec = generate_spec_from_proposal(analysis)
+        assert spec["output_fields"]["reason"]["eval_mode"] == "similarity"
+
+    def test_auto_consistency_rules_generated(self):
+        from overclaw.setup.spec_generator import generate_spec_from_proposal
+
+        analysis = {
+            "output_schema": {
+                "quality": {"type": "enum", "values": ["high", "medium", "low"]},
+                "score_val": {"type": "number", "range": [0, 100]},
+            },
+            "proposed_criteria": {
+                "structure_weight": 20,
+                "fields": {
+                    "quality": {"importance": "important"},
+                    "score_val": {"importance": "important"},
+                },
+            },
+        }
+        spec = generate_spec_from_proposal(analysis)
+        rules = spec.get("consistency_rules", [])
+        assert len(rules) > 0
+        assert any(r["type"] == "correlation" for r in rules)
+
+    def test_ordering_rules_for_min_max(self):
+        from overclaw.setup.spec_generator import generate_spec_from_proposal
+
+        analysis = {
+            "output_schema": {
+                "min_price": {"type": "number", "range": [0, 1000000]},
+                "max_price": {"type": "number", "range": [0, 1000000]},
+            },
+            "proposed_criteria": {
+                "structure_weight": 20,
+                "fields": {
+                    "min_price": {"importance": "important"},
+                    "max_price": {"importance": "important"},
+                },
+            },
+        }
+        spec = generate_spec_from_proposal(analysis)
+        rules = spec.get("consistency_rules", [])
+        ordering_rules = [r for r in rules if r["type"] == "ordering"]
+        assert len(ordering_rules) >= 1
+        assert ordering_rules[0]["operator"] == "<="

@@ -104,7 +104,6 @@ def run(
         logger.debug("Coding agent step %d/%d", step_num + 1, max_steps)
 
         resp = provider.chat(messages=messages, tools=schemas or None)
-
         for k in ("input", "output"):
             total_usage[k] = total_usage.get(k, 0) + resp.usage.get(k, 0)
 

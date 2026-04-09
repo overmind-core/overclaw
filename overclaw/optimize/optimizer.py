@@ -716,6 +716,7 @@ class Optimizer:
                 best_cand_case_scores,
                 best_cand_items,
                 train_set,
+                candidate_eval=best_cand_eval,
             )
 
             # Cross-run regression gate: check that previously-fixed failures
@@ -1476,10 +1477,14 @@ class Optimizer:
         candidate_case_scores: list[float],
         candidate_items: list[dict],
         dataset: list[dict],
+        *,
+        candidate_eval: dict | None = None,
     ) -> tuple[bool, str]:
         """Check if a candidate should be accepted.
 
-        Uses a three-tier acceptance strategy:
+        Uses a four-tier acceptance strategy:
+        0. Noise-floor gate — when multi-run stdev data is available, reject
+           improvements smaller than ``noise_factor * stdev``.
         1. Net-positive override — if the average score improved meaningfully
            and fewer than half the cases had major regressions, accept.
         2. Magnitude override — if improvements outweigh regressions by 1.2x,
@@ -1500,6 +1505,20 @@ class Optimizer:
                 f"No improvement ({candidate_score:.1f} vs best {self.best_score:.1f})"
             )
 
+        net_improvement = candidate_score - self.best_score
+
+        # Tier 0: Noise-floor gate — require improvement to exceed the
+        # observed run-to-run variance when multi-run eval is used.
+        if candidate_eval and "_stdev" in candidate_eval:
+            stdev = candidate_eval["_stdev"]
+            noise_factor = 1.0
+            noise_floor = noise_factor * stdev
+            if noise_floor > 0 and net_improvement < noise_floor:
+                return False, (
+                    f"Improvement {net_improvement:.1f} is within noise floor "
+                    f"(stdev={stdev:.1f}, required ≥ {noise_floor:.1f})"
+                )
+
         if not self.best_case_scores or not candidate_case_scores:
             return True, ""
 
@@ -1519,7 +1538,6 @@ class Optimizer:
                 improvement_magnitude += delta
 
         regression_ratio = regressions / max(n, 1)
-        net_improvement = candidate_score - self.best_score
 
         # Tier 1: Net-positive override — average improved meaningfully and
         # fewer than half the cases had major (>3pt) regressions.
@@ -1595,12 +1613,13 @@ class Optimizer:
                 for span in tracer.trace.spans
                 if hasattr(span, "span_type") and span.span_type == "tool_call"
             ]
+            skip_judge = not getattr(self.config, "judge_in_regression", False)
             score = self.evaluator.evaluate_output(
                 output,
                 rc.expected_output,
                 input_data=rc.case_input,
                 tool_trace=tool_trace,
-                _skip_judge=True,
+                _skip_judge=skip_judge,
             )
             if score["total"] < rc.min_score:
                 failures += 1
@@ -2032,7 +2051,11 @@ class Optimizer:
     def _run_single_case(
         self, agent, case: dict, run_name: str, idx: int
     ) -> tuple[Tracer, dict]:
-        """Execute the agent on one test case and return (tracer, eval_item)."""
+        """Execute the agent on one test case and return (tracer, eval_item).
+
+        The LLM judge is always deferred (``_skip_judge=True``) so that
+        ``evaluate_batch`` can batch judge calls for efficiency.
+        """
         tracer = Tracer(trace_id=f"{run_name}_{idx:03d}")
         set_current_tracer(tracer)
         tracer.set_input(case["input"])
@@ -2055,7 +2078,6 @@ class Optimizer:
 
         expected = case.get("expected_output", case.get("expected", {}))
 
-        # Extract full tool trace data (args + results, not just names)
         tool_trace = [
             {
                 "name": span.name,
@@ -2075,10 +2097,12 @@ class Optimizer:
             expected,
             input_data=case.get("input"),
             tool_trace=tool_trace,
+            _skip_judge=True,
         )
         tracer.trace.score = score["total"]
 
         return tracer, {
+            "input": case.get("input"),
             "output": output,
             "expected": expected,
             "score": score,

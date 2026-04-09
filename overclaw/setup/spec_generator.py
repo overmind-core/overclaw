@@ -33,7 +33,11 @@ def generate_spec_from_proposal(
         elif ftype == "number":
             settings["tolerance"] = fc.get("tolerance", 10)
         elif ftype == "text":
-            settings["eval_mode"] = fc.get("eval_mode", "non_empty")
+            importance = fc.get("importance", "important")
+            default_mode = (
+                "similarity" if importance in ("critical", "important") else "non_empty"
+            )
+            settings["eval_mode"] = fc.get("eval_mode", default_mode)
         field_settings[field_name] = settings
 
     return _build_spec(
@@ -63,7 +67,19 @@ def _build_spec(
     if has_tools:
         tool_usage_weight = 10
 
-    available_points = 100 - structure_weight - tool_usage_weight
+    # Auto-allocate LLM judge weight when text or complex fields exist
+    text_fields = [
+        name for name, info in output_schema.items() if info.get("type") == "text"
+    ]
+    text_weight_sum = sum(
+        IMPORTANCE_MULTIPLIERS.get(field_importance.get(name, "important"), 2)
+        for name in text_fields
+    )
+    llm_judge_weight = 0
+    if text_weight_sum > 0 or policy_data:
+        llm_judge_weight = 10
+
+    available_points = 100 - structure_weight - tool_usage_weight - llm_judge_weight
 
     # Compute raw importance weights
     raw_weights: dict[str, int] = {}
@@ -115,7 +131,7 @@ def _build_spec(
             ]
 
         elif ftype == "text":
-            field_spec["eval_mode"] = settings.get("eval_mode", "non_empty")
+            field_spec["eval_mode"] = settings.get("eval_mode", "similarity")
 
         output_fields[field_name] = field_spec
 
@@ -132,10 +148,17 @@ def _build_spec(
                 param_constraints[tool_name] = constraints
         tool_config["param_constraints"] = param_constraints
 
-    # Extract consistency rules
-    consistency_rules = analysis.get("consistency_rules", [])
+    # Build consistency rules: use LLM-generated rules from analysis, then
+    # auto-generate structural rules for field pairs that the LLM missed.
+    consistency_rules = list(analysis.get("consistency_rules", []))
+    auto_rules = _generate_consistency_rules(output_schema, output_fields)
+    existing_pairs = {(r.get("field_a"), r.get("field_b")) for r in consistency_rules}
+    for rule in auto_rules:
+        pair = (rule["field_a"], rule["field_b"])
+        if pair not in existing_pairs:
+            consistency_rules.append(rule)
 
-    spec = {
+    spec: dict = {
         "agent_description": analysis.get("description", ""),
         "agent_path": analysis.get("_agent_path", ""),
         "input_schema": analysis.get("input_schema", {}),
@@ -150,6 +173,9 @@ def _build_spec(
         spec["tool_config"] = tool_config
         spec["tool_usage_weight"] = tool_usage_weight
 
+    if llm_judge_weight > 0:
+        spec["llm_judge_weight"] = llm_judge_weight
+
     if consistency_rules:
         spec["consistency_rules"] = consistency_rules
 
@@ -157,6 +183,59 @@ def _build_spec(
         spec["policy"] = policy_data
 
     return spec
+
+
+def _generate_consistency_rules(
+    output_schema: dict,
+    output_fields: dict,
+) -> list[dict]:
+    """Auto-generate consistency rules from field relationships.
+
+    Detects:
+    - Number ordering pairs (field names containing min/max, low/high patterns)
+    - Number-vs-enum correlations (with direction derived from enum ordering)
+    """
+    rules: list[dict] = []
+    number_fields = [
+        n for n, info in output_schema.items() if info.get("type") == "number"
+    ]
+    enum_fields = [n for n, info in output_schema.items() if info.get("type") == "enum"]
+
+    _ORDERING_PAIRS = [
+        ("min", "max"),
+        ("low", "high"),
+        ("lower", "upper"),
+        ("start", "end"),
+        ("from", "to"),
+    ]
+    for lo_kw, hi_kw in _ORDERING_PAIRS:
+        lo_matches = [n for n in number_fields if lo_kw in n.lower()]
+        hi_matches = [n for n in number_fields if hi_kw in n.lower()]
+        for lo_f in lo_matches:
+            for hi_f in hi_matches:
+                if lo_f != hi_f:
+                    rules.append(
+                        {
+                            "field_a": lo_f,
+                            "field_b": hi_f,
+                            "type": "ordering",
+                            "operator": "<=",
+                            "penalty": 3.0,
+                        }
+                    )
+
+    for nf in number_fields:
+        for ef in enum_fields:
+            rules.append(
+                {
+                    "field_a": nf,
+                    "field_b": ef,
+                    "type": "correlation",
+                    "penalty": 3.0,
+                }
+            )
+
+    return rules
 
 
 def save_spec(spec: dict, path: str):

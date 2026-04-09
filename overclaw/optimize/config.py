@@ -124,6 +124,10 @@ class Config:
     # Automated focus targeting: dynamically weight codegen focus areas
     # based on failure analysis instead of static round-robin.
     adaptive_focus: bool = True
+    # Whether to include LLM judge scoring during regression suite checks.
+    # When False (default), regression checks are faster but may miss
+    # semantic quality regressions on judge-heavy specs.
+    judge_in_regression: bool = False
 
 
 def _select_backtest_models(console: Console) -> list[str]:

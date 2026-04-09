@@ -129,7 +129,14 @@ def _format_scoring_mechanics(eval_spec: dict | None) -> str:
                 )
         elif ftype == "text":
             mode = config.get("eval_mode", "non_empty")
-            lines.append(f"**{label}: {weight} pts** (text) — {mode} check.")
+            mode_desc = {
+                "non_empty": "non-empty check (any text scores full points)",
+                "similarity": "token similarity vs expected (Jaccard + coverage)",
+                "keyword_coverage": "fraction of expected keywords present",
+                "llm_judge": "per-field LLM comparison vs expected text",
+                "skip": "not scored",
+            }.get(mode, f"{mode} check")
+            lines.append(f"**{label}: {weight} pts** (text) — {mode_desc}.")
         elif ftype == "boolean":
             lines.append(f"**{label}: {weight} pts** (boolean) — Exact match only.")
 
@@ -144,6 +151,11 @@ def _format_scoring_mechanics(eval_spec: dict | None) -> str:
         lines.append(
             f"**LLM Judge: {jw} pts** — Semantic correctness, consistency, reasoning."
         )
+
+    lines.append(
+        "**Type Correctness: penalty** — Each field with wrong type "
+        "(e.g., string where number expected) deducts 2 pts (capped at -10)."
+    )
 
     return "\n".join(lines)
 
