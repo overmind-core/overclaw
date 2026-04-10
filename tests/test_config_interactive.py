@@ -98,6 +98,9 @@ class TestCollectConfigInteractive:
             True,  # parallel
             True,  # advanced settings
             True,  # holdout enforcement
+            True,  # cross-run persistence
+            True,  # failure clustering
+            True,  # adaptive focus
             True,  # proceed
         ]
         monkeypatch.setenv("ANALYZER_MODEL", "gpt-5.4")

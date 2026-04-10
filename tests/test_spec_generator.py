@@ -73,7 +73,9 @@ class TestGenerateSpecFromProposal:
         }
         spec = generate_spec_from_proposal(analysis)
         field_weights = sum(f["weight"] for f in spec["output_fields"].values())
-        assert field_weights == 80  # 100 - 20 structure
+        # 100 - structure - reserved llm_judge slot for text fields
+        assert spec["llm_judge_weight"] == 10
+        assert field_weights == 70  # 100 - 20 structure - 10 llm_judge
 
     def test_with_policy_data(self):
         analysis = {
