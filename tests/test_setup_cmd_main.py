@@ -160,12 +160,17 @@ class TestSetupCmdMainInteractive:
     @patch("overclaw.commands.setup_cmd.resolve_agent")
     @patch("overclaw.commands.setup_cmd.load_overclaw_dotenv")
     @patch(
+        "overclaw.utils.provider_keys.read_api_key_masked",
+        return_value="sk-ant-api03-test-placeholder",
+    )
+    @patch(
         "overclaw.commands.setup_cmd.read_api_key_masked",
         return_value="sk-ant-api03-test-placeholder",
     )
     def test_interactive_auto_policy(
         self,
         _mock_read_api_key,
+        _mock_provider_read_api_key,
         mock_load_env,
         mock_resolve,
         mock_picker,

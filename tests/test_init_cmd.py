@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
+from unittest.mock import MagicMock, patch
 
 from overclaw.commands.init_cmd import (
+    _collect_missing_key_for_model,
     _key_configured,
     _model_provider,
     _primary_env_from_os,
-    _warn_missing_key_for_model,
     _write_env,
 )
 
@@ -84,26 +83,30 @@ class TestPrimaryEnvFromOs:
 
 
 # ---------------------------------------------------------------------------
-# _warn_missing_key_for_model
+# _collect_missing_key_for_model
 # ---------------------------------------------------------------------------
 
 
-class TestWarnMissingKeyForModel:
-    def test_warns_when_key_missing(self):
+class TestCollectMissingKeyForModel:
+    @patch("overclaw.commands.init_cmd.read_api_key_masked", return_value="")
+    def test_prompts_when_key_missing(self, _mock_read, monkeypatch):
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         console = MagicMock()
-        _warn_missing_key_for_model(console, "openai/gpt-5.4", {"OPENAI_API_KEY": ""})
+        _collect_missing_key_for_model(
+            console, "openai/gpt-5.4", {"OPENAI_API_KEY": ""}
+        )
         console.print.assert_called()
 
-    def test_no_warn_when_key_present(self):
+    def test_no_prompt_when_key_present(self):
         console = MagicMock()
-        _warn_missing_key_for_model(
+        _collect_missing_key_for_model(
             console, "openai/gpt-5.4", {"OPENAI_API_KEY": "sk-real-key"}
         )
         console.print.assert_not_called()
 
-    def test_unknown_provider_no_warn(self):
+    def test_unknown_provider_no_prompt(self):
         console = MagicMock()
-        _warn_missing_key_for_model(console, "custom/model", {})
+        _collect_missing_key_for_model(console, "custom/model", {})
         console.print.assert_not_called()
 
 
