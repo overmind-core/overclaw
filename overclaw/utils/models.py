@@ -1,5 +1,6 @@
 """Model configurations and backtesting catalog."""
 
+# Providers that have a fixed model catalog the user selects from.
 SUPPORTED_LLM_MODELS = [
     # ── OpenAI ──────────────────────────────────────────────────────────
     {"provider": "openai", "model_name": "gpt-5.4", "provider_display_name": "OpenAI"},
@@ -63,6 +64,13 @@ SUPPORTED_LLM_MODELS = [
     },
 ]
 
+# Providers with no fixed catalog — the user types the model name directly.
+# LiteLLM model-id prefix → human-readable display name.
+CUSTOM_MODEL_PROVIDERS: dict[str, str] = {
+    "bedrock": "AWS Bedrock",
+    "openrouter": "OpenRouter",
+}
+
 DEFAULT_BACKTEST_MODELS: dict[str, list[str]] = {
     "openai": ["gpt-5.4", "gpt-5.4-mini"],
     "anthropic": ["claude-sonnet-4-6", "claude-haiku-4-5"],
@@ -74,7 +82,7 @@ DEFAULT_DATAGEN_MODEL = "anthropic/claude-sonnet-4-6"
 
 
 def get_providers() -> list[str]:
-    """Return deduplicated provider list preserving order."""
+    """Return deduplicated provider list: catalog providers first, then custom-input providers."""
     seen: set[str] = set()
     providers: list[str] = []
     for m in SUPPORTED_LLM_MODELS:
@@ -82,15 +90,26 @@ def get_providers() -> list[str]:
         if p not in seen:
             seen.add(p)
             providers.append(p)
+    for p in CUSTOM_MODEL_PROVIDERS:
+        if p not in seen:
+            seen.add(p)
+            providers.append(p)
     return providers
 
 
 def get_provider_display_name(provider: str) -> str:
-    """Return the ``provider_display_name`` for *provider*, falling back to ``provider.title()``."""
+    """Return the human-readable display name for *provider*."""
+    if provider in CUSTOM_MODEL_PROVIDERS:
+        return CUSTOM_MODEL_PROVIDERS[provider]
     for m in SUPPORTED_LLM_MODELS:
         if m["provider"] == provider:
             return m.get("provider_display_name") or provider.title()
     return provider.title()
+
+
+def is_custom_model_provider(provider: str) -> bool:
+    """Return True for providers where the user must supply the model name (no fixed catalog)."""
+    return provider in CUSTOM_MODEL_PROVIDERS
 
 
 def get_models_for_provider(provider: str) -> list[str]:

@@ -1,0 +1,212 @@
+[
+  {
+    "input": {
+      "company_name": "TechCorp Solutions",
+      "contact_email": "sarah@techcorp.com",
+      "inquiry": "We need an enterprise CRM solution for our 200-person sales team. Budget approved for Q2 deployment."
+    },
+    "expected_output": {
+      "lead_score": 90,
+      "category": "hot",
+      "priority": "high",
+      "recommended_action": "schedule_demo",
+      "reasoning": "Large enterprise team, explicit budget approval, clear timeline"
+    }
+  },
+  {
+    "input": {
+      "company_name": "Metropolis Financial",
+      "contact_email": "j.chen@metropolisfinancial.com",
+      "inquiry": "We're mandated to upgrade our compliance platform by end of Q3. Looking for enterprise-grade solutions that meet SOC2 requirements. Ready to sign a contract."
+    },
+    "expected_output": {
+      "lead_score": 95,
+      "category": "hot",
+      "priority": "high",
+      "recommended_action": "schedule_demo",
+      "reasoning": "Enterprise finance company, regulatory mandate, explicit timeline and contract readiness"
+    }
+  },
+  {
+    "input": {
+      "company_name": "GreenLeaf Organics",
+      "contact_email": "tom@greenleaforganics.com",
+      "inquiry": "We're a small organic food brand looking for inventory management software. Interested in exploring options but no immediate timeline."
+    },
+    "expected_output": {
+      "lead_score": 45,
+      "category": "warm",
+      "priority": "medium",
+      "recommended_action": "send_info",
+      "reasoning": "Small business with a real need but no urgency or budget mention"
+    }
+  },
+  {
+    "input": {
+      "company_name": "StartupXYZ",
+      "contact_email": "alex@startupxyz.io",
+      "inquiry": "We're a 8-person startup building a SaaS product. Just curious about your API pricing — might need it sometime next year."
+    },
+    "expected_output": {
+      "lead_score": 20,
+      "category": "cold",
+      "priority": "low",
+      "recommended_action": "nurture",
+      "reasoning": "Very small startup, no timeline, just browsing"
+    }
+  },
+  {
+    "input": {
+      "company_name": "Bella's Boutique",
+      "contact_email": "bella@bellasboutique.com",
+      "inquiry": "Hi, I run a tiny retail shop. Do you have a free plan? I can't really afford paid software right now."
+    },
+    "expected_output": {
+      "lead_score": 10,
+      "category": "cold",
+      "priority": "low",
+      "recommended_action": "disqualify",
+      "reasoning": "Micro business, no budget, looking for free options"
+    }
+  },
+  {
+    "input": {
+      "company_name": "Midwest Manufacturing",
+      "contact_email": "operations@midwestmfg.com",
+      "inquiry": "We need to modernize our supply chain management. Currently evaluating 3 vendors and need to make a decision this quarter. Team of 200 users."
+    },
+    "expected_output": {
+      "lead_score": 80,
+      "category": "hot",
+      "priority": "high",
+      "recommended_action": "schedule_demo",
+      "reasoning": "Active evaluation with timeline pressure, medium-large company, clear need"
+    }
+  },
+  {
+    "input": {
+      "company_name": "CloudNine Hosting",
+      "contact_email": "dev@cloudnine.io",
+      "inquiry": "Looking for a monitoring solution for our infrastructure. About 75 engineers. Considering options — no hard deadline but would like to start evaluating soon."
+    },
+    "expected_output": {
+      "lead_score": 55,
+      "category": "warm",
+      "priority": "medium",
+      "recommended_action": "send_info",
+      "reasoning": "Medium tech company with genuine need, evaluating but no urgency"
+    }
+  },
+  {
+    "input": {
+      "company_name": "Global Logistics Inc",
+      "contact_email": "procurement@globallogistics.com",
+      "inquiry": "Urgent: we need to deploy a fleet management solution ASAP. Budget is allocated and approved. Our CEO wants this live by next month. 3000+ employees."
+    },
+    "expected_output": {
+      "lead_score": 98,
+      "category": "hot",
+      "priority": "high",
+      "recommended_action": "schedule_demo",
+      "reasoning": "Enterprise, urgent need, budget approved, executive sponsorship, immediate timeline"
+    }
+  },
+  {
+    "input": {
+      "company_name": "Innovate Health",
+      "contact_email": "admin@innovatehealth.org",
+      "inquiry": "We're a healthcare company with 150 staff. Interested in a patient management system. We have grant funding available but need to comply with HIPAA. Considering our options."
+    },
+    "expected_output": {
+      "lead_score": 70,
+      "category": "warm",
+      "priority": "high",
+      "recommended_action": "schedule_demo",
+      "reasoning": "Healthcare company with funding, compliance requirements indicate serious buyer"
+    }
+  },
+  {
+    "input": {
+      "company_name": "EduSpark Learning",
+      "contact_email": "hello@eduspark.edu",
+      "inquiry": "We're a small ed-tech company exploring LMS platforms. Our current system is outdated but we're in no rush to switch. Just gathering information for now."
+    },
+    "expected_output": {
+      "lead_score": 35,
+      "category": "warm",
+      "priority": "low",
+      "recommended_action": "nurture",
+      "reasoning": "Real need but explicitly no urgency, small company, early research phase"
+    }
+  },
+  {
+    "input": {
+      "company_name": "Unknown Corp",
+      "contact_email": "info@unknowncorp.com",
+      "inquiry": "Tell me about your product."
+    },
+    "expected_output": {
+      "lead_score": 15,
+      "category": "cold",
+      "priority": "low",
+      "recommended_action": "nurture",
+      "reasoning": "Unknown company, minimal information, vague inquiry"
+    }
+  },
+  {
+    "input": {
+      "company_name": "Quantum Dynamics",
+      "contact_email": "cto@quantumdynamics.tech",
+      "inquiry": "We're implementing a new data pipeline and need a robust ETL solution. Budget of $500K approved. Team of 50 data engineers. Want to purchase this quarter."
+    },
+    "expected_output": {
+      "lead_score": 92,
+      "category": "hot",
+      "priority": "high",
+      "recommended_action": "schedule_demo",
+      "reasoning": "Large tech company, explicit large budget, specific technical need, clear timeline"
+    }
+  },
+  {
+    "input": {
+      "company_name": "FreshBite Delivery",
+      "contact_email": "ops@freshbite.co",
+      "inquiry": "We're a growing food delivery startup, about 40 people. Need a better order management system. Currently comparing a few options. Could invest in the next 6 months."
+    },
+    "expected_output": {
+      "lead_score": 50,
+      "category": "warm",
+      "priority": "medium",
+      "recommended_action": "send_info",
+      "reasoning": "Growing startup with need, comparing options, reasonable but extended timeline"
+    }
+  },
+  {
+    "input": {
+      "company_name": "",
+      "contact_email": "student123@gmail.com",
+      "inquiry": "I'm a computer science student working on my thesis. Can I get free access to your API for academic research?"
+    },
+    "expected_output": {
+      "lead_score": 5,
+      "category": "cold",
+      "priority": "low",
+      "recommended_action": "disqualify",
+      "reasoning": "Student, no company, looking for free access, not a sales lead"
+    }
+  },
+  {
+    "input": {
+      "company_name": "Midwest Manufacturing",
+      "contact_email": "cfo@midwestmfg.com",
+      "inquiry": "Following up on our earlier conversation. The board has approved a $200K budget for the ERP upgrade. We'd like to schedule a demo for next week and start implementation in Q1."
+    },
+    "expected_output": {
+      "lead_score": 95,
+      "category": "hot",
+      "priority": "high",
+      "recommended_action": "schedule_demo",
+      "reasoning": "Repeat contact, board-approved budget, demo request, immediate timeline"
+    }
+  }
+]

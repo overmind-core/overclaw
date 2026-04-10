@@ -49,6 +49,11 @@ from overclaw.utils.models import (
     DEFAULT_DATAGEN_MODEL,
     normalize_to_litellm_model_id,
 )
+from overclaw.utils.provider_keys import (
+    PROVIDER_ENV_KEYS as _PROVIDER_ENV_KEYS,
+    ensure_provider_api_keys as _ensure_provider_api_keys,
+    update_agent_env as _update_agent_env,
+)
 from overclaw.utils.policy import default_policy_path, format_for_synthetic_data
 from overclaw.optimize.data import (
     generate_diverse_synthetic_data,
@@ -750,6 +755,9 @@ def _run_data_phase(
                 agent_env_path(agent_name),
                 agent_name,
             )
+            _ensure_provider_api_keys(
+                datagen_model, agent_env_path(agent_name), agent_name, console
+            )
             _handle_no_data_path(
                 analysis=analysis,
                 policy_context=policy_context,
@@ -807,6 +815,9 @@ def _run_data_phase(
             agent_env_path(agent_name),
             agent_name,
         )
+        _ensure_provider_api_keys(
+            datagen_model, agent_env_path(agent_name), agent_name, console
+        )
         _handle_seed_data_path(
             seed_path,
             seed_data=seed_data,
@@ -839,6 +850,9 @@ def _run_data_phase(
             "SYNTHETIC_DATAGEN_MODEL",
             agent_env_path(agent_name),
             agent_name,
+        )
+        _ensure_provider_api_keys(
+            datagen_model, agent_env_path(agent_name), agent_name, console
         )
         _handle_no_data_path(
             analysis=analysis,
@@ -1025,25 +1039,6 @@ def _write_agent_env(path: Path, agent_name: str, env_vars: dict[str, str]) -> N
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _update_agent_env(path: Path, agent_name: str, updates: dict[str, str]) -> None:
-    """Merge *updates* into the agent's ``.env``, preserving all existing keys."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    existing: dict[str, str] = {}
-    if path.exists():
-        existing = {k: (v or "") for k, v in (dotenv_values(path) or {}).items()}
-    existing.update(updates)
-    lines = [f"# OverClaw agent env — {agent_name}", ""]
-    for key, val in existing.items():
-        lines.append(f"{key}={val}")
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-_PROVIDER_API_KEY: dict[str, str] = {
-    "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-}
-
-
 def _describe_configured_agent_llm_provider(existing: dict[str, str]) -> str | None:
     """Summarize LLM provider from env keys and ``ANALYZER_MODEL`` (no secret values)."""
     oai_key = (existing.get("OPENAI_API_KEY") or "").strip()
@@ -1084,8 +1079,8 @@ def _describe_configured_agent_llm_provider(existing: dict[str, str]) -> str | N
 def _pin_model_to_agent_env(
     model: str, env_key: str, env_path: Path, agent_name: str
 ) -> None:
-    """Save *model* under *env_key* in the agent's ``.env`` and copy the
-    provider's API key from the global environment if it is not already there.
+    """Save *model* under *env_key* in the agent's ``.env`` and copy any
+    provider credentials from the global environment if not already present.
 
     This makes the agent env self-contained: OverClaw will always load it
     instead of the global ``.overclaw/.env`` when setting up or optimizing the
@@ -1094,17 +1089,18 @@ def _pin_model_to_agent_env(
     updates: dict[str, str] = {env_key: model}
 
     provider = model.split("/")[0] if "/" in model else ""
-    api_key_name = _PROVIDER_API_KEY.get(provider)
-    if api_key_name:
+    env_key_names = _PROVIDER_ENV_KEYS.get(provider, [])
+    if env_key_names:
         existing = (
             {k: (v or "") for k, v in (dotenv_values(env_path) or {}).items()}
             if env_path.exists()
             else {}
         )
-        if not existing.get(api_key_name, "").strip():
-            global_val = os.getenv(api_key_name, "").strip()
-            if global_val:
-                updates[api_key_name] = global_val
+        for key_name in env_key_names:
+            if not existing.get(key_name, "").strip():
+                global_val = os.getenv(key_name, "").strip()
+                if global_val:
+                    updates[key_name] = global_val
 
     _update_agent_env(env_path, agent_name, updates)
 
@@ -1373,6 +1369,9 @@ def main(
             )
         _pin_model_to_agent_env(
             model, "ANALYZER_MODEL", agent_env_path(agent_name), agent_name
+        )
+        _ensure_provider_api_keys(
+            model, agent_env_path(agent_name), agent_name, console
         )
         load_agent_dotenv(agent_name)
 

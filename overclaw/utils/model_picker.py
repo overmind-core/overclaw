@@ -9,6 +9,7 @@ from overclaw.utils.models import (
     get_models_for_provider,
     get_provider_display_name,
     get_providers,
+    is_custom_model_provider,
 )
 
 
@@ -60,6 +61,45 @@ def prompt_for_catalog_litellm_model(
     chosen_provider = providers[provider_idx]
 
     # ── Step 2: pick model within provider ───────────────────────────────────
+
+    # Custom-input providers (Bedrock, OpenRouter) have no fixed catalog —
+    # the user must type the model name directly.
+    if is_custom_model_provider(chosen_provider):
+        default_hint = ""
+        if effective_default:
+            eff_prov, _, eff_model = effective_default.partition("/")
+            if eff_prov == chosen_provider and eff_model:
+                default_hint = eff_model
+
+        provider_label = get_provider_display_name(chosen_provider)
+        if chosen_provider == "bedrock":
+            console.print(
+                "\n  [dim]Enter the Bedrock model ID as it appears in LiteLLM "
+                "(everything after [bold]bedrock/[/bold]).\n"
+                "  Examples: [cyan]anthropic.claude-3-5-sonnet-20241022-v2:0[/cyan]  "
+                "[cyan]us.amazon.nova-pro-v1:0[/cyan]  "
+                "[cyan]meta.llama3-70b-instruct-v1:0[/cyan][/dim]"
+            )
+        elif chosen_provider == "openrouter":
+            console.print(
+                "\n  [dim]Enter the OpenRouter model path as it appears in LiteLLM "
+                "(everything after [bold]openrouter/[/bold]).\n"
+                "  Examples: [cyan]z-ai/glm-5.1[/cyan]  "
+                "[cyan]google/gemma-4-31b-it[/cyan]  "
+                "[cyan]x-ai/grok-4.20[/cyan]\n"
+                "  Browse all models at [cyan]https://openrouter.ai/models[/cyan][/dim]"
+            )
+
+        prompt_text = f"  Enter {provider_label} model name"
+        if default_hint:
+            chosen_model = Prompt.ask(
+                prompt_text, default=default_hint, console=console
+            )
+        else:
+            chosen_model = Prompt.ask(prompt_text, console=console)
+        chosen_model = chosen_model.strip()
+        return f"{chosen_provider}/{chosen_model}"
+
     provider_models = get_models_for_provider(chosen_provider)
 
     default_model_idx = 0

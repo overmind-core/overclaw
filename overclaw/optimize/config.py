@@ -22,7 +22,9 @@ from overclaw.utils.models import (
     get_providers,
     normalize_to_litellm_model_id,
 )
+from overclaw.utils.provider_keys import ensure_provider_api_keys
 from overclaw.core.paths import (
+    agent_env_path,
     agent_experiments_dir,
     agent_setup_spec_dir,
     load_overclaw_dotenv,
@@ -353,6 +355,12 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
                 default_model=DEFAULT_ANALYZER_MODEL,
                 no_catalog_prompt="  Enter analyzer model",
             )
+            ensure_provider_api_keys(
+                cfg.analyzer_model,
+                agent_env_path(cfg.agent_name),
+                cfg.agent_name,
+                console,
+            )
     else:
         console.print(
             f"  [yellow]No ANALYZER_MODEL found in {overclaw_rel('.env')}[/yellow]"
@@ -363,6 +371,9 @@ def collect_config(agent_name: str, *, fast: bool = False) -> Config:
             env_default=_analyzer_default_from_env(),
             default_model=DEFAULT_ANALYZER_MODEL,
             no_catalog_prompt="  Enter analyzer model",
+        )
+        ensure_provider_api_keys(
+            cfg.analyzer_model, agent_env_path(cfg.agent_name), cfg.agent_name, console
         )
 
     # ---- LLM-as-Judge ----

@@ -39,16 +39,27 @@ PRIMARY_ENV_KEYS = [
     "OVERMIND_API_TOKEN",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
+    "OPENROUTER_API_KEY",
+    "AWS_BEARER_TOKEN_BEDROCK",
     "ANALYZER_MODEL",
     "SYNTHETIC_DATAGEN_MODEL",
 ]
 
+# Maps LiteLLM provider prefix → the single env var needed to authenticate.
 PROVIDER_ENV_KEY = {
     "openai": "OPENAI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "bedrock": "AWS_BEARER_TOKEN_BEDROCK",
 }
 
-KEYS_TO_COLLECT = ("OVERMIND_API_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY")
+KEYS_TO_COLLECT = (
+    "OVERMIND_API_TOKEN",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "OPENROUTER_API_KEY",
+    "AWS_BEARER_TOKEN_BEDROCK",
+)
 
 
 def _primary_env_from_os() -> dict[str, str]:
@@ -73,19 +84,41 @@ def _model_provider(litellm_model: str) -> str:
     return canonical.lower().strip()
 
 
-def _warn_missing_key_for_model(
+def _collect_missing_key_for_model(
     console: Console, model: str, env: dict[str, str]
 ) -> None:
+    """If the provider credential for *model* is absent from both *env* and the
+    live process environment, prompt the user to enter it now and save it into
+    *env* so it gets written to ``.env``.
+    """
     prov = _model_provider(model)
     ek = PROVIDER_ENV_KEY.get(prov)
     if not ek:
         return
-    if _key_configured(env.get(ek, "")):
+    # Check env dict AND os.environ — the key may already be set globally but
+    # not yet reflected in the snapshot (e.g. OPENROUTER_API_KEY set in shell).
+    if _key_configured(env.get(ek, "")) or _key_configured(os.getenv(ek, "")):
         return
+
+    from overclaw.utils.models import get_provider_display_name
+
+    provider_label = get_provider_display_name(prov)
     console.print(
-        f"\n  [yellow]Warning:[/yellow] model [cyan]{model}[/cyan] typically needs "
-        f"[bold]{ek}[/bold], which is empty. Set it before running the pipeline.\n"
+        f"\n  [yellow]Missing credential:[/yellow] [cyan]{provider_label}[/cyan] "
+        f"requires [bold]{ek}[/bold] but it is not set."
     )
+    val = read_api_key_masked(ek)
+    if val.strip():
+        env[ek] = val.strip()
+        console.print(
+            f"  [bold green]✓[/bold green] Saved [bold]{ek}[/bold] "
+            f"[dim]→ will be written to .env[/dim]"
+        )
+    else:
+        console.print(
+            f"  [yellow]Skipped.[/yellow] [dim]Set [bold]{ek}[/bold] in "
+            f"{overclaw_rel('.env')} before running the pipeline.[/dim]"
+        )
 
 
 def _prompt_optional_api_key(
@@ -215,6 +248,7 @@ def _collect_analyzer_model(console: Console, env: dict[str, str]) -> str:
         default_model=DEFAULT_ANALYZER_MODEL,
         no_catalog_prompt="  Enter analyzer model (provider/model)",
     )
+    _collect_missing_key_for_model(console, chosen, env)
     return chosen
 
 
@@ -250,13 +284,15 @@ def _collect_synthetic_datagen_model(
             "  [yellow]No SYNTHETIC_DATAGEN_MODEL in the environment — pick a model.[/yellow]"
         )
 
-    return prompt_for_catalog_litellm_model(
+    chosen = prompt_for_catalog_litellm_model(
         console,
         select_prompt="  Select synthetic data generation model (number)",
         env_default=normalize_to_litellm_model_id(raw) if raw else None,
         default_model=DEFAULT_DATAGEN_MODEL,
         no_catalog_prompt="  Enter model for synthetic data (provider/model)",
     )
+    _collect_missing_key_for_model(console, chosen, env)
+    return chosen
 
 
 def _write_env(path: Path, env: dict[str, str]) -> None:
@@ -336,10 +372,6 @@ def main() -> None:
         )
     else:
         env.pop("SYNTHETIC_DATAGEN_MODEL", None)
-
-    _warn_missing_key_for_model(console, env["ANALYZER_MODEL"], env)
-    if synthetic:
-        _warn_missing_key_for_model(console, env["SYNTHETIC_DATAGEN_MODEL"], env)
 
     console.print()
     console.print(Rule(style="dim"))

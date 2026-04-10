@@ -16,6 +16,7 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.40.0",
     "python-dateutil",
     "simple-term-menu>=1.6.6",
+    "boto3>=1.42.87",
 ]
 
 [project.scripts]
