@@ -10,8 +10,6 @@ Commands:
     overclaw agent show <name>                         Show agent registration and pipeline status
     overclaw setup <name> [--data PATH] [--fast]      Analyze agent and define eval criteria
     overclaw optimize <name> [--fast]                  Run the optimization loop
-    overclaw sync [name]                               Sync local setup artifacts to Overmind
-    overclaw sync-optimize [name]                      Sync local optimize artifacts to Overmind
 """
 
 from __future__ import annotations
@@ -300,54 +298,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help=f"skip all prompts; requires ANALYZER_MODEL in {overclaw_rel('.env')}",
     )
 
-    # ── sync ─────────────────────────────────────────────────────────────────
-    sync_p = subparsers.add_parser(
-        "sync",
-        formatter_class=_FMT,
-        help="Sync local setup artifacts to Overmind",
-        description=(
-            "Upload local setup artifacts (eval spec, dataset, policy) from "
-            f"{overclaw_rel('agents', '<name>', 'setup_spec')} to Overmind.\n"
-            "\n"
-            "Useful when artifacts were generated before Overmind API keys were configured."
-        ),
-        epilog=(
-            "Examples:\n"
-            "  overclaw sync                  # sync all registered agents\n"
-            "  overclaw sync lead-qualification  # sync one agent\n"
-        ),
-    )
-    sync_p.add_argument(
-        "agent",
-        nargs="?",
-        metavar="AGENT_NAME",
-        help="optional registered agent name (defaults to all registered agents)",
-    )
-
-    # ── sync-optimize ────────────────────────────────────────────────────────
-    sync_opt_p = subparsers.add_parser(
-        "sync-optimize",
-        formatter_class=_FMT,
-        help="Sync local optimize artifacts to Overmind",
-        description=(
-            "Upload local optimize artifacts from "
-            f"{overclaw_rel('agents', '<name>', 'experiments')} to Overmind.\n"
-            "\n"
-            "Useful when optimization ran before Overmind API keys were configured."
-        ),
-        epilog=(
-            "Examples:\n"
-            "  overclaw sync-optimize                  # sync all registered agents\n"
-            "  overclaw sync-optimize lead-qualification  # sync one agent\n"
-        ),
-    )
-    sync_opt_p.add_argument(
-        "agent",
-        nargs="?",
-        metavar="AGENT_NAME",
-        help="optional registered agent name (defaults to all registered agents)",
-    )
-
     return parser
 
 
@@ -359,6 +309,22 @@ def main() -> None:
         from overclaw.core.registry import require_overclaw_initialized
 
         require_overclaw_initialized()
+
+    # Load .overclaw/.env so OVERMIND_API_TOKEN/URL are available for SDK init
+    from overclaw.core.paths import load_overclaw_dotenv
+
+    load_overclaw_dotenv()
+
+    # Initialize Overmind SDK once globally — picks up remote or falls back to disk
+    from overmind_sdk import init as overmind_init
+
+    agent_name = getattr(args, "agent", None) or getattr(args, "name", None)
+    service_name = (
+        f"overclaw-{args.command}-{agent_name}"
+        if agent_name
+        else f"overclaw-{args.command}"
+    )
+    overmind_init(service_name=service_name)
 
     try:
         if args.command == "init":
@@ -400,16 +366,6 @@ def main() -> None:
             from overclaw.commands.optimize_cmd import main as _optimize
 
             _optimize(agent_name=args.agent, fast=args.fast)
-
-        elif args.command == "sync":
-            from overclaw.commands.sync_cmd import main as _sync
-
-            _sync(agent_name=args.agent)
-
-        elif args.command == "sync-optimize":
-            from overclaw.commands.sync_optimize_cmd import main as _sync_optimize
-
-            _sync_optimize(agent_name=args.agent)
 
     except KeyboardInterrupt:
         print("\nAborted.", file=sys.stderr)

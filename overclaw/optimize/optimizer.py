@@ -68,6 +68,7 @@ from overclaw.utils.policy import (
 )
 from overclaw.core.tracer import Tracer, set_current_tracer
 from overclaw.storage import get_storage
+from overmind_sdk import observe, SpanType, set_tag
 
 
 class Optimizer:
@@ -146,7 +147,15 @@ class Optimizer:
     # Public entry point
     # ------------------------------------------------------------------
 
+    @observe(span_name="overclaw_optimizer_run", type=SpanType.FUNCTION)
     def run(self):
+        set_tag("overclaw.optimize.agent_name", self.config.agent_name)
+        set_tag("overclaw.optimize.agent_path", self.config.agent_path)
+        set_tag("overclaw.optimize.iterations", self.config.iterations)
+        set_tag(
+            "overclaw.optimize.candidates_per_iteration",
+            getattr(self.config, "candidates_per_iteration", 1),
+        )
         self._setup_output_dirs()
         dataset = self._load_dataset()
 
@@ -298,6 +307,9 @@ class Optimizer:
         latest_eval = baseline_eval
 
         for i in range(1, self.config.iterations + 1):
+            # Iteration-scoped tags to keep optimize traces grouped clearly.
+            set_tag("overclaw.optimize.current_iteration", i)
+            set_tag("overclaw.optimize.current_best_score", self.best_score)
             self.console.print()
             self.console.print(
                 Rule(
@@ -1998,12 +2010,15 @@ class Optimizer:
         spec.loader.exec_module(module)
         return module
 
+    @observe(span_name="overclaw_optimize_dataset_run", type=SpanType.FUNCTION)
     def _run_agent_on_dataset(
         self,
         agent_path: str,
         dataset: list[dict],
         run_name: str,
     ) -> tuple[dict, list[Tracer], list[dict]]:
+        set_tag("overclaw.optimize.run_name", run_name)
+        set_tag("overclaw.optimize.dataset_size", len(dataset))
         agent = self._load_agent_module(agent_path)
 
         if self.config.parallel:
@@ -2071,6 +2086,7 @@ class Optimizer:
         batch_eval = self.evaluator.evaluate_batch(eval_items)
         return batch_eval, tracers, eval_items
 
+    @observe(span_name="overclaw_optimize_experiment", type=SpanType.FUNCTION)
     def _run_single_case(
         self, agent, case: dict, run_name: str, idx: int
     ) -> tuple[Tracer, dict]:
@@ -2080,6 +2096,9 @@ class Optimizer:
         ``evaluate_batch`` can batch judge calls for efficiency.
         """
         tracer = Tracer(trace_id=f"{run_name}_{idx:03d}")
+        set_tag("overclaw.optimize.run_name", run_name)
+        set_tag("overclaw.optimize.case_idx", idx)
+        set_tag("overclaw.optimize.trace_id", tracer.trace.trace_id)
         set_current_tracer(tracer)
         tracer.set_input(case["input"])
 
@@ -2092,11 +2111,12 @@ class Optimizer:
         tracer.finish()
         set_current_tracer(None)
 
-        trace_path = self.traces_dir / run_name / f"{idx:03d}.json"
-        tracer.trace.save(str(trace_path))
-        if self._reporter:
-            trace_payload = tracer.trace.to_dict()
-            trace_payload["trace_group"] = run_name
+        trace_payload = tracer.trace.to_dict()
+        trace_payload["trace_group"] = run_name
+        if self._storage:
+            self._storage.save_trace(trace_payload, run_name=run_name, idx=idx)
+        elif self._reporter:
+            # Fallback path when storage could not be constructed.
             self._reporter.on_trace(trace_payload)
 
         expected = case.get("expected_output", case.get("expected", {}))
@@ -2123,6 +2143,7 @@ class Optimizer:
             _skip_judge=True,
         )
         tracer.trace.score = score["total"]
+        set_tag("overclaw.optimize.case_score", score["total"])
 
         return tracer, {
             "input": case.get("input"),

@@ -89,6 +89,7 @@ from overclaw.setup.questionnaire import run_questionnaire
 from overclaw.setup.spec_generator import generate_spec_from_proposal, save_spec
 from overclaw.storage import configure_storage, get_storage
 from overclaw.storage.api import ApiBackend
+from overmind_sdk import observe, SpanType, set_tag
 
 
 def _validate_agent_entrypoint(agent_path: str, fn_name: str, console: Console) -> None:
@@ -670,6 +671,7 @@ def _sync_setup_artifacts(agent_name: str, agent_path: str, console: Console) ->
         )
 
 
+@observe(span_name="overclaw_setup_data_phase", type=SpanType.FUNCTION)
 def _run_data_phase(
     analysis: dict,
     policy_data: dict | None,
@@ -685,6 +687,9 @@ def _run_data_phase(
 
     This runs after policy is finalized and before eval criteria generation.
     """
+    set_tag("overclaw.setup.agent_name", agent_name)
+    set_tag("overclaw.setup.fast", fast)
+    set_tag("overclaw.setup.model", model)
     agent_code = analysis.get("_agent_code_section") or Path(agent_path).read_text()
     description = analysis.get("description", "")
     policy_context = format_for_synthetic_data(policy_data) if policy_data else None
@@ -1231,6 +1236,7 @@ def _collect_agent_provider_config(agent_name: str, console: Console) -> None:
             # smoke test runs.
 
 
+@observe(span_name="overclaw_setup", type=SpanType.FUNCTION)
 def main(
     agent_name: str,
     fast: bool = False,
@@ -1238,6 +1244,17 @@ def main(
     data: str | None = None,
 ) -> None:
     load_overclaw_dotenv()
+
+    # CLI-level flags — set as soon as the span is open
+    set_tag("overclaw.command", "setup")
+    set_tag("overclaw.setup.agent_name", agent_name)
+    set_tag("overclaw.setup.fast", str(fast))
+    set_tag("overclaw.setup.has_policy", str(bool(policy)))
+    set_tag("overclaw.setup.has_seed_data", str(bool(data)))
+    if policy:
+        set_tag("overclaw.setup.policy_path", policy)
+    if data:
+        set_tag("overclaw.setup.data_path", data)
 
     console = Console()
     console.print()
@@ -1280,6 +1297,9 @@ def main(
         agent_id=agent_id,
         backend="api" if use_api_backend else "fs",
     )
+    set_tag("overclaw.setup.storage_backend", "api" if use_api_backend else "fs")
+    set_tag("overclaw.setup.agent_path", agent_path)
+    set_tag("overclaw.setup.entrypoint_fn", fn_name)
 
     _sigint_flushed = {"done": False}
 
@@ -1290,8 +1310,6 @@ def main(
         console.print(
             "\n  [yellow]Interrupted. Flushing pending Overmind updates...[/yellow]"
         )
-        with suppress(Exception):
-            _sync_setup_artifacts(agent_name, agent_path, console)
         flush_pending_api_updates(timeout=8.0)
         console.print("  [dim]Pending updates flushed. Exiting.[/dim]\n")
         raise SystemExit(130)
@@ -1321,6 +1339,7 @@ def main(
             )
             raise SystemExit(1)
         model = normalize_to_litellm_model_id(raw_model) or raw_model
+        set_tag("overclaw.setup.analyzer_model", model)
         _pin_model_to_agent_env(
             model, "ANALYZER_MODEL", agent_env_path(agent_name), agent_name
         )
@@ -1388,6 +1407,10 @@ def main(
             border_style=BRAND,
         )
     )
+    set_tag("overclaw.setup.fast", fast)
+    set_tag("overclaw.setup.agent_path", agent_path)
+    set_tag("overclaw.setup.analyzer_model", model)
+    set_tag("overclaw.setup.entrypoint_fn", fn_name)
     analysis = analyze_agent(agent_path, model, console, entrypoint_fn=fn_name)
 
     # ---- Phase 2: Policy Definition ----
@@ -1444,7 +1467,6 @@ def main(
         spec = generate_spec_from_proposal(analysis, policy_data=policy_data)
         _save_and_finish(spec, agent_name, console, policy_md=policy_md)
         _run_end_smoke_test(agent_name, agent_path, fn_name, console)
-        _sync_setup_artifacts(agent_name, agent_path, console)
         return
 
     pol_path = default_policy_path(agent_name)
@@ -1596,7 +1618,6 @@ def main(
                 policy_file_already_saved=True,
             )
             _run_end_smoke_test(agent_name, agent_path, fn_name, console)
-            _sync_setup_artifacts(agent_name, agent_path, console)
             return
 
         console.print()
@@ -1625,7 +1646,6 @@ def main(
                 f"the criteria, then run the optimizer.[/dim]\n"
             )
             _run_end_smoke_test(agent_name, agent_path, fn_name, console)
-            _sync_setup_artifacts(agent_name, agent_path, console)
             return
 
         iteration += 1

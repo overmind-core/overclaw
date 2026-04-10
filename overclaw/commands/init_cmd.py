@@ -32,6 +32,7 @@ from overclaw.utils.models import (
     model_name_for_env_storage,
     normalize_to_litellm_model_id,
 )
+from overmind_sdk import observe, SpanType, set_tag
 
 
 # Keys we may set or clear; other keys from the state-dir .env are preserved on write.
@@ -297,7 +298,9 @@ def _write_env(path: Path, env: dict[str, str]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+@observe(span_name="overclaw_init", type=SpanType.FUNCTION)
 def main() -> None:
+    set_tag("overclaw.command", "init")
     oc_dir = init_project_root() / OVERCLAW_DIR_NAME
     oc_dir.mkdir(parents=True, exist_ok=True)
     env_path = oc_dir / ".env"
@@ -348,6 +351,27 @@ def main() -> None:
         env.setdefault(k, "")
 
     _write_env(env_path, env)
+
+    # Capture what was configured so it shows up in traces
+    set_tag("overclaw.init.env_path", str(env_path))
+    set_tag(
+        "overclaw.init.has_openai_key",
+        str(bool((env.get("OPENAI_API_KEY") or "").strip())),
+    )
+    set_tag(
+        "overclaw.init.has_anthropic_key",
+        str(bool((env.get("ANTHROPIC_API_KEY") or "").strip())),
+    )
+    set_tag(
+        "overclaw.init.has_overmind_token",
+        str(bool((env.get("OVERMIND_API_TOKEN") or "").strip())),
+    )
+    set_tag("overclaw.init.analyzer_model", env.get("ANALYZER_MODEL") or "")
+    set_tag(
+        "overclaw.init.has_synthetic_datagen_model",
+        str(bool((env.get("SYNTHETIC_DATAGEN_MODEL") or "").strip())),
+    )
+
     console.print(f"\n  [green]Wrote[/green] {env_path}")
     console.print(
         "  [dim]Run setup / optimize as usual; keys are read on startup.[/dim]\n"

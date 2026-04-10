@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from overmind_sdk import observe, SpanType, set_tag
 from overclaw.utils.display import BRAND, confirm_option
 from overclaw.core.paths import agent_experiments_dir, agent_setup_spec_dir
 from overclaw.core.constants import overclaw_rel
@@ -68,7 +69,11 @@ def _confirm_duplicate_entrypoint(
         raise SystemExit(0)
 
 
+@observe(span_name="overclaw_agent_register", type=SpanType.FUNCTION)
 def cmd_register(name: str, entrypoint: str) -> None:
+    set_tag("overclaw.command", "agent.register")
+    set_tag("overclaw.agent.name", name)
+    set_tag("overclaw.agent.entrypoint", entrypoint)
     console = Console()
     registry = load_registry()
 
@@ -92,6 +97,9 @@ def cmd_register(name: str, entrypoint: str) -> None:
     file_path, fn = validate_entrypoint(entrypoint)
     save_agent(name, entrypoint)
 
+    set_tag("overclaw.agent.file_path", str(file_path))
+    set_tag("overclaw.agent.function_name", fn)
+
     console.print(
         f"\n  [bold green]✓[/bold green]  "
         f"Agent '[bold]{name}[/bold]' registered.\n"
@@ -102,9 +110,12 @@ def cmd_register(name: str, entrypoint: str) -> None:
     )
 
 
+@observe(span_name="overclaw_agent_list", type=SpanType.FUNCTION)
 def cmd_list() -> None:
+    set_tag("overclaw.command", "agent.list")
     console = Console()
     registry = load_registry()
+    set_tag("overclaw.agent.registered_count", str(len(registry)))
 
     if not registry:
         console.print(
@@ -130,7 +141,10 @@ def cmd_list() -> None:
     console.print()
 
 
+@observe(span_name="overclaw_agent_remove", type=SpanType.FUNCTION)
 def cmd_remove(name: str) -> None:
+    set_tag("overclaw.command", "agent.remove")
+    set_tag("overclaw.agent.name", name)
     console = Console()
     registry = load_registry()
 
@@ -143,6 +157,8 @@ def cmd_remove(name: str) -> None:
         )
         raise SystemExit(1)
 
+    set_tag("overclaw.agent.entrypoint", registry[name]["entrypoint"])
+
     console.print(
         f"\n  Agent '[bold]{name}[/bold]'  [dim]{registry[name]['entrypoint']}[/dim]"
     )
@@ -153,12 +169,17 @@ def cmd_remove(name: str) -> None:
         raise SystemExit(0)
 
     remove_agent(name)
+    set_tag("overclaw.agent.removed", "true")
     console.print(
         f"\n  [bold green]✓[/bold green]  Agent '[bold]{name}[/bold]' removed.\n"
     )
 
 
+@observe(span_name="overclaw_agent_update", type=SpanType.FUNCTION)
 def cmd_update(name: str, entrypoint: str) -> None:
+    set_tag("overclaw.command", "agent.update")
+    set_tag("overclaw.agent.name", name)
+    set_tag("overclaw.agent.new_entrypoint", entrypoint)
     console = Console()
     registry = load_registry()
 
@@ -172,6 +193,8 @@ def cmd_update(name: str, entrypoint: str) -> None:
         raise SystemExit(1)
 
     old_ep_raw = registry[name]["entrypoint"]
+    set_tag("overclaw.agent.old_entrypoint", old_ep_raw)
+
     if old_ep_raw.strip() == entrypoint.strip():
         raise SystemExit(0)
 
@@ -188,7 +211,10 @@ def cmd_update(name: str, entrypoint: str) -> None:
     )
 
 
+@observe(span_name="overclaw_agent_show", type=SpanType.FUNCTION)
 def cmd_show(name: str) -> None:
+    set_tag("overclaw.command", "agent.show")
+    set_tag("overclaw.agent.name", name)
     console = Console()
     registry = load_registry()
 
@@ -214,6 +240,12 @@ def cmd_show(name: str) -> None:
         if experiments_dir.exists()
         else []
     )
+
+    set_tag("overclaw.agent.entrypoint", data["entrypoint"])
+    set_tag("overclaw.agent.file_path", data["file_path"])
+    set_tag("overclaw.agent.file_exists", str(file_exists))
+    set_tag("overclaw.agent.setup_spec_ready", str(spec_exists))
+    set_tag("overclaw.agent.experiment_file_count", str(len(exp_files)))
 
     file_status = "[green]✓ exists[/green]" if file_exists else "[red]✗ not found[/red]"
     spec_status = (
