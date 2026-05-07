@@ -1,6 +1,6 @@
 ______________________________________________________________________
 
-## name: generate-dataset description: Generate synthetic test datasets for overclaw/overmind agents from an entrypoint file. Use when the user wants to generate a dataset, create test data, or build evaluation data for their agent. Auto-detects the entrypoint function, then prompts the user for number of datapoints and red-teamers (adversarial personas) before generating. disable-model-invocation: true
+## name: overmind-generate-dataset description: Generate synthetic test datasets for overclaw/overmind agents from an entrypoint file. Use when the user wants to generate a dataset, create test data, or build evaluation data for their agent. Auto-detects the entrypoint function, then prompts the user for number of datapoints and red-teamers (adversarial personas) before generating. disable-model-invocation: true
 
 # Generate Dataset for Overclaw Agents
 
@@ -19,7 +19,7 @@ Look up the file path from the registry at `.overmind/agents.toml`:
 - Derive the file path: split on `:`, take the module part, replace `.` with `/`, append `.py`.
   - `new_examples.langextract.test` → `new_examples/langextract/test.py`
 
-If the agent name is not in `.overmind/agents.toml`, tell the user to register it first with `/register-agent`.
+If the agent name is not in `.overmind/agents.toml`, tell the user to register it first with `/overmind-register-agent`.
 
 Read the resolved file. Extract:
 
@@ -268,7 +268,7 @@ After the script runs, tell the user:
 - Full path to the saved `dataset.json`
 - Number of cases saved (after schema filtering) and how many were dropped
 - Smoke test result (✓ pass / ✗ fail with error details)
-- Next step: run `/generate-policy-and-eval` with agent name `<agent-name>`.
+- Next step: run `/overmind-generate-policy-and-eval` with agent name `<agent-name>`.
 
 ## Model selection
 

@@ -1,6 +1,6 @@
 ______________________________________________________________________
 
-## name: optimise-agent description: Drive the full `overmind optimize` loop from the host coding agent (Cursor / Codex / Claude Code) instead of the in-process Python coder. Use when the user wants to optimize a registered Overmind agent, run iterative improvement, generate N candidate fixes per iteration in parallel, evaluate them, and keep the best — with early stopping. The skill collects all configuration via `AskQuestion`, then drives the optimization loop by calling the `overmind optimize-step` JSON CLI between phases. Heavy lifting (subprocess-isolated agent runs, scoring, regression gating) stays in Python; per-candidate code edits are delegated to parallel sub-coding-agents in git worktrees. disable-model-invocation: true
+## name: overmind-optimise-agent description: Drive the full `overmind optimize` loop from the host coding agent (Cursor / Codex / Claude Code) instead of the in-process Python coder. Use when the user wants to optimize a registered Overmind agent, run iterative improvement, generate N candidate fixes per iteration in parallel, evaluate them, and keep the best — with early stopping. The skill collects all configuration via `AskQuestion`, then drives the optimization loop by calling the `overmind optimize-step` JSON CLI between phases. Heavy lifting (subprocess-isolated agent runs, scoring, regression gating) stays in Python; per-candidate code edits are delegated to parallel sub-coding-agents in git worktrees. disable-model-invocation: true
 
 # Optimise an Overmind Agent (host-agent driven)
 
@@ -17,8 +17,8 @@ The skill is built on top of `overmind optimize-step`, a JSON-in/JSON-out CLI th
 
 ## Prerequisites
 
-1. The agent is registered in `.overmind/agents.toml` (`/register-agent` skill or `overmind agent register`).
-1. `setup_spec/eval_spec.json` and `setup_spec/dataset.json` exist under `.overmind/agents/<name>/`. If not, run `/generate-policy-and-eval` and `/generate-dataset` first.
+1. The agent is registered in `.overmind/agents.toml` (`/overmind-register-agent` skill or `overmind agent register`).
+1. `setup_spec/eval_spec.json` and `setup_spec/dataset.json` exist under `.overmind/agents/<name>/`. If not, run `/overmind-generate-policy-and-eval` and `/overmind-generate-dataset` first.
 1. Provider API keys are set in `.overmind/.env` or `.overmind/agents/<name>/.env`.
 
 If any prerequisite is missing, **stop** and tell the user which one to satisfy. Do not attempt to proceed.

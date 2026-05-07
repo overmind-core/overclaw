@@ -114,6 +114,74 @@ overmind optimize my-agent
 Iteratively runs your agent, scores outputs, diagnoses failures, and generates
 code improvements. Changes that raise the score are kept; the rest are reverted.
 
+## Cursor Agent Skills
+
+If you use Cursor, this repository includes **Agent Skills** under
+[`.cursor/skills/`](.cursor/skills/) — structured playbooks the Cursor agent
+follows to drive Overmind workflows without you typing CLI commands manually.
+
+### Available skills
+
+| Skill (slash command)                | Path                                                                                                      | What it does                                                                                                                                    |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/overmind-register-agent`           | [`overmind-register-agent/SKILL.md`](.cursor/skills/overmind-register-agent/SKILL.md)                     | Registers an agent in `.overmind/agents.toml` — discovers the entrypoint, derives `module:function`, runs registration, and scaffolds env vars. |
+| `/overmind-generate-dataset`         | [`overmind-generate-dataset/SKILL.md`](.cursor/skills/overmind-generate-dataset/SKILL.md)                 | Generates a synthetic `dataset.json` via persona-driven LLM generation, with schema validation and smoke-testing.                               |
+| `/overmind-generate-policy-and-eval` | [`overmind-generate-policy-and-eval/SKILL.md`](.cursor/skills/overmind-generate-policy-and-eval/SKILL.md) | Creates or repairs `setup_spec/policies.md` and `setup_spec/eval_spec.json` (input/output schemas, weights, domain rules).                      |
+| `/overmind-optimise-agent`           | [`overmind-optimise-agent/SKILL.md`](.cursor/skills/overmind-optimise-agent/SKILL.md)                     | Runs the optimization loop with the Cursor agent applying candidate edits in parallel git worktrees via `overmind optimize-step`.               |
+
+### How to use the skills
+
+The skills replace the interactive `overmind` CLI flow. Run them in order inside Cursor chat:
+
+**1. Initialize** (one-time, run in the terminal — not a skill):
+
+```bash
+overmind init
+```
+
+This sets up `.overmind/` and writes your API keys to `.overmind/.env`.
+
+**2. Register your agent** — type in Cursor chat:
+
+```
+/overmind-register-agent path/to/your/agent.py
+```
+
+The agent will ask for the agent name, detect the entrypoint function, run
+registration, and create a `.env` placeholder file for your credentials.
+
+**3. Generate a dataset** — type in Cursor chat:
+
+```
+/overmind-generate-dataset <agent-name>
+```
+
+Generates `dataset.json` under `.overmind/agents/<name>/setup_spec/`. Skip
+this step if you already have your own test data.
+
+**4. Generate the policy and eval spec** — type in Cursor chat:
+
+```
+/overmind-generate-policy-and-eval <agent-name>
+```
+
+Produces `policies.md` and `eval_spec.json` through an interactive elicitation
+of domain rules, constraints, and scoring criteria.
+
+**5. Optimize** — either run the CLI directly or use the host-driven skill:
+
+```bash
+# CLI (built-in optimizer)
+overmind optimize <agent-name>
+
+# or via Cursor chat (host-agent-driven loop)
+# /overmind-optimise-agent <agent-name>
+```
+
+> Skills assume commands are run from the directory that contains the relevant
+> `.overmind/` folder. All API keys and default models must be configured via
+> `overmind init` before invoking any skill.
+
 ## How it works
 
 ### 1. Initialize (`overmind init`)
