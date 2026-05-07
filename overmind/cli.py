@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from unittest.mock import MagicMock
 
@@ -39,10 +40,14 @@ from overmind.commands.agent_cmd import (
 )
 from overmind.commands.init_cmd import main as _init
 from overmind.commands.optimize_cmd import main as _optimize
+from overmind.commands.optimize_step_cmd import (
+    build_subparser as _build_optimize_step_parser,
+)
+from overmind.commands.optimize_step_cmd import main as _optimize_step
 from overmind.commands.setup_cmd import main as _setup
 from overmind.core.constants import OVERMIND_DIR_NAME, overmind_rel
 from overmind.core.logging import setup_logging
-from overmind.core.paths import load_overmind_dotenv
+from overmind.core.paths import load_agent_dotenv, load_overmind_dotenv
 from overmind.core.registry import require_overmind_initialized
 
 _FMT = argparse.RawDescriptionHelpFormatter
@@ -412,6 +417,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="override max total characters in the bundle (default: from Config)",
     )
 
+    # ── optimize-step (skill-driven) ────────────────────────────────────────
+    _build_optimize_step_parser(subparsers)
+
     # ── doctor ───────────────────────────────────────────────────────────────
     doctor_p = subparsers.add_parser(
         "doctor",
@@ -431,6 +439,37 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     return parser
+
+
+def _resolve_agent_name_for_env(args: argparse.Namespace) -> str | None:
+    """Best-effort agent-name lookup so we can load the per-agent ``.env``.
+
+    Agent-scoped subcommands carry the name in different places:
+
+    - ``agent``/``setup``/``optimize``/``doctor``/``sync``: ``args.name`` or
+      ``args.agent`` directly.
+    - ``optimize-step init``: ``args.agent``.
+    - Other ``optimize-step`` subcommands: persisted in
+      ``skill_state.json`` (read via ``--state``).
+
+    Returns ``None`` when no agent context is in scope (e.g. ``init``).
+    """
+    name = getattr(args, "name", None) or getattr(args, "agent", None)
+    if isinstance(name, str) and name:
+        return name
+    state = getattr(args, "state", None)
+    if isinstance(state, str) and state:
+        try:
+            import json
+            from pathlib import Path
+
+            data = json.loads(Path(state).read_text())
+            agent = data.get("agent_name") or (data.get("config") or {}).get("agent_name")
+            if isinstance(agent, str) and agent:
+                return agent
+        except Exception:
+            return None
+    return None
 
 
 def _flush_traces() -> None:
@@ -453,7 +492,21 @@ def main() -> None:
 
     load_dotenv(".env")
     load_dotenv(".overmind/.env", override=True)
-    overmind.init(service_name="overmind.cli")
+    # Per-agent ``.env`` (``.overmind/agents/<name>/.env``) holds the
+    # provider keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, …) that the
+    # analyzer / codegen LLM calls need. Without this, ``optimize-step``
+    # subcommands silently lose API keys and the analyzer fails with a
+    # litellm AuthenticationError that gets swallowed deep in the loop.
+    _agent_name = _resolve_agent_name_for_env(args)
+    if _agent_name:
+        load_agent_dotenv(_agent_name)
+    # ``optimize-step`` is invoked non-interactively by a host coding agent
+    # via SKILL.md.  Avoid prompting for OVERMIND_API_KEY when none is set —
+    # initialise with a placeholder so spans/tags work locally even without
+    # a real OTLP endpoint.
+    if args.command == "optimize-step" and not os.getenv("OVERMIND_API_KEY"):
+        os.environ["OVERMIND_API_KEY"] = "skill-local-no-export"
+    overmind.init(service_name="overmind.cli", providers=None)
 
     # Wire up logging as early as possible so every module that gets
     # imported next (commands, optimizer, coding agent, …) can emit debug
@@ -504,6 +557,12 @@ def main() -> None:
             _kw = _bundle_cli_kwargs(args)
             context.attach(context.set_value(attrs.AGENT_NAME, args.agent))
             _optimize(agent_name=args.agent, fast=args.fast, **_kw)
+
+        elif args.command == "optimize-step":
+            agent_name = getattr(args, "agent", None)
+            if agent_name:
+                context.attach(context.set_value(attrs.AGENT_NAME, agent_name))
+            raise SystemExit(_optimize_step(args))
 
     except KeyboardInterrupt:
         span = _otel_trace.get_current_span()

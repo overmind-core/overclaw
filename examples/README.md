@@ -31,7 +31,7 @@ Each example’s code lives under `examples/<id>/` in this repo (for example `ex
 
 ## Optimization runs (example results)
 
-Scores are from a representative `overmind optimize` run (train-side summary in each agent’s `experiments/report.md` under `.overmind` or `.overclaw`, depending on where you ran it). **Final score** is the reported best average (same as the **Best** column in that report).
+Scores are from a representative `overmind optimize` run (train-side summary in each agent’s `experiments/report.md` under `.overmind`, depending on where you ran it). **Final score** is the reported best average (same as the **Best** column in that report).
 
 | Example            | Baseline | Final score | Improvement |
 | ------------------ | -------- | ----------- | ----------- |
