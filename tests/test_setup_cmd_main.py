@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+import overmind
 from overmind.core.constants import OVERMIND_DIR_NAME
 
 
@@ -51,6 +52,7 @@ class TestSetupCmdMainFast:
         monkeypatch.setenv("ANALYZER_MODEL", "gpt-5.4")
         monkeypatch.setenv("SYNTHETIC_DATAGEN_MODEL", "gpt-5.4")
         monkeypatch.chdir(tmp_path)
+        overmind.init()
 
         from overmind.commands.setup_cmd import main
 
@@ -123,6 +125,7 @@ class TestSetupCmdMainFast:
 
         monkeypatch.delenv("ANALYZER_MODEL", raising=False)
         monkeypatch.chdir(tmp_path)
+        overmind.init()
 
         from overmind.commands.setup_cmd import main
 
@@ -142,6 +145,7 @@ class TestSetupCmdMainFast:
         monkeypatch.setenv("ANALYZER_MODEL", "gpt-5.4")
         monkeypatch.delenv("SYNTHETIC_DATAGEN_MODEL", raising=False)
         monkeypatch.chdir(tmp_path)
+        overmind.init()
 
         from overmind.commands.setup_cmd import main
 

@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import overmind
 from overmind.optimize.evaluator import (
     SpecEvaluator,
     _JUDGE_FALLBACK_SCORE,
@@ -16,7 +17,8 @@ from overmind.optimize.evaluator import (
     load_evaluator,
 )
 
-
+def setup(self):
+    overmind.init()
 # ---------------------------------------------------------------------------
 # has_entrypoint / has_run_entrypoint
 # ---------------------------------------------------------------------------
@@ -955,8 +957,9 @@ class TestLlmJudge:
 # ---------------------------------------------------------------------------
 
 
+@patch("overmind.utils.tracing.start_child_span")
 class TestSpecGenerator:
-    def test_auto_judge_weight_with_text_fields(self):
+    def test_auto_judge_weight_with_text_fields(self, _mock_span):
         from overmind.setup.spec_generator import generate_spec_from_proposal
 
         analysis = {
@@ -976,7 +979,7 @@ class TestSpecGenerator:
         assert spec.get("llm_judge_weight", 0) == 10
         assert spec["total_points"] == 100
 
-    def test_auto_judge_weight_with_policy(self):
+    def test_auto_judge_weight_with_policy(self, _mock_span):
         from overmind.setup.spec_generator import generate_spec_from_proposal
 
         analysis = {
@@ -993,7 +996,7 @@ class TestSpecGenerator:
         spec = generate_spec_from_proposal(analysis, policy_data={"rules": "test"})
         assert spec.get("llm_judge_weight", 0) == 10
 
-    def test_no_judge_weight_without_text_or_policy(self):
+    def test_no_judge_weight_without_text_or_policy(self, _mock_span):
         from overmind.setup.spec_generator import generate_spec_from_proposal
 
         analysis = {
@@ -1010,7 +1013,7 @@ class TestSpecGenerator:
         spec = generate_spec_from_proposal(analysis)
         assert spec.get("llm_judge_weight", 0) == 0
 
-    def test_text_default_eval_mode_similarity(self):
+    def test_text_default_eval_mode_similarity(self, _mock_span):
         from overmind.setup.spec_generator import generate_spec_from_proposal
 
         analysis = {
@@ -1027,7 +1030,7 @@ class TestSpecGenerator:
         spec = generate_spec_from_proposal(analysis)
         assert spec["output_fields"]["reason"]["eval_mode"] == "similarity"
 
-    def test_auto_consistency_rules_generated(self):
+    def test_auto_consistency_rules_generated(self, _mock_span):
         from overmind.setup.spec_generator import generate_spec_from_proposal
 
         analysis = {
@@ -1048,7 +1051,7 @@ class TestSpecGenerator:
         assert len(rules) > 0
         assert any(r["type"] == "correlation" for r in rules)
 
-    def test_ordering_rules_for_min_max(self):
+    def test_ordering_rules_for_min_max(self, _mock_span):
         from overmind.setup.spec_generator import generate_spec_from_proposal
 
         analysis = {

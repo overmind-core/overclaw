@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import textwrap
 from pathlib import Path
 from unittest.mock import Mock
@@ -32,7 +33,7 @@ _provider = TracerProvider()
 _otel_trace.set_tracer_provider(_provider)
 _overmind_tracing._tracer = _provider.get_tracer("overmind", "test")
 _overmind_tracing._initialized = True
-
+os.environ["OVERMIND_API_KEY"] = "test"
 
 @pytest.fixture()
 def tmp_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

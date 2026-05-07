@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -209,6 +210,7 @@ class TestMainDispatch:
         monkeypatch.setattr("overmind.cli.require_overmind_initialized", lambda: None)
         monkeypatch.setattr("overmind.cli.load_overmind_dotenv", lambda: None)
         monkeypatch.setattr("overmind.cli.setup_logging", lambda: "/dev/null")
+        os.environ["OVERMIND_API_KEY"] = "test"
 
     def test_init_dispatches(self):
         with patch("overmind.cli._build_parser") as mock_parser:

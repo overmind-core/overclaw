@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 import textwrap
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+import overmind
 from overmind.core.constants import OVERMIND_DIR_NAME
 from overmind.optimize.config import Config
 from overmind.optimize.optimizer import Optimizer
@@ -20,6 +22,7 @@ def _optimizer_run_project_root(
 ) -> None:
     (tmp_path / OVERMIND_DIR_NAME).mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
+    os.environ["OVERMIND_API_KEY"] = "test"
 
 
 def _make_config(tmp_path: Path) -> Config:
@@ -212,6 +215,8 @@ class TestOptimizerRun:
 
 
 class TestRunMultiEval:
+    def setup(self):
+        overmind.init()
     def test_multi_eval(self, tmp_path):
         cfg = _make_config(tmp_path)
         opt = Optimizer(cfg)

@@ -50,6 +50,8 @@ jobs:
 
       - name: Run tests
         working-directory: ./pr
+        env:
+          OVERMIND_API_KEY: ${{ secrets.OVERMIND_API_KEY }}
         run: uv run pytest --ignore=tests/test_spans.py
 
       - name: Check for version increment

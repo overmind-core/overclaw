@@ -686,14 +686,14 @@ import json, sys, os, io, asyncio, inspect, importlib.util, traceback
 _cwd = os.getcwd()
 if _cwd not in sys.path:
     sys.path.insert(0, _cwd)
-try:
-    from overmind import init as overmind_init
-    overmind_init()
-except (ImportError, SystemExit):
-    # ImportError  — overmind SDK not installed in this environment.
-    # SystemExit   — overmind.init() calls sys.exit(1) when OVERMIND_API_KEY
-    #               is absent; swallow it so the agent itself can still run.
-    pass
+if os.environ.get("OVERMIND_API_KEY"):
+    try:
+        from overmind import init as overmind_init
+        overmind_init()
+    except (ImportError, SystemExit, RuntimeError):
+        # ImportError  — overmind SDK not installed in this environment.
+        # SystemExit / RuntimeError — init failure; swallow so the agent can still run.
+        pass
 
 def _ocl_force_flush():
     try:

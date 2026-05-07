@@ -361,8 +361,9 @@ class TestRunBeginningSmokTest:
             str(agent), "test", "run", console, data_path=str(data_dir)
         )
 
-    def test_seed_case_without_input_key(self, tmp_path):
+    def test_seed_case_without_input_key(self, overmind_tmp_project):
         """Cases stored as flat dicts (no 'input' wrapper) should still work."""
+        tmp_path = overmind_tmp_project
         data_dir = tmp_path / "data"
         data_dir.mkdir()
         (data_dir / "cases.json").write_text(
@@ -371,9 +372,14 @@ class TestRunBeginningSmokTest:
         agent = tmp_path / "agent.py"
         agent.write_text("def run(x): return {'ok': True}\n")
         console = MagicMock()
-        _run_beginning_smoke_test(
-            str(agent), "test", "run", console, data_path=str(data_dir)
-        )
+        with patch(
+            "overmind.commands.setup_cmd.normalize_data_fields",
+            side_effect=lambda cases, *a, **kw: cases,
+            create=True,
+        ):
+            _run_beginning_smoke_test(
+                str(agent), "test", "run", console, data_path=str(data_dir)
+            )
 
 
 class TestRunEndSmokeTest:
