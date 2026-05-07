@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,37 @@ from overmind.optimize.optimizer import Optimizer
 from overmind.optimize.steps.state import SkillRunState
 
 logger = logging.getLogger("overmind.optimize.steps.accept")
+
+
+def _prune_git_worktrees(candidate_dirs: list[str]) -> None:
+    """Remove git worktree registrations for all candidate directories.
+
+    Called after accept/reject so stale worktree entries don't accumulate.
+    Falls back silently if git is unavailable or the paths aren't git worktrees.
+    """
+    for candidate_dir in candidate_dirs:
+        p = Path(candidate_dir)
+        if not p.exists():
+            continue
+        try:
+            git_result = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                cwd=str(p),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if git_result.returncode != 0:
+                continue
+            git_root = git_result.stdout.strip()
+            subprocess.run(
+                ["git", "worktree", "remove", "--force", str(p)],
+                cwd=git_root,
+                capture_output=True,
+                timeout=15,
+            )
+        except Exception as exc:
+            logger.debug("Skipping worktree prune for %s: %s", candidate_dir, exc)
 
 
 def _load_candidate_results(path: str) -> list[dict]:
@@ -168,6 +200,8 @@ def run_accept(
     if early_stop:
         state.early_stopping_triggered = True
         state.save()
+
+    _prune_git_worktrees([c["candidate_dir"] for c in candidates if c.get("candidate_dir")])
 
     return {
         "status": "ok",

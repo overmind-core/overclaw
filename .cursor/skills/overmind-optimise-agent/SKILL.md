@@ -101,7 +101,7 @@ Returns:
 }
 ```
 
-Each worktree is already populated with the current best agent files plus a `PROMPT.md` containing the full edit instructions for that candidate.
+Each worktree is a proper **git worktree** (created via `git worktree add --detach`) populated with the current best agent files plus a `PROMPT.md` containing the full edit instructions for that candidate. The sub-agent can use `git status` / `git diff` inside the worktree to review its own changes.
 
 If the envelope has `status: "warn"` and a `diagnose_warning` block, **stop the loop and report to the user**. This means the analyzer LLM call failed (most often a missing `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` for the analyzer model) and `n_candidates` collapsed to a single empty placeholder. Do not silently fall back to manual edits — surface `diagnose_warning.last_error` and `diagnose_warning.hint`, ask the user to fix env / model config, then re-run.
 
@@ -115,7 +115,33 @@ Detect the host once, at skill start, and use the right spawn method below. **Al
 For each candidate, call the Task tool with:
   subagent_type: "best-of-n-runner"
   description: "Apply candidate <candidate_id> edits"
-  prompt: "Read the file PROMPT.md in <worktree> and follow it exactly. Edit files in this worktree. Stop when done."
+  prompt: |
+    You are an expert coding agent improving an AI agent codebase.
+
+    Working directory: <worktree>
+
+    1. Read PROMPT.md in <worktree> — it contains full instructions, the
+       diagnosis, and the specific edits to make.
+    2. Read plan.json in <worktree> for the structured diagnosis with focus
+       area, root cause, and suggested changes.
+    3. Apply the edits to the source files IN PLACE inside <worktree>.
+       Do NOT create copies of files. Do NOT move files outside <worktree>.
+
+    Critical rules (violations cause automatic test rejection):
+    - Do NOT hardcode values, responses, or answers for specific inputs from
+      the diagnosis or test results.
+    - Do NOT add if/elif/match branches that pattern-match on specific field
+      values or example data.
+    - Do NOT add lookup tables keyed by example input values.
+    - Prefer general improvements: better prompt wording, smarter parsing,
+      cleaner logic, new helper functions.
+    - Read before editing. Check callers/callees when modifying a function.
+    - Use grep/glob to locate code you are unsure about.
+    - Prefer find-and-replace edits over full-file rewrites.
+    - Re-read a file after a non-trivial edit to verify correctness.
+    - Do NOT add comments narrating your changes.
+
+    When finished, print OPTIMIZE_DONE.
   run_in_background: true
 ```
 

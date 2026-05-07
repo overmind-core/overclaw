@@ -14,6 +14,7 @@ sub-agents in parallel.
 
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 from pathlib import Path
@@ -28,23 +29,55 @@ logger = logging.getLogger("overmind.optimize.steps.diagnose")
 _PROMPT_HEADER = """\
 # Code edit task — candidate {candidate_id} (iteration {iteration})
 
-You are a sub-coding-agent dispatched by the Overmind optimise-agent skill.
-Your job is to apply targeted edits to the agent source files in this
-working directory so the next evaluation scores higher than the current
-best ({best_score:.1f}/100).
+You are an expert coding agent improving an AI agent codebase.
+Your job is to apply targeted edits to the source files in the working directory
+so the next evaluation scores higher than the current best ({best_score:.1f}/100).
 
 ## Working directory
 
-All source files live under this directory. The entry point is `{entry_file}`
+All source files live in this directory. The entry point is `{entry_file}`
 and the function to keep callable is `{entrypoint_fn}(...)`.
 
-You MUST:
-  - Edit files in place using your file-edit tools.
-  - Keep the entrypoint signature compatible (do not rename or remove it).
-  - Run `python -c "import ast, pathlib; ast.parse(pathlib.Path('{entry_file}').read_text())"`
-    or your language's equivalent before declaring done.
-  - Stop as soon as the requested change is applied. Do not add tests,
-    rewrite unrelated files, or add unnecessary instrumentation.
+Read `plan.json` in this directory for the full structured diagnosis
+(focus area, root cause, suggested changes).
+
+## Coding rules
+
+- **Read before editing**: start by reading `{entry_file}` and any supporting
+  files the diagnosis references. Understand the architecture first.
+- When modifying a function, check its callers and callees for needed updates.
+- Use grep/glob to locate code when you are unsure which file contains it.
+- Preserve existing code style, imports, and conventions.
+- Keep the entrypoint signature compatible (do not rename or remove `{entrypoint_fn}`).
+- Prefer find-and-replace (edit) tools over full-file rewrites for existing files.
+  Provide enough surrounding context in the old_string to ensure a unique match.
+- After a non-trivial edit, re-read the modified file to confirm correctness.
+- Verify syntax before finishing:
+  `python -c "import ast, pathlib; ast.parse(pathlib.Path('{entry_file}').read_text())"`
+- Ensure cross-file consistency: imports, function signatures, data flow.
+- You MAY create new helper functions in existing or new files if the diagnosis
+  calls for structural improvements.
+- Do NOT add comments narrating your changes.
+- Stop as soon as the requested change is applied. Do not add tests,
+  rewrite unrelated files, or add unnecessary instrumentation.
+- Do NOT create copies of files — edit files in place.
+
+## Anti-overfitting rules (critical — violations cause automatic rejection)
+
+The evaluation suite includes unseen holdout cases. Hardcoded or pattern-matched
+fixes score well on training cases but fail on holdout and are rejected.
+
+- Do NOT hardcode responses, field values, or answers for specific inputs seen
+  in test results or the diagnosis output.
+- Do NOT add `if`/`elif`/`match` branches that pattern-match on specific field
+  values or example data to return a hardcoded result.
+- Do NOT add post-processing formulas (e.g. `result = a * b`) that overwrite
+  the LLM's output — the LLM often gets these right through judgment; a
+  mechanical formula destroys those correct outputs.
+- Do NOT add lookup tables, dictionaries, or maps keyed by example input values.
+- Prefer general-purpose improvements: better prompt wording, smarter output
+  parsing, cleaner logic flow, or new helper functions.
+- Prefer structural improvements over input-specific rules.
 
 ## Focus for this candidate
 
@@ -60,9 +93,8 @@ You MUST:
 
 ## When you are done
 
-Print a final message that includes the literal token `OPTIMIZE_DONE` so
-the parent skill can tell you finished. Do **not** commit or push;
-the parent skill handles promotion.
+Print a final message that includes the literal token `OPTIMIZE_DONE` so the
+parent skill knows you are finished. Do not commit or push anything.
 """
 
 
@@ -78,6 +110,7 @@ def _write_worktree(
     output_dir: Path,
 ) -> Path:
     worktree = output_dir / f"iter_{iteration:03d}_{candidate_id}"
+
     if worktree.exists():
         shutil.rmtree(worktree)
     worktree.mkdir(parents=True)
@@ -108,8 +141,6 @@ def _write_worktree(
         edit_instructions=plan.get("edit_instructions", "(no detailed instructions)"),
     )
     (worktree / "PROMPT.md").write_text(prompt)
-
-    import json
 
     (worktree / "plan.json").write_text(
         json.dumps(
