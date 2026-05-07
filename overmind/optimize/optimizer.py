@@ -1424,6 +1424,300 @@ class Optimizer:
             self._logger.exception("Failed to prompt/commit optimized sources back to originals")
 
     # ------------------------------------------------------------------
+    # Skill-driven phase methods
+    #
+    # These public methods carve ``Optimizer.run()`` into pieces a host
+    # coding agent can drive via ``overmind optimize-step`` (see
+    # ``overmind/optimize/steps/`` and ``.cursor/skills/optimise-agent``).
+    # They reuse all of the existing private helpers, so behaviour is
+    # identical to running the full ``run()`` end-to-end.
+    # ------------------------------------------------------------------
+
+    @traced("optimizer.run_baseline_phase", SpanType.WORKFLOW)
+    def run_baseline_phase(self) -> dict:
+        """Execute Phase 1 of :meth:`run` (baseline) and return a state dict.
+
+        Mirrors the baseline portion of :meth:`run` (dataset load, split,
+        bundle build, env provisioning, baseline eval, failure-cluster
+        ingest, working-copy materialisation) but stops before the
+        iteration loop. Populates the same ``self.*`` fields the loop
+        body expects, so a follow-up call to one of the per-iteration
+        methods sees a consistent state.
+
+        Returns a dict with everything the skill needs to persist::
+
+            {
+                "baseline_score": float,
+                "best_score": float,
+                "best_code_path": str,        # working_path
+                "best_files_dir": str,        # multi-file root, "" if single
+                "best_case_scores": list[float],
+                "dataset_size": int,
+                "train_size": int,
+                "holdout_size": int,
+                "output_dir": str,
+            }
+        """
+        self._setup_output_dirs()
+        dataset = self._load_dataset()
+        holdout_ratio = getattr(self.config, "holdout_ratio", 0.2)
+        train_set, holdout_set = Optimizer._split_dataset(dataset, holdout_ratio)
+
+        baseline_code = Path(self.config.agent_path).read_text()
+        self._baseline_code = baseline_code
+        self._bundle = self._build_bundle()
+
+        self._ensure_runner_env()
+
+        baseline_eval, _, baseline_items = self._run_agent_on_dataset(
+            self._instrumented_agent_path, train_set, "baseline"
+        )
+        self.best_score = baseline_eval["avg_total"]
+        self._baseline_train_score = self.best_score
+        self.best_code = baseline_code
+        self.best_case_scores = [item["score"]["total"] for item in baseline_items]
+
+        if getattr(self.config, "failure_clustering", True):
+            baseline_case_results = self._build_case_results(baseline_items, train_set)
+            self._failure_registry.ingest_iteration(0, baseline_case_results, self.evaluator.spec)
+
+        if self._bundle:
+            self._baseline_files = dict(self._bundle.original_files)
+            self._best_files = dict(self._bundle.original_files)
+
+        _ext = Path(self.config.agent_path).suffix or ".py"
+        working_path = self.output_dir / f"agent_working{_ext}"
+        working_path.write_text(baseline_code)
+        working_dir: Path | None = None
+        if self._bundle and self._bundle.is_multi_file():
+            working_dir = self.output_dir / "agent_working"
+            self._write_file_set(working_dir, self._best_files)
+
+        # Persist baseline eval items so later iterations can recover them
+        # without re-running the agent.
+        items_path = self.output_dir / "_baseline_items.json"
+        items_path.write_text(
+            json.dumps(
+                {
+                    "avg_total": baseline_eval["avg_total"],
+                    "evaluation": baseline_eval,
+                    "case_results": Optimizer._build_case_results(baseline_items, train_set),
+                },
+                default=str,
+            )
+        )
+
+        # Cache train/holdout to disk so subsequent step CLIs work on the
+        # same split without re-shuffling.
+        split_path = self.output_dir / "_split.json"
+        split_path.write_text(
+            json.dumps(
+                {
+                    "train": train_set,
+                    "holdout": holdout_set,
+                },
+                default=str,
+            )
+        )
+
+        return {
+            "baseline_score": float(self.best_score),
+            "best_score": float(self.best_score),
+            "best_code_path": str(working_path),
+            "best_files_dir": str(working_dir) if working_dir else "",
+            "best_case_scores": [float(s) for s in self.best_case_scores],
+            "dataset_size": len(dataset),
+            "train_size": len(train_set),
+            "holdout_size": len(holdout_set),
+            "output_dir": str(self.output_dir),
+            "baseline_items_path": str(items_path),
+            "split_path": str(split_path),
+        }
+
+    def load_train_holdout(self) -> tuple[list[dict], list[dict]]:
+        """Load the cached train/holdout split written by :meth:`run_baseline_phase`."""
+        split_path = self.output_dir / "_split.json"
+        if not split_path.is_file():
+            raise FileNotFoundError(
+                f"Cached split not found at {split_path}. Run `overmind optimize-step baseline` first."
+            )
+        data = json.loads(split_path.read_text())
+        return data["train"], data["holdout"]
+
+    def load_latest_eval(self) -> tuple[dict, list[dict]]:
+        """Return ``(evaluation_dict, case_results_list)`` from disk.
+
+        Prefers ``_latest_items.json`` (written after each accepted
+        iteration) and falls back to ``_baseline_items.json``.
+        """
+        for name in ("_latest_items.json", "_baseline_items.json"):
+            p = self.output_dir / name
+            if p.is_file():
+                data = json.loads(p.read_text())
+                return data["evaluation"], data["case_results"]
+        raise FileNotFoundError(
+            f"No baseline or latest items file under {self.output_dir}. Run `overmind optimize-step baseline` first."
+        )
+
+    @traced("optimizer.run_diagnose_phase", SpanType.WORKFLOW)
+    def run_diagnose_phase(
+        self,
+        iteration: int,
+        current_code: str,
+        latest_eval: dict,
+        latest_case_results: list[dict],
+    ) -> list[dict]:
+        """Generate N candidate change plans **without** running codegen.
+
+        Returns a list of plan dicts, one per candidate, each shaped
+        like::
+
+            {
+                "candidate_id": "c0",
+                "method": "<focus area>",
+                "diagnosis": {...},
+                "suggestions": [...],
+                "edit_instructions": "<plain-text prompt for the host coder>",
+            }
+
+        The skill uses these to spawn parallel sub-coding-agents.
+        """
+        n_candidates = getattr(self.config, "candidates_per_iteration", 3)
+
+        # Temperature annealing matches the in-process loop.
+        t_start, t_end = 0.8, 0.4
+        denom = max(self.config.iterations - 1, 1)
+        temperature = t_start - (t_start - t_end) * (iteration - 1) / denom
+        if self.stall_count >= 2:
+            temperature = min(temperature + 0.2, 1.0)
+
+        cluster_ctx = ""
+        component_ctx = ""
+        focus_weights: dict[str, float] | None = None
+
+        if getattr(self.config, "failure_clustering", True):
+            priority_clusters = self._failure_registry.get_priority_clusters()
+            if priority_clusters:
+                cluster_ctx = format_clusters_for_diagnosis(priority_clusters)
+
+        if getattr(self.config, "adaptive_focus", True):
+            focus_weights = compute_focus_weights(
+                latest_case_results,
+                latest_eval,
+                self.evaluator.spec,
+                self._failure_registry,
+                self.successful_changes,
+                self.failed_attempts,
+                is_multi_file=(self._bundle is not None and self._bundle.is_multi_file()),
+            )
+            component_ctx = format_component_weights(focus_weights)
+
+        agent_files = self._current_agent_files(current_code)
+
+        plans = generate_candidates(
+            current_code,
+            case_results=latest_case_results,
+            evaluation_results=latest_eval,
+            model=self.config.analyzer_model,
+            eval_spec=self.evaluator.spec,
+            failed_attempts=self.failed_attempts,
+            successful_changes=self.successful_changes,
+            allow_model_change=bool(self.config.model_backtesting and self.config.backtest_models),
+            num_candidates=n_candidates,
+            temperature=temperature,
+            diagnosis_case_fraction=getattr(self.config, "diagnosis_case_fraction", 0.7),
+            iteration_seed=iteration * 7919,
+            policy_context=self._policy_diagnosis,
+            policy_constraints=self._policy_codegen,
+            entrypoint_fn=self.config.entrypoint_fn,
+            bundle=self._bundle,
+            agent_files=agent_files,
+            codegen_model=getattr(self.config, "codegen_model", ""),
+            codegen_max_steps=getattr(self.config, "codegen_max_steps", 50),
+            cluster_context=cluster_ctx,
+            component_weights_context=component_ctx,
+            focus_weights=focus_weights,
+            return_plans_only=True,
+        )
+
+        out: list[dict] = []
+        for idx, plan in enumerate(plans):
+            out.append({
+                "candidate_id": f"c{idx}",
+                "method": plan.get("method", "unknown"),
+                "diagnosis": plan.get("diagnosis", {}),
+                "suggestions": plan.get("suggestions", []),
+                "edit_instructions": plan.get("edit_instructions", ""),
+                "focus_area": plan.get("focus_area", ""),
+                "policy_context": self._policy_codegen,
+            })
+        return out
+
+    @traced("optimizer.evaluate_worktree", SpanType.WORKFLOW)
+    def evaluate_worktree(
+        self,
+        worktree_entry_path: str,
+        run_name: str,
+        dataset_subset: list[dict] | None = None,
+    ) -> dict:
+        """Run ``self.config.entrypoint_fn`` from *worktree_entry_path* against the train set.
+
+        Returns a serialisable dict::
+
+            {"avg_total": float, "evaluation": dict, "case_results": list[dict]}
+        """
+        train, _ = self.load_train_holdout()
+        ds = dataset_subset if dataset_subset is not None else train
+        c_eval, _, c_items = self._run_agent_on_dataset(worktree_entry_path, ds, run_name)
+        return {
+            "avg_total": float(c_eval["avg_total"]),
+            "evaluation": c_eval,
+            "case_results": Optimizer._build_case_results(c_items, ds),
+        }
+
+    @traced("optimizer.commit_winner", SpanType.WORKFLOW)
+    def commit_winner(
+        self,
+        winner_entry_path: str,
+        winner_eval: dict,
+        winner_case_results: list[dict],
+    ) -> None:
+        """Promote *winner_entry_path* as the new best agent.
+
+        Updates ``self.best_*`` and writes the iteration's
+        ``_latest_items.json`` so the next ``diagnose`` call sees fresh
+        case results. Does **not** modify the user's source tree.
+        """
+        new_code = Path(winner_entry_path).read_text()
+        self.best_code = new_code
+        self.best_score = float(winner_eval["avg_total"])
+        self.best_case_scores = [float(c["score"]["total"]) for c in winner_case_results]
+
+        _ext = Path(self.config.agent_path).suffix or ".py"
+        working_path = self.output_dir / f"agent_working{_ext}"
+        working_path.write_text(new_code)
+
+        latest_path = self.output_dir / "_latest_items.json"
+        latest_path.write_text(
+            json.dumps(
+                {
+                    "avg_total": winner_eval["avg_total"],
+                    "evaluation": winner_eval,
+                    "case_results": winner_case_results,
+                },
+                default=str,
+            )
+        )
+
+    @traced("optimizer.render_report_only", SpanType.WORKFLOW)
+    def render_report_only(self) -> str:
+        """Render ``report.md`` from ``self.results``. Returns the report path."""
+        self._setup_output_dirs()
+        baseline_score = self._baseline_train_score or self.best_score
+        self._write_report_md(baseline_score)
+        return str(self.output_dir / "report.md")
+
+    # ------------------------------------------------------------------
     # Commit optimized sources back to original agent files
     # ------------------------------------------------------------------
 

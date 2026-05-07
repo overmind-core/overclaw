@@ -862,9 +862,36 @@ def _run_diagnosis(
         end = content.rfind("}") + 1
         if start >= 0 and end > start:
             return json.loads(content[start:end])
-    except Exception:  # noqa: S110
-        pass
+    except Exception as exc:
+        # Auth failures, JSON parse errors, network blips — surface them in
+        # the log and remember the last one on the module so callers (and
+        # ultimately ``optimize-step diagnose``) can include a hint in the
+        # JSON envelope instead of silently degrading to a single
+        # ``method: "failed"`` placeholder candidate.
+        global _LAST_DIAGNOSIS_ERROR
+        _LAST_DIAGNOSIS_ERROR = f"{type(exc).__name__}: {exc}"
+        _log.warning(
+            "diagnosis LLM call failed model=%s focus=%s error=%s: %s",
+            model,
+            focus_area,
+            type(exc).__name__,
+            str(exc)[:300],
+        )
     return None
+
+
+_LAST_DIAGNOSIS_ERROR: str | None = None
+
+
+def get_last_diagnosis_error() -> str | None:
+    """Return the most recent diagnosis-LLM exception, or ``None``."""
+    return _LAST_DIAGNOSIS_ERROR
+
+
+def reset_last_diagnosis_error() -> None:
+    """Clear the cached diagnosis error before a fresh ``run_diagnose_phase``."""
+    global _LAST_DIAGNOSIS_ERROR
+    _LAST_DIAGNOSIS_ERROR = None
 
 
 def _run_codegen(
@@ -1357,6 +1384,7 @@ def generate_candidates(
     cluster_context: str = "",
     component_weights_context: str = "",
     focus_weights: dict[str, float] | None = None,
+    return_plans_only: bool = False,
 ) -> list[dict]:
     """Generate *num_candidates* improved agent versions.
 
@@ -1601,6 +1629,45 @@ def generate_candidates(
     _opt_files: set[str] | None = None
     if bundle is not None:
         _opt_files = bundle.optimizable_files
+
+    # ---- Plans-only short-circuit ----
+    # When the host coding agent (Cursor / Codex / Claude Code) is going to
+    # do the per-candidate code edits in parallel git worktrees, skip the
+    # in-process codegen forks and just return one plan per candidate. The
+    # plan bundles the diagnosis (or independent diagnosis for the last
+    # candidate when N>=3), the focus area, and a ready-to-use prompt the
+    # host agent can hand to a sub-coding-agent.
+    if return_plans_only:
+        plans: list[dict] = []
+        suggestions = [c.get("action", "") for c in diag.get("changes", [])]
+        for idx, focus in enumerate(focus_assignments):
+            is_last = idx == len(focus_assignments) - 1
+            use_diag = independent_diag if (is_last and independent_diag) else diag
+            use_suggestions = (
+                [c.get("action", "") for c in (independent_diag or {}).get("changes", [])]
+                if (is_last and independent_diag)
+                else suggestions
+            )
+            instruction = _build_agentic_instruction(
+                use_diag,
+                eval_spec,
+                policy_constraints,
+                entrypoint_fn,
+                _entry_file,
+                agent_files or {_entry_file: agent_code},
+                focus_area=focus,
+                optimizable_files=_opt_files,
+            )
+            method_label = "plan(independent)" if (is_last and independent_diag) else f"plan({focus or 'general'})"
+            plans.append({
+                "candidate_id": f"c{idx}",
+                "method": method_label,
+                "focus_area": focus or "general",
+                "diagnosis": use_diag,
+                "suggestions": use_suggestions,
+                "edit_instructions": instruction,
+            })
+        return plans
 
     # ---- Agentic codegen path ----
     if agent_files:

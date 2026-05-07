@@ -84,7 +84,7 @@ Return a JSON object with this exact structure:
   "scope": {{
     "optimizable_paths": ["glob patterns relative to project root for files the optimizer may edit"],
     "context_paths": ["glob patterns for read-only context files (prompts, schemas) not in import closure"],
-    "exclude_paths": ["glob patterns to skip entirely (tests, vendored code, infra)"]
+    "exclude_paths": ["glob patterns to skip entirely (tests, third-party vendored code, infra)"]
   }},
   "optimizable_elements": ["element1", "element2"],
   "fixed_elements": ["element1", "element2"]
@@ -127,15 +127,29 @@ there's a numeric score and a categorical field, a high score should align with 
 - Set penalty proportional to how egregious the inconsistency would be.
 
 Rules for scope (critical for large repos):
-- optimizable_paths: Only files that materially affect LLM behaviour — system prompts, \
+- optimizable_paths: Files that materially affect LLM behaviour — system prompts, \
 tool description/schema modules, orchestration around `{entrypoint_fn}()`, model routing. \
 Use tight globs (e.g. ``myagent/prompts/**/*.py``). Aim for fewer than 25 patterns; prefer \
 directories that hold prompts and agent config over the whole package tree.
-- context_paths: Important read-only context (eval templates, JSON schemas) the optimizer \
-should see but must not edit. Omit if empty.
+- IMPORTANT — distinguish "the agent" from "third-party libraries":
+  * If a top-level package directory sits next to `{entrypoint_fn}`'s file inside the project \
+root and is imported by the entrypoint (e.g. `import myproj` where `myproj/` is a sibling \
+folder), treat it as PART OF THE AGENT and include `myproj/**/*.py` in optimizable_paths. \
+The presence of `pyproject.toml`, `setup.py`, `LICENSE`, or `.egg-info/` at the same level \
+does NOT make it third-party — many agents are structured as installable local packages.
+  * Only treat a directory as third-party / vendored (and exclude it) when it is clearly a \
+copied dependency the user does not own — e.g. it lives under `vendor/`, `third_party/`, \
+`site-packages/`, `node_modules/`, or carries a NOTICE/COPYING/upstream-readme indicating it \
+is an unmodified upstream snapshot.
+  * When in doubt about a sibling package, prefer INCLUDING it in optimizable_paths. The \
+register-agent / generate-policy step will surface these to the user for confirmation; a \
+silent exclude is worse than an over-broad include.
+- context_paths: Important read-only context (eval templates, JSON schemas, README, \
+pyproject.toml) the optimizer should see but must not edit. Omit if empty.
 - exclude_paths: Tests, benchmarks, docs, examples, scripts, docker/k8s, web servers, \
-database adapters, vendored trees. Be aggressive — missing an exclude is better than \
-indexing thousands of files.
+database adapters, true third-party vendored trees, build artefacts (``*.egg-info``, \
+``__pycache__``, ``uv.lock``, ``poetry.lock``). Be aggressive about *infra*, but never \
+exclude a sibling package that the entrypoint imports.
 
 Rules for optimizable_elements vs fixed_elements:
 - optimizable_elements: Things the optimizer CAN change to improve performance.
