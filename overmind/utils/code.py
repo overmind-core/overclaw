@@ -561,7 +561,25 @@ class AgentBundle:
         if optimizable_paths is None:
             opt_set = set(local_files.keys())
         else:
-            opt_set = set(optimizable_paths)
+            # Expand glob patterns and collect concrete relative paths.
+            expanded: set[str] = set()
+            for pattern in optimizable_paths:
+                abs_p = root / pattern
+                if abs_p.is_file():
+                    expanded.add(pattern)
+                else:
+                    # Treat as a glob pattern relative to project root.
+                    matched = list(root.glob(pattern))
+                    if matched:
+                        for m in matched:
+                            try:
+                                expanded.add(str(m.relative_to(root)))
+                            except ValueError:
+                                pass
+                    else:
+                        # Keep as-is; may already be in local_files or resolve later.
+                        expanded.add(pattern)
+            opt_set = expanded
             opt_set.add(entry_rel)
             for rel in list(opt_set):
                 if rel in local_files:
