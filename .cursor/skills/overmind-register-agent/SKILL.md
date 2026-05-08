@@ -209,16 +209,17 @@ Do **not** mention runner scripts, file cleanup, registry internals, or any impl
 
 ## Fallback: if overmind internals can't be imported
 
-If the runner fails with `ImportError` on `overmind.commands` or `overmind.core`, activate the project venv first:
+If the runner fails with `ImportError` on `overmind.commands` or `overmind.core`, overmind is not installed in the active Python environment. Tell the user to install it first, then re-run:
 
 ```bash
-source .venv/bin/activate && python _register_runner.py
+pip install overmind
+python _register_runner.py
 ```
 
 If the project uses `uv`, run from the **project root** (do NOT `cd` to a parent directory or pass `--project` to `uv run`):
 
 ```bash
-uv run python _register_runner.py
+uv add overmind && uv run python _register_runner.py
 ```
 
 ## Common issues
@@ -229,5 +230,5 @@ uv run python _register_runner.py
 | `EntrypointNotFoundError`                                | Function name not found in the file — re-read and confirm the spelling                               |
 | `Agent already registered` (different entrypoint)        | Use `overmind agent update <name> <entrypoint>`                                                      |
 | `EntrypointSignatureError`                               | The function's signature is missing required `dict`/`str` params — offer to generate an auto-wrapper |
-| `ImportError: No module named overmind`                  | Activate the project venv                                                                            |
+| `ImportError: No module named overmind`                  | Install overmind first: `pip install overmind`, then re-run                                          |
 | User's agent uses no LLM directly                        | Choose "No LLM / manually" in Step 4 — skip the `.env` unless env vars were discovered in Step 3     |

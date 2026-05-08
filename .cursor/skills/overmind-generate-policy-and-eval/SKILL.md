@@ -271,6 +271,8 @@ except Exception:
     HAS_OVERMIND = False
 ```
 
+If `HAS_OVERMIND` is `False`, overmind is not installed. Tell the user to install it first (`pip install overmind`) and re-run before proceeding to the fallback runner.
+
 When `HAS_OVERMIND` is True, prefer `analyze_agent(...)` for the LLM analysis pass, then **post-process** its output with the static checks from Step 1 before passing to `generate_spec_from_proposal`. The most common breakage is:
 
 | Symptom                                                            | Cause                                                                                                      | Fix                                                                                                                                         |
@@ -377,7 +379,7 @@ The diff format must be concrete — show the *current* vs *proposed* value side
 
 | Problem                                                               | Fix                                                                                                                                                                                                                                               |
 | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ImportError: overmind.setup`                                         | Activate `.venv` (`source .venv/bin/activate`) or use the Step 5 fallback runner.                                                                                                                                                                 |
+| `ImportError: overmind.setup`                                         | overmind is not installed — run `pip install overmind` and re-run.                                                                                                                                                                                |
 | Policy generation returns empty `domain_rules: []`                    | The LLM produced markdown but no JSON block — re-prompt with: *"Append a `\`\`\`json\` block at the end with keys: domain_rules, domain_edge_cases, terminology, output_constraints, tool_requirements, decision_mapping, quality_expectations."* |
 | `input_schema` has one `object`-typed entry matching a dict parameter | Decompose: read seed data keys or ask the user one question per sub-field.                                                                                                                                                                        |
 | Weights sum to 99 or 101                                              | Apply the rounding-residual fix in Step 4.                                                                                                                                                                                                        |

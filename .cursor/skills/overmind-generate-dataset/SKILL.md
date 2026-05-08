@@ -334,7 +334,7 @@ If the agent returns plain text, `expected_output` is a string.
 
 ## Fallback: direct LLM generation
 
-If `from overmind.optimize.data import generate_diverse_synthetic_data` fails (overmind not installed or wrong env), fall back to direct LLM calls:
+If `from overmind.optimize.data import generate_diverse_synthetic_data` fails, overmind is not installed. Tell the user to install it first (`pip install overmind`), then re-run. If overmind is installed but still can't be imported, fall back to direct LLM calls:
 
 ````python
 import os, json
@@ -382,7 +382,7 @@ cases = json.loads(content[start:end])
 
 | Problem | Fix |
 |---------|-----|
-| `generate_diverse_synthetic_data` not found | Activate the project virtualenv: `source .venv/bin/activate` |
+| `generate_diverse_synthetic_data` not found | overmind is not installed — run `pip install overmind`, then re-run |
 | Model auth error | Check `.overmind/.env` or `.env` for `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` |
 | 0 cases generated | Increase temperature or reduce `NUM_SAMPLES` per run; retry |
 | Input schema missing fields | Re-read the entrypoint and check `*args`/`**kwargs` usage |
