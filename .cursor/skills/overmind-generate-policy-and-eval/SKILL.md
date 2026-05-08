@@ -110,52 +110,15 @@ Free-text answers are fine — the skill restructures them.
 
 **3c. Improve existing doc** — read the file. Call `overmind.setup.policy_generator.improve_existing_policy` if available, then show the diff and ask the user which version to keep.
 
-### Step 4 — Preview draft and get user sign-off
+### Step 4 — Generate the full policy and eval spec
 
-Before building anything, produce a **compact draft outline** of what the policy and eval spec will look like, based on what was learned in Steps 1–3. This is a human-readable sketch — not the final JSON.
+Using everything gathered in Steps 1–3, produce the complete artifacts now:
 
-Show it in this format:
+1. Build the full `policy` dict from the elicited answers (Step 3).
+1. Build the full `spec` dict using the algorithm below.
+1. Render `policies.md` as a human-readable markdown document from the `policy` dict.
 
-```
-Draft preview
-─────────────────────────────────────────────────
-Policy outline
-  Purpose      : <one-sentence purpose from elicitation>
-  Domain rules : <N rules — list each as a short bullet>
-  Hard constraints: <M constraints>
-  Edge cases   : <K cases>
-  Terminology  : <T entries>
-
-Eval spec outline
-  input_schema  : <param1> (<type>), <param2> (<type>), ...
-  output_fields : <field1> (critical, ~XX pts), <field2> (important, ~XX pts), ...
-                  structure XX + tools XX + llm_judge XX  → total 100
-  Enums         : <field> → [value1, value2, ...]   (if any)
-  Scope         : optimizable: [<paths>]
-                  context:     [<paths>]
-─────────────────────────────────────────────────
-```
-
-Then `AskQuestion`:
-
-> "Does this look right, or would you like to change anything before I generate the full policy and eval spec?"
-> Options:
->
-> - Looks good — generate it
-> - Change the policy (domain rules / constraints / edge cases)
-> - Change the eval spec (fields, weights, enums, scope)
-> - Change both
-
-**If the user asks for changes**, collect them in plain conversation:
-
-- Ask: *"What specifically should change? Describe the additions, removals, or corrections."*
-- Apply the requested changes to the draft outline (show a short diff: "Removed X, added Y, changed Z weight from important → critical").
-- Show the updated draft and `AskQuestion` again: *"Does this updated draft look right, or are there more changes?"*
-- Repeat until the user approves. Only then proceed to Step 5.
-
-**Do not start generating the full spec or policy until the user explicitly approves the draft.**
-
-### Step 5 — Build the eval spec
+Do **not** save anything to disk yet — hold both artifacts in memory until the user approves them in Step 5.
 
 Construct the spec dict directly (do **not** trust the LLM to allocate weights — do it deterministically):
 
@@ -239,7 +202,7 @@ weight[first] += remaining - sum(weight.values())
 assert structure_weight + tool_usage_weight + llm_judge_weight + sum(weight.values()) == 100
 ```
 
-**Validation gates** (assert before saving — surface to user if any fail):
+**Validation gates** (assert before showing to user — surface any failures immediately):
 
 - Every key of `input_schema` is a real parameter of the entrypoint.
 - Every key of `output_fields` appears in at least one `return` statement.
@@ -250,7 +213,88 @@ assert structure_weight + tool_usage_weight + llm_judge_weight + sum(weight.valu
 - If `policy` is present, `policy["domain_rules"]` is a non-empty list (otherwise prompt the user — silent empty policies are the #1 cause of useless optimize runs).
 - For every sibling local package in `static_analysis.sibling_local_packages`, exactly one of `optimizable_paths` / `context_paths` / `exclude_paths` references it. Never let a sibling package be invisible to all three.
 
-### Step 6 — Fallbacks when overmind helpers fail
+### Step 5 — Show generated content, get user approval, iterate
+
+Show the **actual generated content** — not a skeleton — to the user. Display both artifacts in full (or truncated with `...` only for very long field lists):
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POLICY  (policies.md)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Purpose: <one-sentence purpose>
+
+Domain rules:
+  • <rule 1>
+  • <rule 2>
+  ...
+
+Hard constraints:
+  • <constraint 1>
+  ...
+
+Edge cases:
+  • <case 1>
+  ...
+
+Terminology:
+  • <term>: <definition>
+  ...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EVAL SPEC  (eval_spec.json)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+input_schema:
+  <param1>  (<type>)  — <description>
+  <param2>  (<type>)  — <description>
+  ...
+
+output_fields:
+  <field1>  <type>  importance=<critical|important|minor>  weight=<N>
+  <field2>  ...
+  ...
+  ── weights: fields <N> + structure <N> + tools <N> + llm_judge <N> = 100
+
+scope:
+  optimizable: <paths>
+  context:     <paths>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+Then `AskQuestion`:
+
+> "Does this look right? Approve to save, or tell me what to change."
+> Options:
+>
+> - Approve and save
+> - Change the policy
+> - Change the eval spec (fields / weights / enums / scope)
+> - Change both
+
+**If the user requests changes:**
+
+1. Ask in plain conversation: *"What specifically should change?"*
+1. Apply the changes, regenerate the affected artifact(s) (loop back to Step 4 for a full rebuild, or patch in-place for minor edits).
+1. Show the updated content again using the same display format above.
+1. Ask for approval again.
+1. Repeat until the user explicitly approves.
+
+**Do not write any file to disk until the user selects "Approve and save."**
+
+### Step 6 — Save
+
+Once approved, write both files:
+
+```python
+from pathlib import Path
+import json
+
+base = Path(".overmind/agents") / agent_name / "setup_spec"
+base.mkdir(parents=True, exist_ok=True)
+(base / "eval_spec.json").write_text(json.dumps(spec, indent=2))
+(base / "policies.md").write_text(policy_md.rstrip() + "\n")
+```
+
+**Never** write to a different location — the optimizer only reads from this canonical path.
 
 The repo ships helpers under `overmind.setup.*`. Try them first; fall back to direct LLM calls when imports fail or output is malformed.
 
@@ -291,44 +335,7 @@ python _policy_eval_runner.py
 
 Delete the runner on success.
 
-### Step 7 — Show the spec, then save
-
-Render a readable summary back to the user:
-
-```
-Eval spec preview
-─────────────────
-input_schema  :  6 fields  (ticker:str, date:str, llm_provider:str?, ...)
-output_fields :  12 fields, weights = [decision:24, market_report:8, ...]
-                 sum = 60  +  structure 20  +  tools 10  +  llm_judge 10  =  100
-tool_config   :  9 tools, 3 dependencies
-policy        :  6 domain rules, 4 edge cases, 5 output constraints
-```
-
-Then `AskQuestion`:
-
-- *"Save now, refine the policy first, or refine the eval criteria first?"*
-
-If "refine":
-
-- Policy refinement → re-prompt for missing items, regenerate, show diff.
-- Eval refinement → ask which fields to drop/promote/demote and rerun the weight allocation.
-
-When the user accepts, save:
-
-```python
-from pathlib import Path
-import json
-
-base = Path(".overmind/agents") / agent_name / "setup_spec"
-base.mkdir(parents=True, exist_ok=True)
-(base / "eval_spec.json").write_text(json.dumps(spec, indent=2))
-(base / "policies.md").write_text(policy_md.rstrip() + "\n")
-```
-
-**Never** write to a different location — the optimizer only reads from this canonical path.
-
-### Step 8 — Smoke test (non-blocking)
+### Step 7 — Smoke test (non-blocking)
 
 If `setup_spec/dataset.json` already exists, run the agent against `cases[0]["input"]` once to confirm the new `input_schema` matches the function signature. Use a subprocess so a hung agent can't block the chat:
 
@@ -354,7 +361,7 @@ res = subprocess.run(
 
 On failure, print the error and tell the user which `input_schema` field name is likely wrong. **Do not** rewrite the spec automatically — let the user decide whether to fix the agent or the schema.
 
-### Step 9 — Summarize
+### Step 8 — Summarize
 
 End the session with:
 
