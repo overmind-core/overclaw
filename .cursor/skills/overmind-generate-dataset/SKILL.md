@@ -258,10 +258,24 @@ After saving `dataset.json`, verify the agent actually runs on a sample of the g
 
 ```python
 import importlib.util, traceback, sys
+from pathlib import Path
+from dotenv import load_dotenv
 
 
-def _smoke_test(agent_file: str, entrypoint_fn: str, sample_cases: list[dict]) -> None:
+def _smoke_test(
+    agent_file: str, entrypoint_fn: str, sample_cases: list[dict], agent_name: str
+) -> None:
     """Run the entrypoint against up to 3 generated cases and report pass/fail."""
+    # Load the agent's .env before importing — the agent may need API keys at import time
+    agent_env = Path(".overmind/agents") / agent_name / ".env"
+    if agent_env.exists():
+        load_dotenv(agent_env, override=True)
+        console.print(f"  [dim]Loaded env from {agent_env}[/dim]")
+    else:
+        console.print(
+            f"  [yellow]⚠  No .env found at {agent_env} — agent may fail if it needs API keys[/yellow]"
+        )
+
     spec = importlib.util.spec_from_file_location("_agent_under_test", agent_file)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -293,7 +307,7 @@ def _smoke_test(agent_file: str, entrypoint_fn: str, sample_cases: list[dict]) -
         )
 
 
-_smoke_test("<path/to/agent_file.py>", "<entrypoint_fn_name>", cases)
+_smoke_test("<path/to/agent_file.py>", "<entrypoint_fn_name>", cases, AGENT_NAME)
 ```
 
 The smoke test is **non-blocking** — a failure prints a warning but still saves the dataset. The user should fix the input schema mismatch and re-run if smoke tests fail.

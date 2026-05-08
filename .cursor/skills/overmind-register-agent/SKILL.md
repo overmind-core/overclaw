@@ -27,17 +27,49 @@ Read the agent file. Find the entrypoint in priority order:
 
 If multiple candidates exist, ask the user to pick one.
 
-**If no entrypoint function is found**, stop and tell the user:
+**If no entrypoint function is found**, ask the user (use `AskQuestion`):
 
-> "No entrypoint function was found in `<file>`. Please add a function — it should accept at least one input parameter and return a `dict` or `str`. For example:
->
-> ```python
-> def run(input_text: str) -> dict: ...
-> ```
->
-> Once you've added it, re-run this skill."
+> "No entrypoint function was found in `<file>`. Would you like me to scaffold a `run` function for you?"
+> Options: Yes, scaffold one for me | No, I'll add it manually
 
-**Do not modify the file.** Never create, scaffold, or rewrite the entrypoint function.
+- If **No**: tell the user the function should accept at least one input parameter and return a `dict` or `str`, then stop and ask them to re-run the skill after adding it.
+
+- If **Yes**: scaffold a `run` function at the bottom of the file. The scaffolded function must:
+
+  - Be named `run`
+  - Accept typed input parameters that make sense for the agent's apparent purpose (infer from the file's other code, imports, constants, and comments)
+  - Have a docstring explaining what it does and what each parameter means
+  - Return a `dict` with named output keys that reflect what the agent produces
+  - Include a short inline comment on each parameter and return field
+
+  Also ensure the **top of the file** loads the agent's `.env`. If `dotenv` imports are not already present, add these lines at the top (after any existing imports):
+
+  ```python
+  from dotenv import load_dotenv
+  from pathlib import Path
+
+  load_dotenv(Path(__file__).parent / ".env", override=True)
+  ```
+
+  If `load_dotenv` is already called anywhere in the file, do not add it again.
+
+  After writing it, **show the scaffolded function in full to the user** and explain it in plain English:
+
+  > "Here's the entrypoint I created:
+  >
+  > ```python
+  > <full scaffolded function>
+  > ```
+  >
+  > **What it does:** \<1–2 sentence plain-English description of the function's purpose>
+  > **Inputs:** <list each parameter and what it represents>
+  > **Output:** <describe what the returned dict contains>
+  >
+  > Please review this. If the parameter names, types, or return shape don't match how you plan to call the agent, edit `<file>` now before continuing. When you're ready, reply to proceed."
+
+  Wait for the user to confirm before continuing. Do not proceed to Step 3 until they explicitly say the function looks correct.
+
+**Do not modify the file for any other reason.** Only scaffold when the user explicitly requests it via the question above.
 
 **Once a candidate is found, analyze it — do not modify it:**
 
@@ -106,6 +138,22 @@ Determine the required key(s):
 - **Anthropic** → `ANTHROPIC_API_KEY`
 - **Other** → `OPENAI_BASE_URL` + `OPENAI_API_KEY`
 - **No LLM / manually** → no provider keys
+
+### Step 5b — Final confirmation before registering (only when entrypoint was scaffolded)
+
+**Skip this step if the entrypoint already existed in the file.** Only run it when Step 2 scaffolded the function.
+
+Tell the user:
+
+> "Before I register the agent, please open `<file>` and check that the entrypoint looks correct:
+>
+> - Parameter names and types match how you intend to call the agent
+> - The return dict keys match what the agent actually produces
+> - The `load_dotenv` line at the top will find the right `.env`
+>
+> Take a moment to edit the file if anything needs adjusting. Reply when you're ready to register."
+
+Wait for explicit confirmation. Do not proceed to Step 6 until the user confirms they have reviewed the file and are happy with it.
 
 ### Step 6 — Run registration
 

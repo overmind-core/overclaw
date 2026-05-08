@@ -341,6 +341,13 @@ If `setup_spec/dataset.json` already exists, run the agent against `cases[0]["in
 
 ```python
 import subprocess, sys, json, textwrap
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load the agent's .env before running — the agent needs API keys
+agent_env = Path(".overmind/agents") / agent_name / ".env"
+if agent_env.exists():
+    load_dotenv(agent_env, override=True)
 
 case = json.loads(Path(base / "dataset.json").read_text())[0]
 input_kwargs = (
@@ -350,6 +357,11 @@ input_kwargs = (
 )
 script = textwrap.dedent(f"""
     import json, sys
+    from pathlib import Path
+    from dotenv import load_dotenv
+    _env = Path(".overmind/agents/{agent_name}/.env")
+    if _env.exists():
+        load_dotenv(_env, override=True)
     sys.path.insert(0, {repr(str(Path(agent_path).parent))})
     from {Path(agent_path).stem} import {entrypoint_fn} as fn
     print(json.dumps({{"ok": True, "out_keys": list(fn(**{input_kwargs!r}).keys() if isinstance(fn(**{input_kwargs!r}), dict) else [])}}))
