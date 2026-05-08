@@ -24,18 +24,18 @@ Trigger on any of:
 
 ## Inputs the skill needs
 
-The user provides an **agent name** (the slug used during `overmind agent register`, e.g. `langextract`). Everything else is resolved from the registry and the agent file.
+The user provides an **agent name** (the slug used during `overmind agent register`, e.g. `my-agent`). Everything else is resolved from the registry and the agent file.
 
 Collect, in order, asking only what isn't obvious from context. Use the `AskQuestion` tool for multiple-choice prompts; use plain conversation for free-form answers.
 
-| #   | Field                   | How to get it                                                                                                                                                                                                                                                                                                      |
-| --- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | **Agent name (slug)**   | From the user's request.                                                                                                                                                                                                                                                                                           |
-| 2   | **Agent file path**     | Look up from `.overmind/agents.toml`: find the entry where `name` matches, take the `entrypoint` (e.g. `new_examples.langextract.test:run_agent`), split on `:`, convert the module part to a path (`new_examples/langextract/test.py`). If not registered, tell the user to run `/overmind-register-agent` first. |
-| 3   | **Entrypoint function** | The function name from the entrypoint string (after `:`).                                                                                                                                                                                                                                                          |
-| 4   | **Mode**                | `AskQuestion`: *fresh generation*, *repair an existing spec*, or *improve an existing policy doc*.                                                                                                                                                                                                                 |
-| 5   | **Policy source**       | `AskQuestion`: *interactive elicitation* (recommended), *auto-infer from code only*, or *I have a markdown doc — point me at it*.                                                                                                                                                                                  |
-| 6   | **Existing artifacts**  | Read any current `setup_spec/eval_spec.json` and `setup_spec/policies.md`. Diff against what we'd generate.                                                                                                                                                                                                        |
+| #   | Field                   | How to get it                                                                                                                                                                                                                                                                                  |
+| --- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Agent name (slug)**   | From the user's request.                                                                                                                                                                                                                                                                       |
+| 2   | **Agent file path**     | Look up from `.overmind/agents.toml`: find the entry where `name` matches, take the `entrypoint` (e.g. `examples.myagent.agent:run`), split on `:`, convert the module part to a path (`examples/myagent/agent.py`). If not registered, tell the user to run `/overmind-register-agent` first. |
+| 3   | **Entrypoint function** | The function name from the entrypoint string (after `:`).                                                                                                                                                                                                                                      |
+| 4   | **Mode**                | `AskQuestion`: *fresh generation*, *repair an existing spec*, or *improve an existing policy doc*.                                                                                                                                                                                             |
+| 5   | **Policy source**       | `AskQuestion`: *interactive elicitation* (recommended), *auto-infer from code only*, or *I have a markdown doc — point me at it*.                                                                                                                                                              |
+| 6   | **Existing artifacts**  | Read any current `setup_spec/eval_spec.json` and `setup_spec/policies.md`. Diff against what we'd generate.                                                                                                                                                                                    |
 
 ## Workflow
 
@@ -49,7 +49,7 @@ Read the entrypoint file. From it, extract **statically** (do not rely on the LL
 1. **Tool definitions** — look for `@tool`, `Tool(`, `FunctionTool(`, `tools=[...]`, OpenAI/Anthropic tool dicts. Record name, description, parameter schema.
 1. **Module docstring + `AGENT_DESCRIPTION` constant** — use as `agent_description`.
 1. **Imports** — note any local sibling modules so the spec's `scope.optimizable_paths` covers the right files.
-1. **Sibling local packages** — for every top-level `import X` / `from X import ...` in the entrypoint file, check whether `X` resolves to a directory sitting next to the entrypoint inside the project root (e.g. `new_examples/langextract/langextract/` next to `new_examples/langextract/test.py`). Such packages are **the agent**, not third-party dependencies — even if they have their own `pyproject.toml`, `LICENSE`, `.egg-info/`, or `tests/`. Collect them as `sibling_local_packages = [<path>, ...]`.
+1. **Sibling local packages** — for every top-level `import X` / `from X import ...` in the entrypoint file, check whether `X` resolves to a directory sitting next to the entrypoint inside the project root. Such packages are **the agent**, not third-party dependencies — even if they have their own `pyproject.toml`, `LICENSE`, `.egg-info/`, or `tests/`. Collect them as `sibling_local_packages = [<path>, ...]`.
 
 Output of this step is a `static_analysis` dict you carry through the rest of the skill. **Do not** trust the LLM analyzer's `input_schema` if it returns a single field whose name matches the entrypoint's *only* parameter and whose type is `object`/`dict` — that means the analyzer flattened a dict-of-fields into an opaque blob. In that case, decompose using either:
 
@@ -84,7 +84,7 @@ For each sibling local package detected in Step 1.6, `AskQuestion` with options:
 
 Phrase the prompt concretely, e.g.:
 
-> *"`langextract/` is a sibling Python package that `test.py` imports. It contains the actual extraction logic. Should the optimizer be allowed to edit it, treat it as read-only context, or ignore it as an external library?"*
+> *"`<pkg>/` is a sibling Python package that `<entrypoint_file>` imports. It contains part of the agent's logic. Should the optimizer be allowed to edit it, treat it as read-only context, or ignore it as an external library?"*
 
 Record the answer on `static_analysis.scope_decisions[<pkg>]`. Step 4 builds `scope.optimizable_paths` / `context_paths` / `exclude_paths` from this map — never silently exclude a sibling package because it "looks like a library".
 
@@ -106,11 +106,56 @@ Ask each of the following as a separate question. Skip questions where the answe
 
 Free-text answers are fine — the skill restructures them.
 
-**3b. Auto-infer from code** — call `overmind.setup.policy_generator.generate_policy_from_code` if available; otherwise use the fallback prompt in [Step 5](#step-5--fallbacks-when-overmind-helpers-fail).
+**3b. Auto-infer from code** — call `overmind.setup.policy_generator.generate_policy_from_code` if available; otherwise use the fallback prompt in [Step 6](#step-6--fallbacks-when-overmind-helpers-fail).
 
 **3c. Improve existing doc** — read the file. Call `overmind.setup.policy_generator.improve_existing_policy` if available, then show the diff and ask the user which version to keep.
 
-### Step 4 — Build the eval spec
+### Step 4 — Preview draft and get user sign-off
+
+Before building anything, produce a **compact draft outline** of what the policy and eval spec will look like, based on what was learned in Steps 1–3. This is a human-readable sketch — not the final JSON.
+
+Show it in this format:
+
+```
+Draft preview
+─────────────────────────────────────────────────
+Policy outline
+  Purpose      : <one-sentence purpose from elicitation>
+  Domain rules : <N rules — list each as a short bullet>
+  Hard constraints: <M constraints>
+  Edge cases   : <K cases>
+  Terminology  : <T entries>
+
+Eval spec outline
+  input_schema  : <param1> (<type>), <param2> (<type>), ...
+  output_fields : <field1> (critical, ~XX pts), <field2> (important, ~XX pts), ...
+                  structure XX + tools XX + llm_judge XX  → total 100
+  Enums         : <field> → [value1, value2, ...]   (if any)
+  Scope         : optimizable: [<paths>]
+                  context:     [<paths>]
+─────────────────────────────────────────────────
+```
+
+Then `AskQuestion`:
+
+> "Does this look right, or would you like to change anything before I generate the full policy and eval spec?"
+> Options:
+>
+> - Looks good — generate it
+> - Change the policy (domain rules / constraints / edge cases)
+> - Change the eval spec (fields, weights, enums, scope)
+> - Change both
+
+**If the user asks for changes**, collect them in plain conversation:
+
+- Ask: *"What specifically should change? Describe the additions, removals, or corrections."*
+- Apply the requested changes to the draft outline (show a short diff: "Removed X, added Y, changed Z weight from important → critical").
+- Show the updated draft and `AskQuestion` again: *"Does this updated draft look right, or are there more changes?"*
+- Repeat until the user approves. Only then proceed to Step 5.
+
+**Do not start generating the full spec or policy until the user explicitly approves the draft.**
+
+### Step 5 — Build the eval spec
 
 Construct the spec dict directly (do **not** trust the LLM to allocate weights — do it deterministically):
 
@@ -205,7 +250,7 @@ assert structure_weight + tool_usage_weight + llm_judge_weight + sum(weight.valu
 - If `policy` is present, `policy["domain_rules"]` is a non-empty list (otherwise prompt the user — silent empty policies are the #1 cause of useless optimize runs).
 - For every sibling local package in `static_analysis.sibling_local_packages`, exactly one of `optimizable_paths` / `context_paths` / `exclude_paths` references it. Never let a sibling package be invisible to all three.
 
-### Step 5 — Fallbacks when overmind helpers fail
+### Step 6 — Fallbacks when overmind helpers fail
 
 The repo ships helpers under `overmind.setup.*`. Try them first; fall back to direct LLM calls when imports fail or output is malformed.
 
@@ -244,7 +289,7 @@ python _policy_eval_runner.py
 
 Delete the runner on success.
 
-### Step 6 — Show the spec, then save
+### Step 7 — Show the spec, then save
 
 Render a readable summary back to the user:
 
@@ -281,7 +326,7 @@ base.mkdir(parents=True, exist_ok=True)
 
 **Never** write to a different location — the optimizer only reads from this canonical path.
 
-### Step 7 — Smoke test (non-blocking)
+### Step 8 — Smoke test (non-blocking)
 
 If `setup_spec/dataset.json` already exists, run the agent against `cases[0]["input"]` once to confirm the new `input_schema` matches the function signature. Use a subprocess so a hung agent can't block the chat:
 
@@ -307,7 +352,7 @@ res = subprocess.run(
 
 On failure, print the error and tell the user which `input_schema` field name is likely wrong. **Do not** rewrite the spec automatically — let the user decide whether to fix the agent or the schema.
 
-### Step 8 — Summarize
+### Step 9 — Summarize
 
 End the session with:
 

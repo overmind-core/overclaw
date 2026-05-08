@@ -10,14 +10,18 @@ Generates a synthetic JSON test dataset for any agent by analyzing its entrypoin
 
 ### Step 1 — Resolve the agent file
 
-The user provides an **agent name** (the slug used during `overmind agent register`, e.g. `langextract`).
+The user provides an **agent name** (the slug used during `overmind agent register`, e.g. `my-agent`). They may **optionally** also provide a **seed dataset file** (a path to an existing JSON file with example inputs/outputs). Let the user know upfront they can supply one — e.g.:
+
+> "If you already have example inputs/outputs for this agent, you can pass a seed dataset file path and I'll use those as a starting point."
+
+If the user provides a seed file path at this point, note it and skip the seed-samples question in Step 2.
 
 Look up the file path from the registry at `.overmind/agents.toml`:
 
 - Find the entry where `name` matches the agent name.
-- Take the `entrypoint` value (e.g. `new_examples.langextract.test:run_agent`).
+- Take the `entrypoint` value (e.g. `examples/myagent/agent.py:run`).
 - Derive the file path: split on `:`, take the module part, replace `.` with `/`, append `.py`.
-  - `new_examples.langextract.test` → `new_examples/langextract/test.py`
+  - `examples.myagent.agent` → `examples/myagent/agent.py`
 
 If the agent name is not in `.overmind/agents.toml`, tell the user to register it first with `/overmind-register-agent`.
 
@@ -25,18 +29,33 @@ Read the resolved file. Extract:
 
 - **Entrypoint function**: the function name from the entrypoint string (after `:`).
 - **Agent description**: from a module docstring, `AGENT_DESCRIPTION` variable, or comments near the function.
-- **Input schema**: from the function signature — each parameter becomes a schema field.
-- **Output schema**: from the return type annotation or a sample return value in the code.
+- **Canonical input parameter names**: read the function signature directly and list the **exact** parameter names in order, excluding `self`. These are the ground truth — every generated `input` dict must have exactly these keys, no more, no less.
+- **Input types**: from type annotations on each parameter (`str`, `int`, `dict`, `list`, etc.). If a parameter has no annotation, infer from usage in the function body or default to `string`.
+- **Canonical output keys**: read the return type annotation or `return` statements in the function body. Extract the exact field names the function produces:
+  - `-> dict` with a `TypedDict` or typed `return {...}` literal → use those exact keys
+  - `-> list[dict]` → extract the keys each dict item contains from return statements or docstrings
+  - `-> str` or `-> list[str]` → single key `"result"` of type `text`
+  - If the return type is unclear, read all `return` statements and union the keys across them
+  - These are the ground truth — every generated `expected_output` dict must have exactly these keys
 
-Example for agent name `langextract` → file `new_examples/langextract/test.py`:
+Example (generic):
 
 ```
-entrypoint: run_agent(instruction, text, example)
-input_schema: { instruction: string, text: string, example: dict }
-output_schema: list[dict] with keys extraction_class, extraction_text
+entrypoint: run(query, context)
+canonical_input_keys: ["query", "context"]
+input_schema: { query: string, context: dict }
+canonical_output_keys: ["answer", "confidence"]
+output_schema: dict with keys answer (str), confidence (float)
 ```
 
-If seed samples exist (user-provided JSON), read them too.
+**Write down both the canonical input keys and canonical output keys explicitly before moving to Step 2.** Both will be used to validate every generated case.
+
+If seed samples exist (user-provided JSON), read them and verify:
+
+- Their `input` keys match the canonical input keys
+- Their `expected_output` keys match the canonical output keys
+
+Drop any seed case that fails either check and warn the user.
 
 ### Step 2 — Collect parameters interactively
 
@@ -49,18 +68,23 @@ The agent name is already known from Step 1. Use the `AskQuestion` tool or natur
 
 ### Step 3 — Build eval spec
 
-Construct the `eval_spec` dict from what you detected:
+Construct the `eval_spec` dict from what you detected.
+
+**Critical rules**:
+
+- The keys of `input_schema` must be **exactly** the canonical input parameter names extracted from the function signature in Step 1 — same names, same count, no extras, no omissions. This is what guarantees every generated `input` dict can be passed directly as `fn(**input)` without a `TypeError`.
+- The keys of `output_fields` must be **exactly** the canonical output keys extracted from the return type/statements in Step 1 — same names, same count. This is what guarantees every generated `expected_output` dict reflects what the function actually returns.
 
 ```python
 eval_spec = {
     "agent_description": "<detected or inferred description>",
     "input_schema": {
+        # One entry per entrypoint parameter — key = exact parameter name
         "param_name": {
             "type": "string",  # string | number | boolean | enum | dict | list
             "description": "...",
             "values": ["a", "b"],  # only for enum type
         },
-        # one entry per entrypoint parameter
     },
     "output_fields": {
         "field_name": {
@@ -76,6 +100,15 @@ eval_spec = {
 
 For plain-text or list outputs, use a single `output_fields` entry with `type: "text"`.
 
+Before continuing, write both canonical key sets as Python constants in the runner script (Step 4):
+
+```python
+CANONICAL_INPUT_KEYS = frozenset(<list of exact parameter names>)
+CANONICAL_OUTPUT_KEYS = frozenset(<list of exact output field names>)  # None if output is plain text/list
+```
+
+Both are used to validate every case after generation.
+
 ### Step 4 — Generate the dataset
 
 Write a runner script `_datagen_runner.py` in the project root:
@@ -86,6 +119,8 @@ from pathlib import Path
 from rich.console import Console
 
 import overmind
+from overmind.core.paths import load_overmind_dotenv
+load_overmind_dotenv()
 overmind.init()
 
 from overmind.optimize.data import generate_diverse_synthetic_data
@@ -96,6 +131,12 @@ AGENT_NAME = "<name>"
 NUM_SAMPLES = <N>
 NUM_PERSONAS = <R>   # red-teamers
 MODEL = os.getenv("SYNTHETIC_DATAGEN_MODEL", "openai/gpt-4o")
+
+# Exact parameter names from the entrypoint function signature — ground truth for input keys
+CANONICAL_INPUT_KEYS = frozenset(<list of exact parameter names>)
+
+# Exact field names from the return type/statements — ground truth for output keys (None if plain text)
+CANONICAL_OUTPUT_KEYS = frozenset(<list of exact output field names>)  # or None
 
 AGENT_DESCRIPTION = """<description from step 1>"""
 
@@ -157,24 +198,16 @@ gaps = coverage.get("coverage_gaps", [])
 
 ### Step 6 — Validate schema consistency
 
-Before saving, enforce that every datapoint shares the same top-level `input` keys and the same top-level `expected_output` keys. Do this inside the runner script immediately after generation:
+Before saving, enforce that every datapoint's `input` keys **exactly match** `CANONICAL_INPUT_KEYS` and every `expected_output` dict's keys **exactly match** `CANONICAL_OUTPUT_KEYS`. Both are derived from the entrypoint source in Step 1 — never use the first generated case as a reference, as it could itself be wrong.
 
 ```python
-def _enforce_schema_consistency(cases: list[dict]) -> list[dict]:
+def _enforce_schema_consistency(
+    cases: list[dict],
+    canonical_input_keys: frozenset[str],
+    canonical_output_keys: frozenset[str] | None,
+) -> list[dict]:
     if not cases:
         return cases
-
-    # Determine canonical key sets from the first valid case
-    ref_input_keys = (
-        set(cases[0]["input"].keys())
-        if isinstance(cases[0].get("input"), dict)
-        else None
-    )
-    ref_output_keys = (
-        set(cases[0]["expected_output"].keys())
-        if isinstance(cases[0].get("expected_output"), dict)
-        else None
-    )
 
     clean, dropped = [], []
     for i, case in enumerate(cases):
@@ -183,32 +216,38 @@ def _enforce_schema_consistency(cases: list[dict]) -> list[dict]:
 
         # Drop cases missing required top-level keys
         if inp is None or out is None:
-            dropped.append(i)
+            dropped.append((i, "missing input or expected_output"))
             continue
 
-        # Enforce identical input key set
-        if ref_input_keys is not None and isinstance(inp, dict):
-            if set(inp.keys()) != ref_input_keys:
-                dropped.append(i)
+        # Enforce exact match against entrypoint parameter names
+        if isinstance(inp, dict):
+            if set(inp.keys()) != canonical_input_keys:
+                dropped.append(
+                    (i, f"input keys {set(inp.keys())} != {canonical_input_keys}")
+                )
                 continue
 
-        # Enforce identical output key set
-        if ref_output_keys is not None and isinstance(out, dict):
-            if set(out.keys()) != ref_output_keys:
-                dropped.append(i)
+        # Enforce exact match against canonical output keys (skip if output is plain text)
+        if canonical_output_keys is not None and isinstance(out, dict):
+            if set(out.keys()) != canonical_output_keys:
+                dropped.append(
+                    (i, f"output keys {set(out.keys())} != {canonical_output_keys}")
+                )
                 continue
 
         clean.append(case)
 
     if dropped:
         console.print(
-            f"[yellow]⚠  Dropped {len(dropped)} case(s) with inconsistent schema "
-            f"(kept {len(clean)}).[/yellow]"
+            f"[yellow]⚠  Dropped {len(dropped)} case(s) with schema mismatches "
+            f"(kept {len(clean)}):[/yellow]"
         )
+        for idx, reason in dropped[:5]:  # show first 5 reasons
+            console.print(f"  case {idx}: {reason}")
     return clean
 
 
-cases = _enforce_schema_consistency(cases)
+cases = _enforce_schema_consistency(cases, CANONICAL_INPUT_KEYS, CANONICAL_OUTPUT_KEYS)
 ```
 
 If more than 20% of cases are dropped, regenerate that batch rather than accepting a thin dataset. Re-run with a tighter prompt or reduce `NUM_SAMPLES` per persona shard.

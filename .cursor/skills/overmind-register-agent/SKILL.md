@@ -16,7 +16,7 @@ Ask (use `AskQuestion` for multiple-choice, plain conversation for free-form):
 1. **Agent file path** — relative to the project root (e.g. `examples/hotel/agent.py`)
 1. **Agent name (slug)** — default to the parent folder name; confirm before proceeding
 
-### Step 2 — Discover the entrypoint function
+### Step 2 — Discover and validate the entrypoint function
 
 Read the agent file. Find the entrypoint in priority order:
 
@@ -27,13 +27,37 @@ Read the agent file. Find the entrypoint in priority order:
 
 If multiple candidates exist, ask the user to pick one.
 
+**If no entrypoint function is found**, stop and tell the user:
+
+> "No entrypoint function was found in `<file>`. Please add a function — it should accept at least one input parameter and return a `dict` or `str`. For example:
+>
+> ```python
+> def run(input_text: str) -> dict: ...
+> ```
+>
+> Once you've added it, re-run this skill."
+
+**Do not modify the file.** Never create, scaffold, or rewrite the entrypoint function.
+
+**Once a candidate is found, analyze it — do not modify it:**
+
+1. **Accepts inputs?** — Does the function have at least one parameter (excluding `self`)? If not, stop and tell the user:
+
+   > "The function `<name>` takes no parameters. It needs at least one input parameter so Overmind can pass data to it. Please update `<file>` and re-run this skill."
+
+1. **Returns a value?** — Does the function have a return type annotation of `dict`, `str`, `list`, or similar (not `None`)? Or does the body contain a `return` statement with a non-`None` value? If the function clearly returns nothing, stop and tell the user:
+
+   > "The function `<name>` does not appear to return a value. It should return a `dict` or `str`. Please update `<file>` and re-run this skill."
+
+If both checks pass, proceed — record the exact parameter names and return type for use in later steps.
+
 **Derive the module path** from the file path — strip the extension, replace `/` with `.`:
 
-| File path                          | Module path                     |
-| ---------------------------------- | ------------------------------- |
-| `examples/hotel/agent.py`          | `examples.hotel.agent`          |
-| `new_examples/langextract/test.py` | `new_examples.langextract.test` |
-| `agents/support/bot.py`            | `agents.support.bot`            |
+| File path                 | Module path            |
+| ------------------------- | ---------------------- |
+| `examples/hotel/agent.py` | `examples.hotel.agent` |
+| `examples/support/bot.py` | `examples.support.bot` |
+| `agents/myagent/main.py`  | `agents.myagent.main`  |
 
 > Exception: paths containing a directory starting with `.` (e.g. `.overmind/`) must use the slash form — Python can't import dotted names starting with a dot.
 
@@ -52,7 +76,24 @@ Exclude system vars: `PATH HOME USER LOGNAME SHELL TERM LANG PWD TMPDIR TMP TEMP
 
 Note any literal default values from the code — use them as placeholder text in the `.env` file.
 
-### Step 4 — Ask for provider (for .env scaffolding only)
+### Step 4 — Detect model usage and confirm
+
+Scan the agent file for any hardcoded model names. Look for patterns like:
+
+- `model="..."` / `model='...'`
+- `"model": "..."` in dicts
+- Common model name strings: `gpt-4`, `gpt-3.5`, `claude-3`, `claude-opus`, `mistral`, `llama`, etc.
+
+**If a model name is found**, ask the user (use `AskQuestion`):
+
+> "Your agent uses `<detected-model>`. Do you want to keep using this model?"
+> Options: Yes, keep `<detected-model>` | No, I want to use a different model
+
+- If **No**: ask them to type the model name they want to use, then update the model string in the agent file before continuing.
+
+**If no model name is detected**, skip this step silently.
+
+### Step 5 — Ask for provider (for .env scaffolding only)
 
 Use `AskQuestion`:
 
@@ -66,7 +107,7 @@ Determine the required key(s):
 - **Other** → `OPENAI_BASE_URL` + `OPENAI_API_KEY`
 - **No LLM / manually** → no provider keys
 
-### Step 5 — Run registration
+### Step 6 — Run registration
 
 Write `_register_runner.py` in the project root:
 
@@ -136,7 +177,7 @@ python _register_runner.py
 
 After success, delete `_register_runner.py`.
 
-### Step 6 — Create the .env file with placeholders
+### Step 7 — Create the .env file with placeholders
 
 After registration succeeds, create `.overmind/agents/<name>/.env` with placeholders for the credentials identified in Step 4:
 
@@ -156,13 +197,13 @@ SOME_OTHER_KEY=<value-here>
 
 If "No LLM / manually" was chosen and no env vars were discovered, skip creating the file.
 
-### Step 7 — Summarize
+### Step 8 — Summarize
 
 Tell the user:
 
 - Agent name and entrypoint that was registered
 - If a `.env` was created: tell them to open `.overmind/agents/<name>/.env` and fill in the placeholder value(s) before running the agent.
-- Next step: run `/overmind-generate-dataset` with agent name `<name>`.
+- Next step: run `/overmind-generate-dataset` with agent name `<name>`. Mention that if they already have example inputs/outputs for this agent, they can provide a seed dataset file path when running that skill.
 
 Do **not** mention runner scripts, file cleanup, registry internals, or any implementation details.
 
