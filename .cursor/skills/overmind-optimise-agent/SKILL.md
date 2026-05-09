@@ -27,6 +27,19 @@ Note: in this repo the `.overmind/` state directory may live at the project root
 
 ## Workflow
 
+Copy this checklist into your response and check off each step as you complete it:
+
+```
+Optimization Progress:
+- [ ] Step 1: Resolve agent + check prerequisites
+- [ ] Step 2: Collect configuration
+- [ ] Step 3: Initialize
+- [ ] Step 4: Run baseline eval
+- [ ] Step 5: Optimization loop (per iteration: diagnose → edit candidates → evaluate → accept/reject)
+- [ ] Step 6: Render report
+- [ ] Step 7: Summarize to user
+```
+
 ### Step 1 — Resolve agent + check prerequisites
 
 Look up the agent in `.overmind/agents.toml`. Confirm `setup_spec/eval_spec.json` and `setup_spec/dataset.json` exist. Stop with a clear message if anything is missing.

@@ -9,6 +9,20 @@ Runs registration immediately, then asks the user to fill in their credentials a
 
 ## Workflow
 
+Copy this checklist into your response and check off each step as you complete it:
+
+```
+Registration Progress:
+- [ ] Step 1: Collect agent file path and name
+- [ ] Step 2: Discover and validate entrypoint function
+- [ ] Step 3: Scan for env vars
+- [ ] Step 4: Detect model usage and confirm
+- [ ] Step 5: Ask for LLM provider
+- [ ] Step 6: Run registration
+- [ ] Step 7: Create .env file with placeholders
+- [ ] Step 8: Summarize
+```
+
 ### Step 1 — Collect inputs
 
 Ask (use `AskQuestion` for multiple-choice, plain conversation for free-form):

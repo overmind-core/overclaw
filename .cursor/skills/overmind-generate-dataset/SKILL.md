@@ -8,6 +8,20 @@ Generates a synthetic JSON test dataset for any agent by analyzing its entrypoin
 
 ## Workflow
 
+Copy this checklist into your response and check off each step as you complete it:
+
+```
+Dataset Generation Progress:
+- [ ] Step 1: Resolve the agent file
+- [ ] Step 2: Collect parameters
+- [ ] Step 3: Build eval spec
+- [ ] Step 4: Generate the dataset
+- [ ] Step 5: Handle seed data (if provided)
+- [ ] Step 6: Validate schema consistency
+- [ ] Step 7: Smoke-test the agent
+- [ ] Step 8: Summarize
+```
+
 ### Step 1 — Resolve the agent file
 
 The user provides an **agent name** (the slug used during `overmind agent register`, e.g. `my-agent`). They may **optionally** also provide a **seed dataset file** (a path to an existing JSON file with example inputs/outputs). Let the user know upfront they can supply one — e.g.:
@@ -348,59 +362,8 @@ If the agent returns plain text, `expected_output` is a string.
 
 ## Fallback: direct LLM generation
 
-If `from overmind.optimize.data import generate_diverse_synthetic_data` fails, overmind is not installed. Tell the user to install it first (`pip install overmind`), then re-run. If overmind is installed but still can't be imported, fall back to direct LLM calls:
-
-````python
-import os, json
-import litellm  # or openai
-
-MODEL = os.getenv("SYNTHETIC_DATAGEN_MODEL", "gpt-4o")
-
-PROMPT = f"""
-You are generating a synthetic test dataset for an AI agent.
-
-Agent description: {AGENT_DESCRIPTION}
-
-Agent source code:
-```python
-{AGENT_CODE}
-````
-
-Input schema: {json.dumps(EVAL_SPEC['input_schema'], indent=2)}
-Output schema: {json.dumps(EVAL_SPEC['output_fields'], indent=2)}
-
-Generate {NUM_SAMPLES} diverse test cases covering these {NUM_PERSONAS} personas:
-
-1. Novice user — basic, possibly incomplete inputs
-1. Power user — complex, well-formed inputs
-1. Edge case tester — boundary values, empty fields, unusual combos
-1. Adversarial user — misleading, contradictory, or injection-style inputs
-1. Domain expert — nuanced, technically precise scenarios
-   (repeat or mix personas if more than 5 are requested)
-
-Return ONLY a JSON array. Each item: {{"input": {{...}}, "expected_output": {{...}}}}
-"""
-
-response = litellm.completion(
-model=MODEL,
-messages=[{"role": "user", "content": PROMPT}],
-temperature=0.8,
-)
-content = response.choices[0].message.content
-start, end = content.find("["), content.rfind("]") + 1
-cases = json.loads(content[start:end])
-
-```
+See [references/fallback.md](references/fallback.md) for the direct LLM fallback script.
 
 ## Common issues
 
-| Problem | Fix |
-|---------|-----|
-| `generate_diverse_synthetic_data` not found | overmind is not installed — run `pip install overmind`, then re-run |
-| Model auth error | Check `.overmind/.env` or `.env` for `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` |
-| 0 cases generated | Increase temperature or reduce `NUM_SAMPLES` per run; retry |
-| Input schema missing fields | Re-read the entrypoint and check `*args`/`**kwargs` usage |
-| >20% cases dropped by schema filter | Tighten the `eval_spec` and regenerate; the LLM is producing inconsistent keys |
-| Smoke test: `TypeError: unexpected keyword argument` | The detected `input_schema` has extra or wrong parameter names — fix and regenerate |
-| Smoke test: API / auth errors from the agent | Expected if the agent calls external APIs; mock them or ignore and focus on schema errors |
-```
+See [references/common-issues.md](references/common-issues.md) for the full troubleshooting table.
