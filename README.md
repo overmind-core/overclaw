@@ -105,7 +105,23 @@ overmind setup my-agent --fast
 An interactive flow that analyzes your code, defines policies, builds (or
 imports) a test dataset, and generates scoring criteria.
 
-### 6. Optimize
+### 6. Preflight
+
+```bash
+overmind preflight run my-agent
+```
+
+A validation gate between setup and optimization. Runs your agent against a
+2-row dataset slice, classifies any failure into deterministic kinds, and
+autonomously patches plumbing issues — entrypoint harness bugs, eval-spec
+weight drift, schema mismatches, broken metrics, invalid rows, missing
+instrumentation. The only failure that requires you is a missing credential.
+
+After it succeeds, `overmind optimize` is guaranteed to start without
+infrastructure errors. Other subcommands: `scan`, `set-secret`, `status`,
+`reset`.
+
+### 7. Optimize
 
 ```bash
 overmind optimize my-agent
@@ -113,6 +129,9 @@ overmind optimize my-agent
 
 Iteratively runs your agent, scores outputs, diagnoses failures, and generates
 code improvements. Changes that raise the score are kept; the rest are reverted.
+`optimize` refuses to start if preflight isn't green or its recorded artifact
+hashes drift — re-run preflight whenever you edit the eval spec, dataset, or
+entrypoint.
 
 ## Cursor Agent Skills
 
@@ -122,12 +141,12 @@ follows to drive Overmind workflows without you typing CLI commands manually.
 
 ### Available skills
 
-| Skill (slash command)                | Path                                                                                                      | What it does                                                                                                                                    |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/overmind-register-agent`           | [`overmind-register-agent/SKILL.md`](.cursor/skills/overmind-register-agent/SKILL.md)                     | Registers an agent in `.overmind/agents.toml` — discovers the entrypoint, derives `module:function`, runs registration, and scaffolds env vars. |
-| `/overmind-generate-dataset`         | [`overmind-generate-dataset/SKILL.md`](.cursor/skills/overmind-generate-dataset/SKILL.md)                 | Generates a synthetic `dataset.json` via persona-driven LLM generation, with schema validation and smoke-testing.                               |
-| `/overmind-generate-policy-and-eval` | [`overmind-generate-policy-and-eval/SKILL.md`](.cursor/skills/overmind-generate-policy-and-eval/SKILL.md) | Creates or repairs `setup_spec/policies.md` and `setup_spec/eval_spec.json` (input/output schemas, weights, domain rules).                      |
-| `/overmind-optimise-agent`           | [`overmind-optimise-agent/SKILL.md`](.cursor/skills/overmind-optimise-agent/SKILL.md)                     | Runs the optimization loop with the Cursor agent applying candidate edits in parallel git worktrees via `overmind optimize-step`.               |
+| Skill (slash command)                 | Path                                                                                                        | What it does                                                                                                                                                                                                  |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/overmind-register-agent`            | [`overmind-register-agent/SKILL.md`](.cursor/skills/overmind-register-agent/SKILL.md)                       | Registers an agent in `.overmind/agents.toml` — discovers the entrypoint, derives `module:function`, runs registration, and scaffolds env vars.                                                               |
+| `/overmind-generate-spec-and-dataset` | [`overmind-generate-spec-and-dataset/SKILL.md`](.cursor/skills/overmind-generate-spec-and-dataset/SKILL.md) | Builds `policies.md`, `eval_spec.json`, and `dataset.json` in a single pass so the input/output schemas always agree. Replaces the previous separate dataset and policy/eval skills.                          |
+| `/overmind-preflight`                 | [`overmind-preflight/SKILL.md`](.cursor/skills/overmind-preflight/SKILL.md)                                 | Runs `overmind preflight`: scans for missing credentials, then converges the agent + spec + dataset pipeline by classifying failures and autonomously patching plumbing issues before optimization can start. |
+| `/overmind-optimise-agent`            | [`overmind-optimise-agent/SKILL.md`](.cursor/skills/overmind-optimise-agent/SKILL.md)                       | Runs the optimization loop with the Cursor agent applying candidate edits in parallel git worktrees via `overmind optimize-step`.                                                                             |
 
 ### How to use the skills
 
@@ -150,23 +169,28 @@ This sets up `.overmind/` and writes your API keys to `.overmind/.env`.
 The agent will ask for the agent name, detect the entrypoint function, run
 registration, and create a `.env` placeholder file for your credentials.
 
-**3. Generate a dataset** — type in Cursor chat:
+**3. Generate the policy, eval spec, and dataset** — type in Cursor chat:
 
 ```
-/overmind-generate-dataset <agent-name>
+/overmind-generate-spec-and-dataset <agent-name>
 ```
 
-Generates `dataset.json` under `.overmind/agents/<name>/setup_spec/`. Skip
-this step if you already have your own test data.
+Produces `policies.md`, `eval_spec.json`, and `dataset.json` under
+`.overmind/agents/<name>/setup_spec/` in a single pass so all three artifacts
+share the same input/output schema. If you already have your own test data,
+the skill imports it instead of synthesizing new cases.
 
-**4. Generate the policy and eval spec** — type in Cursor chat:
+**4. Preflight** — type in Cursor chat:
 
 ```
-/overmind-generate-policy-and-eval <agent-name>
+/overmind-preflight <agent-name>
 ```
 
-Produces `policies.md` and `eval_spec.json` through an interactive elicitation
-of domain rules, constraints, and scoring criteria.
+Validates the agent + spec + dataset pipeline by running a tiny smoke slice,
+classifying failures into deterministic kinds, and autonomously patching
+plumbing issues (eval-spec drift, schema mismatches, dataset rows, harness
+bugs, instrumentation). The only thing it ever stops to ask for is a missing
+credential. Optimize refuses to start until this is green.
 
 **5. Optimize** — either run the CLI directly or use the host-driven skill:
 
@@ -234,7 +258,32 @@ Both are editable after generation.
 | `--data PATH`   | JSON seed dataset file or directory of `*.json` files (optional; wizard can pick data instead).  |
 | `--policy PATH` | Provide an existing policy document. Overmind analyzes it against agent code and suggests edits. |
 
-### 4. Optimize (`overmind optimize`)
+### 4. Preflight (`overmind preflight`)
+
+A JSON-in/JSON-out validation gate. Subcommands:
+
+| Subcommand                                       | Description                                                                                                      |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `overmind preflight scan <name>`                 | Static scan for env vars / provider keys the agent needs (read-only).                                            |
+| `overmind preflight set-secret <name> --key KEY` | Persist a single credential into the per-agent `.env` (value via stdin so it doesn't appear in shell history).   |
+| `overmind preflight run <name>`                  | Run the full convergence loop: instrument → smoke → classify → autopatch → repeat (max 5 iterations by default). |
+| `overmind preflight status <name>`               | Print the persisted `preflight.json` and its location.                                                           |
+| `overmind preflight reset <name>`                | Delete preflight state so optimize is forced to wait for a fresh run.                                            |
+
+The loop autonomously patches eval-spec weights, output-field schemas,
+invalid dataset rows, broken metric configs, missing instrumentation, and the
+**registered entrypoint harness file** — the thin wrapper produced during
+registration. It never edits the native agent code that the harness imports
+(that's optimize's job) and never invents or assumes a credential.
+
+Every patch is snapshotted under
+`.overmind/agents/<name>/preflight/snapshots/iter_<N>/`, and the full report
+including artifact hashes is written to
+`.overmind/agents/<name>/preflight/preflight.json`. `overmind optimize`
+consults those hashes and refuses to start if anything has drifted — re-run
+preflight whenever you edit the spec, dataset, or entrypoint.
+
+### 5. Optimize (`overmind optimize`)
 
 The iterative optimization loop. You configure a few settings interactively
 (or use `--fast` for defaults):
@@ -387,6 +436,11 @@ overmind agent update <name> <mod:fn>                Update entrypoint
 overmind agent remove <name>                         Remove from registry
 overmind agent validate <name> --data <path>         Run first test case to verify entrypoint
 overmind setup <name> [--fast] [--data PATH] [--policy PATH]  Analyze agent, build eval spec
+overmind preflight scan <name>                       Static scan for required credentials
+overmind preflight set-secret <name> --key KEY       Persist a credential (value via stdin)
+overmind preflight run <name>                        Run preflight convergence loop
+overmind preflight status <name>                     Print persisted preflight report
+overmind preflight reset <name>                      Delete preflight state
 overmind optimize <name> [--fast] [--scope GLOB] [--max-files N] [--max-chars N]  Run optimization loop
 overmind doctor <name>                               Diagnose bundle scope and eval spec (read-only)
 overmind sync [name]                                 Sync local setup artifacts to Overmind
