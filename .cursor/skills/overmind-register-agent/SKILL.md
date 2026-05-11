@@ -1,6 +1,8 @@
-______________________________________________________________________
-
-## name: overmind-register-agent description: Register an agent with the Overmind registry without interactive CLI prompts. Use when the user wants to register an agent, run `overmind agent register`, set up agent credentials, configure an LLM provider for an agent, or add a new agent to an Overmind project. Discovers the entrypoint function, derives the module path, runs registration, then asks the user to fill in their credentials. disable-model-invocation: true
+---
+name: overmind-register-agent
+description: Register an agent with the Overmind registry without interactive CLI prompts. Use when the user wants to register an agent, run `overmind agent register`, set up agent credentials, configure an LLM provider for an agent, or add a new agent to an Overmind project. Discovers the entrypoint function, derives the module path, runs registration, then asks the user to fill in their credentials.
+disable-model-invocation: true
+---
 
 # Register an Overmind Agent
 

@@ -1,6 +1,8 @@
-______________________________________________________________________
-
-## name: overmind-generate-dataset description: Generate synthetic test datasets for overclaw/overmind agents from an entrypoint file. Use when the user wants to generate a dataset, create test data, or build evaluation data for their agent. Auto-detects the entrypoint function, then prompts the user for number of datapoints and red-teamers (adversarial personas) before generating. disable-model-invocation: true
+---
+name: overmind-generate-dataset
+description: Generate synthetic test datasets for overclaw/overmind agents from an entrypoint file. Use when the user wants to generate a dataset, create test data, or build evaluation data for their agent. Auto-detects the entrypoint function, then prompts the user for number of datapoints and red-teamers (adversarial personas) before generating.
+disable-model-invocation: true
+---
 
 # Generate Dataset for Overclaw Agents
 

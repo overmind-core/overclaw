@@ -1,6 +1,8 @@
-______________________________________________________________________
-
-## name: overmind-generate-policy-and-eval description: Generates (or repairs) the policy file and eval spec for an Overmind/Overclaw agent. Use when the user wants to create a policy.md / eval_spec.json, fix a broken eval spec (wrong input_schema, missing output fields, bad weights), or rebuild policies before running `overmind optimize`. Analyzes the agent entrypoint, decomposes inputs and outputs correctly, asks clarifying questions about domain rules and edge cases, and writes the canonical artifacts under `.overmind/agents/<name>/setup_spec/`. disable-model-invocation: true
+---
+name: overmind-generate-policy-and-eval
+description: Generates (or repairs) the policy file and eval spec for an Overmind/Overclaw agent. Use when the user wants to create a policy.md / eval_spec.json, fix a broken eval spec (wrong input_schema, missing output fields, bad weights), or rebuild policies before running `overmind optimize`. Analyzes the agent entrypoint, decomposes inputs and outputs correctly, asks clarifying questions about domain rules and edge cases, and writes the canonical artifacts under `.overmind/agents/<name>/setup_spec/`.
+disable-model-invocation: true
+---
 
 # Generate Policy and Eval Spec for an Overmind Agent
 
