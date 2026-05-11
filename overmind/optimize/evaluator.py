@@ -577,7 +577,8 @@ class SpecEvaluator:
         penalty = 0.0
         logger.info(f"Rules: {rules}, type: {type(rules)}")
         for rule in rules:
-            rule = json.loads(rule)
+            if isinstance(rule, str):
+                rule = json.loads(rule)
             field_a = rule.get("field_a", "")
             field_b = rule.get("field_b", "")
             val_a = output.get(field_a)
