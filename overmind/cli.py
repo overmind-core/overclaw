@@ -421,15 +421,6 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="override max total characters in the bundle (default: from Config)",
     )
-    opt_p.add_argument(
-        "--skip-preflight",
-        action="store_true",
-        help=(
-            "bypass the preflight gate (NOT recommended — infrastructure "
-            "failures during optimize become your responsibility)"
-        ),
-    )
-
     # ── optimize-step (skill-driven) ────────────────────────────────────────
     _build_optimize_step_parser(subparsers)
 
@@ -572,8 +563,6 @@ def main() -> None:
         elif args.command == "optimize":
             _kw = _bundle_cli_kwargs(args)
             context.attach(context.set_value(attrs.AGENT_NAME, args.agent))
-            if getattr(args, "skip_preflight", False):
-                os.environ["OVERMIND_SKIP_PREFLIGHT"] = "1"
             _optimize(agent_name=args.agent, fast=args.fast, **_kw)
 
         elif args.command == "optimize-step":

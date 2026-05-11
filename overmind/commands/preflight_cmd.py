@@ -1,22 +1,15 @@
 """``overmind preflight`` — JSON-in/JSON-out validation gate before optimize.
 
-Five subcommands, all emitting a single JSON envelope on stdout so the
-host coding agent can ``json.loads`` and branch deterministically:
+Five subcommands, all emitting a single JSON envelope on stdout:
 
 - ``scan <agent>``          — static credential discovery (read-only).
 - ``set-secret <agent>``    — persist one credential into the per-agent
                               ``.env`` (value is read from stdin so it
                               never appears in shell history).
-- ``run <agent>``           — full convergence loop (instrument, smoke,
-                              classify, fix, repeat).  Exits non-zero
-                              when status is not green.
+- ``run <agent>``           — smoke-test end-to-end, auto-fix plumbing,
+                              report.  Exits non-zero when status is not green.
 - ``status <agent>``        — print the persisted ``preflight.json``.
-- ``reset <agent>``         — delete preflight state so optimize is
-                              forced to wait for a fresh run.
-
-The ``optimize`` and ``optimize-step init`` commands consult the same
-persisted report via :func:`overmind.preflight.is_preflight_green` so
-the gate is enforced consistently across every entry point.
+- ``reset <agent>``         — delete preflight state.
 """
 
 from __future__ import annotations
@@ -95,7 +88,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     report = run_preflight(
         args.agent,
-        max_iters=args.max_iters,
         max_rows=args.max_rows,
         timeout=args.timeout,
         secrets_provided=secrets_provided or None,
@@ -140,10 +132,10 @@ def build_subparser(subparsers: argparse._SubParsersAction) -> None:
         "preflight",
         help="Validate the agent + spec + dataset pipeline before `overmind optimize`",
         description=(
-            "Runs the agent against a 2-row dataset slice, classifies any "
-            "failure into deterministic kinds, and autonomously fixes every "
-            "plumbing issue (eval-spec / dataset / schema / instrumentation). "
-            "Writes a structured report at "
+            "Runs the agent against a small dataset slice end-to-end, detects "
+            "mis-performance (degenerate output, crashes, broken schema/spec), "
+            "auto-fixes plumbing issues (eval-spec / dataset / instrumentation), "
+            "and writes a structured report at "
             ".overmind/agents/<name>/preflight/preflight.json."
         ),
     )
@@ -179,11 +171,10 @@ def build_subparser(subparsers: argparse._SubParsersAction) -> None:
     # run
     p_run = sub.add_parser(
         "run",
-        help="Run the full preflight convergence loop.",
+        help="Smoke-test the pipeline end-to-end, auto-fix plumbing issues, report.",
     )
     p_run.add_argument("agent", help="Registered agent name")
-    p_run.add_argument("--max-iters", type=int, default=5, help="Max convergence iterations (default 5)")
-    p_run.add_argument("--max-rows", type=int, default=2, help="Dataset rows to smoke per iteration (default 2)")
+    p_run.add_argument("--max-rows", type=int, default=2, help="Dataset rows to run (default 2)")
     p_run.add_argument("--timeout", type=int, default=120, help="Per-case subprocess timeout, seconds (default 120)")
     p_run.add_argument(
         "--with-secrets-stdin",

@@ -4,19 +4,15 @@ The classifier inspects the structured output of one
 :class:`overmind.preflight.smoke.SmokeRunResult` and emits a list of
 :class:`~overmind.preflight.state.IssueRecord` items.  No LLM calls.
 
-Issue *kinds* are mapped to autofixers in
-:mod:`overmind.preflight.autofix`.  Three kinds intentionally short-
-circuit the loop:
-
-- ``missing_secret``  → block, ask the user.
-- ``runtime_crash``   → record but do not patch (that is optimize's job).
-- ``quality``         → record and exit green; pipeline is healthy.
-
-Everything else is autonomously fixable.
+Severity taxonomy:
+  block    — missing credential; loop short-circuits, user must supply key.
+  fix      — deterministic plumbing fix available (eval-spec / dataset).
+  quality  — pipeline ran but agent output is low-quality; leave to optimize.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from typing import TYPE_CHECKING
 
@@ -27,7 +23,7 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
-# Issue kinds (must match autofix dispatcher table)
+# Issue kinds (must match autofix dispatcher table in autofix/__init__.py)
 # ---------------------------------------------------------------------------
 
 KIND_MISSING_SECRET = "missing_secret"
@@ -40,12 +36,7 @@ KIND_METRIC_BROKEN = "metric_broken"
 KIND_INVALID_WEIGHTS = "invalid_weights"
 KIND_DATASET_ROW_INVALID = "dataset_row_invalid"
 KIND_INSTRUMENTATION_BROKEN = "instrumentation_broken"
-# LLM-driven repair of the registered Overmind entrypoint *harness* file.
-# Distinct from KIND_RUNTIME_CRASH (which targets the native agent code and
-# is left to overmind optimize): emitted only when the failure originates
-# inside the harness or when the harness's normalisation layer is provably
-# returning the wrong shape.
-KIND_ENTRYPOINT_REPAIR = "entrypoint_repair"
+KIND_DEGENERATE_OUTPUT = "degenerate_output"
 KIND_QUALITY = "quality"
 
 
@@ -104,45 +95,12 @@ def _extract_signature_problem(blob: str) -> dict[str, str] | None:
     return None
 
 
-def _row_invalid_issue(row_index: int, reason: str, details: dict) -> IssueRecord:
-    return IssueRecord(
-        kind=KIND_DATASET_ROW_INVALID,
-        severity="fix",
-        target="dataset",
-        reason=reason,
-        details={"row_index": row_index, **details},
-    )
-
-
-def _traceback_implicates_entrypoint(blob: str, entrypoint_path: str | None) -> bool:
-    """Return True iff *blob* names the harness file in a traceback frame.
-
-    We deliberately check both the absolute path (which is how
-    AgentRunner reports it) and the bare basename, so the heuristic
-    works whether the smoke subprocess preserved absolute paths or not.
-    """
-    if not entrypoint_path or not blob:
-        return False
-    if entrypoint_path in blob:
-        return True
-    name = entrypoint_path.rsplit("/", 1)[-1]
-    return bool(name) and name in blob
-
-
 def classify(
     result: SmokeRunResult,
     *,
     eval_spec: dict | None = None,
-    entrypoint_path: str | None = None,
 ) -> list[IssueRecord]:
-    """Return a deduplicated, severity-ranked list of issues from *result*.
-
-    *entrypoint_path* — absolute path to the registered Overmind harness
-    file. When provided, runtime crashes whose traceback names the
-    harness are reclassified from ``runtime_crash`` (a quality-only
-    signal owned by optimize) into ``entrypoint_repair`` (a fixable
-    plumbing signal owned by preflight).
-    """
+    """Return a deduplicated, severity-ranked list of issues from *result*."""
     issues: list[IssueRecord] = []
 
     # ------------------------------------------------------------------
@@ -265,31 +223,16 @@ def classify(
             )
             continue
 
-        # Generic crash. If the traceback implicates the harness file we
-        # registered as the Overmind entrypoint, treat it as plumbing and
-        # let the LLM-driven entrypoint repair handler attempt a fix.
-        # Otherwise, this is a bug inside the native agent code — leave
-        # it to overmind optimize.
-        if _traceback_implicates_entrypoint(err, entrypoint_path):
-            issues.append(
-                IssueRecord(
-                    kind=KIND_ENTRYPOINT_REPAIR,
-                    severity="fix",
-                    target="entrypoint",
-                    reason=f"Case {idx} crashed inside the entrypoint harness: {err[:200]}",
-                    details={"row_index": idx, "raw": err[:1500]},
-                )
+        # Generic crash — this is an agent-quality issue for optimize to fix.
+        issues.append(
+            IssueRecord(
+                kind=KIND_RUNTIME_CRASH,
+                severity="quality",
+                target="agent",
+                reason=f"Case {idx} crashed: {err[:200]}",
+                details={"row_index": idx, "raw": err[:400]},
             )
-        else:
-            issues.append(
-                IssueRecord(
-                    kind=KIND_RUNTIME_CRASH,
-                    severity="quality",
-                    target="agent",
-                    reason=f"Case {idx} crashed: {err[:200]}",
-                    details={"row_index": idx, "raw": err[:400]},
-                )
-            )
+        )
 
     # ------------------------------------------------------------------
     # Eval-spec hygiene (run regardless of per-case failures)
@@ -300,32 +243,29 @@ def classify(
             issues.append(weight_issue)
 
     # ------------------------------------------------------------------
-    # Output schema vs entrypoint contract
+    # Output schema vs what the agent actually returns
     # ------------------------------------------------------------------
     if eval_spec is not None and result.successful_outputs():
         mismatch = _check_output_schema(eval_spec, result.successful_outputs())
         if mismatch:
-            # Try to teach the harness to return the missing keys *first*;
-            # if the LLM repair can't, the schema-drop fallback below
-            # still keeps the spec scorable.
-            if entrypoint_path:
-                issues.append(
-                    IssueRecord(
-                        kind=KIND_ENTRYPOINT_REPAIR,
-                        severity="fix",
-                        target="entrypoint",
-                        reason=(
-                            "Harness output is missing keys the eval_spec scores: "
-                            f"{mismatch.details.get('scored_but_missing')}"
-                        ),
-                        details={
-                            "scored_but_missing": mismatch.details.get("scored_but_missing"),
-                            "actually_returned": mismatch.details.get("actually_returned"),
-                            "hint": "schema_drop_fallback",
-                        },
-                    )
-                )
             issues.append(mismatch)
+
+    # ------------------------------------------------------------------
+    # Degenerate output: agent returns the same thing for every input
+    # ------------------------------------------------------------------
+    successful_outputs = [
+        json.dumps(c.output, sort_keys=True, default=str) for c in result.cases if c.success and c.output is not None
+    ]
+    if len(successful_outputs) >= 2 and len(set(successful_outputs)) == 1:
+        issues.append(
+            IssueRecord(
+                kind=KIND_DEGENERATE_OUTPUT,
+                severity="quality",
+                target="agent",
+                reason="Agent returned identical output for all test inputs — possible constant or broken response.",
+                details={"repeated_output": successful_outputs[0][:300]},
+            )
+        )
 
     # ------------------------------------------------------------------
     # Instrumentation health
@@ -342,7 +282,7 @@ def classify(
         )
 
     # ------------------------------------------------------------------
-    # Quality signal — pipeline runs but score is low
+    # Quality signal — pipeline runs but score is zero
     # ------------------------------------------------------------------
     if result.baseline_score is not None and result.baseline_score == 0.0 and any(c.success for c in result.cases):
         issues.append(
@@ -386,9 +326,8 @@ def _check_weights(eval_spec: dict) -> IssueRecord | None:
 def _check_output_schema(eval_spec: dict, outputs: list[dict]) -> IssueRecord | None:
     """Compare ``output_fields`` keys to what the agent actually returned.
 
-    If the agent returns *fewer* keys than scored, we can drop the
-    missing ones from the spec.  If it returns *more*, those are
-    optional bonus fields — we don't mutate the spec for those.
+    If the agent returns fewer keys than scored, drop the missing ones from the spec.
+    If it returns more, those are bonus fields — we don't mutate the spec for those.
     """
     spec_fields = set((eval_spec.get("output_fields") or {}).keys())
     if not spec_fields:
@@ -416,7 +355,7 @@ def _check_output_schema(eval_spec: dict, outputs: list[dict]) -> IssueRecord | 
 
 
 def _dedupe(issues: list[IssueRecord]) -> list[IssueRecord]:
-    """Collapse identical issues so the loop doesn't retry the same fix forever."""
+    """Collapse identical issues so the loop doesn't retry the same fix."""
     seen: set[tuple] = set()
     out: list[IssueRecord] = []
     for issue in issues:

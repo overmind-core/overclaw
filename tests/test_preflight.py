@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
 from overmind.core.constants import OVERMIND_DIR_NAME
 from overmind.preflight import (
     classifier,
-    hashes,
 )
 from overmind.preflight.autofix import (
     dataset as autofix_dataset,
@@ -26,7 +24,7 @@ from overmind.preflight.autofix import (
     weights as autofix_weights,
 )
 from overmind.preflight.classifier import (
-    KIND_ENTRYPOINT_REPAIR,
+    KIND_DEGENERATE_OUTPUT,
     KIND_INSTRUMENTATION_BROKEN,
     KIND_INVALID_WEIGHTS,
     KIND_MISSING_SECRET,
@@ -91,7 +89,14 @@ class TestClassifier:
             "structure_weight": 20,
             "total_points": 100,
         }
-        smoke = _make_smoke(cases=[_ok_case(0), _ok_case(1)], span_count=4, baseline_score=0.7)
+        smoke = _make_smoke(
+            cases=[
+                _ok_case(0, output={"result": "foo"}),
+                _ok_case(1, output={"result": "bar"}),
+            ],
+            span_count=4,
+            baseline_score=0.7,
+        )
         issues = classifier.classify(smoke, eval_spec=spec)
         assert issues == []
 
@@ -136,6 +141,41 @@ class TestClassifier:
         smoke = _make_smoke(cases=[_ok_case(0, score=0.0)], baseline_score=0.0)
         issues = classifier.classify(smoke, eval_spec={})
         assert any(i.kind == KIND_QUALITY for i in issues)
+
+    def test_degenerate_output_detected(self):
+        """Agent returning identical output for every input is flagged."""
+        same = {"answer": "yes"}
+        smoke = _make_smoke(
+            cases=[
+                _ok_case(0, output=same, score=50.0),
+                _ok_case(1, output=same, score=50.0),
+                _ok_case(2, output=same, score=50.0),
+            ],
+            span_count=3,
+            baseline_score=0.5,
+        )
+        issues = classifier.classify(smoke, eval_spec={})
+        assert any(i.kind == KIND_DEGENERATE_OUTPUT for i in issues)
+        deg = next(i for i in issues if i.kind == KIND_DEGENERATE_OUTPUT)
+        assert deg.severity == "quality"
+
+    def test_varied_output_not_flagged_as_degenerate(self):
+        smoke = _make_smoke(
+            cases=[
+                _ok_case(0, output={"answer": "yes"}, score=50.0),
+                _ok_case(1, output={"answer": "no"}, score=50.0),
+            ],
+            span_count=2,
+            baseline_score=0.5,
+        )
+        issues = classifier.classify(smoke, eval_spec={})
+        assert not any(i.kind == KIND_DEGENERATE_OUTPUT for i in issues)
+
+    def test_single_case_not_flagged_as_degenerate(self):
+        """Need ≥2 successful outputs to declare degeneracy."""
+        smoke = _make_smoke(cases=[_ok_case(0, output={"answer": "yes"})], span_count=1)
+        issues = classifier.classify(smoke, eval_spec={})
+        assert not any(i.kind == KIND_DEGENERATE_OUTPUT for i in issues)
 
 
 # ---------------------------------------------------------------------------
@@ -249,20 +289,8 @@ class TestAutofixMetrics:
 
 
 # ---------------------------------------------------------------------------
-# Hashes / report serialisation
+# Report serialisation
 # ---------------------------------------------------------------------------
-
-
-class TestHashes:
-    def test_match_when_unchanged(self):
-        a = {"entrypoint": "x", "eval_spec": "y"}
-        ok, diff = hashes.hashes_match(a, a)
-        assert ok and not diff
-
-    def test_diff_keys_when_changed(self):
-        ok, diff = hashes.hashes_match({"a": "1", "b": "2"}, {"a": "1", "b": "3"})
-        assert not ok
-        assert diff == ["b"]
 
 
 class TestReportSerialisation:
@@ -272,13 +300,13 @@ class TestReportSerialisation:
             agent_name="my-agent",
             iterations=2,
             baseline_score=0.42,
-            hashes={"entrypoint": "abc"},
         )
         path = tmp_path / "preflight.json"
         rep.save(path)
         data = json.loads(path.read_text())
         assert data["status"] == STATUS_GREEN
-        assert data["hashes"]["entrypoint"] == "abc"
+        assert data["agent_name"] == "my-agent"
+        assert data["iterations"] == 2
 
     def test_is_green_helper(self):
         for s in GREEN_STATUSES:
@@ -298,22 +326,34 @@ def _bootstrap_project(tmp_path: Path, monkeypatch) -> Path:
     return tmp_path
 
 
-class TestOptimizeGate:
-    def test_blocks_when_no_report(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+class TestPreflightAdvisory:
+    """Preflight is optional — the advisory must never raise."""
+
+    def test_advisory_with_no_report_is_silent(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         _bootstrap_project(tmp_path, monkeypatch)
-        from overmind.commands.optimize_cmd import _enforce_preflight_gate
+        from overmind.commands.optimize_cmd import _preflight_advisory
 
-        with pytest.raises(SystemExit) as exc:
-            _enforce_preflight_gate("missing-agent")
-        assert exc.value.code == 2
+        # No SystemExit, no exception — preflight is purely informational.
+        _preflight_advisory("missing-agent")
 
-    def test_skip_via_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_advisory_with_non_green_report_does_not_raise(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         _bootstrap_project(tmp_path, monkeypatch)
-        monkeypatch.setenv("OVERMIND_SKIP_PREFLIGHT", "1")
-        from overmind.commands.optimize_cmd import _enforce_preflight_gate
+        from overmind.commands.optimize_cmd import _preflight_advisory
+        from overmind.preflight.state import (
+            STATUS_BLOCKED_SECRETS,
+            preflight_report_path,
+        )
 
-        # No report exists, but the bypass should let it through.
-        _enforce_preflight_gate("any-agent")  # should not raise
+        rep = PreflightReport(
+            status=STATUS_BLOCKED_SECRETS,
+            agent_name="any-agent",
+            message="missing OPENAI_API_KEY",
+            missing_secrets=["OPENAI_API_KEY"],
+        )
+        rep.save(preflight_report_path("any-agent"))
+
+        # Non-green is now a warning, not a hard error.
+        _preflight_advisory("any-agent")
 
 
 # ---------------------------------------------------------------------------
@@ -325,18 +365,8 @@ class TestPreflightCli:
     def test_status_returns_error_when_missing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys):
         _bootstrap_project(tmp_path, monkeypatch)
 
-        args = type("Args", (), {})()
-        args.func = None
-        args.step = "status"
-        # Build an args object via a real argparse run for one subcommand.
         import argparse
 
-        parser = argparse.ArgumentParser()
-        sub = parser.add_subparsers(dest="cmd")
-        # The real wiring uses a parent dispatcher; construct the same shape.
-        outer = sub.add_parser("preflight")
-        outer.add_subparsers(dest="step")
-        # Minimal: directly invoke the status handler.
         from overmind.commands.preflight_cmd import _cmd_status
 
         ns = argparse.Namespace(agent="not-real")
@@ -349,213 +379,16 @@ class TestPreflightCli:
 
 
 # ---------------------------------------------------------------------------
-# Entrypoint repair (LLM-driven)
+# Sort issues
 # ---------------------------------------------------------------------------
 
 
-class TestEntrypointClassification:
-    def test_crash_in_harness_becomes_entrypoint_repair(self, tmp_path):
-        harness = tmp_path / "agent_entry.py"
-        harness.write_text("def run(query): pass\n")
-        err = (
-            "Traceback (most recent call last):\n"
-            f'  File "{harness}", line 1, in run\n'
-            '    raise KeyError("query")\n'
-            "KeyError: 'query'"
-        )
-        smoke = _make_smoke(cases=[_crash_case(0, err)])
-        issues = classifier.classify(smoke, eval_spec={}, entrypoint_path=str(harness))
-        kinds = {i.kind for i in issues}
-        assert KIND_ENTRYPOINT_REPAIR in kinds
-        assert KIND_RUNTIME_CRASH not in kinds
-
-    def test_crash_outside_harness_stays_runtime_crash(self, tmp_path):
-        harness = tmp_path / "agent_entry.py"
-        harness.write_text("x = 1\n")
-        err = "Traceback ... File '/some/other/file.py', line 5\nKeyError: 'x'"
-        smoke = _make_smoke(cases=[_crash_case(0, err)])
-        issues = classifier.classify(smoke, eval_spec={}, entrypoint_path=str(harness))
-        kinds = {i.kind for i in issues}
-        assert KIND_RUNTIME_CRASH in kinds
-        assert KIND_ENTRYPOINT_REPAIR not in kinds
-
-    def test_output_schema_mismatch_also_emits_entrypoint_repair(self, tmp_path):
-        harness = tmp_path / "h.py"
-        harness.write_text("def run(): return {}\n")
-        spec = {
-            "output_fields": {"a": {"weight": 50}, "b": {"weight": 50}},
-            "structure_weight": 0,
-            "total_points": 100,
-        }
-        smoke = _make_smoke(cases=[_ok_case(0, output={"a": 1})])
-        issues = classifier.classify(smoke, eval_spec=spec, entrypoint_path=str(harness))
-        kinds = [i.kind for i in issues]
-        # Both signals emitted; runner's sort_issues runs entrypoint
-        # repair first and falls back to schema drop if it no-ops.
-        assert KIND_ENTRYPOINT_REPAIR in kinds
-        assert KIND_OUTPUT_SCHEMA_MISMATCH in kinds
-
-
-class TestEntrypointHandler:
-    def _state_with_harness(self, tmp_path):
-        from overmind.preflight.workspace import WorkingState
-
-        harness = tmp_path / "agent_entry.py"
-        harness.write_text("def run(query):\n    return {'answer': query}\n")
-        inst = tmp_path / "inst"
-        inst.mkdir()
-        (inst / "agent_entry.py").write_text(harness.read_text())
-        return WorkingState(
-            agent_name="x",
-            eval_spec={
-                "input_schema": {"query": {"type": "text"}},
-                "output_fields": {"answer": {"weight": 100}},
-            },
-            dataset=[{"input": {"query": "hello"}, "expected_output": {"answer": "hi"}}],
-            eval_spec_path=tmp_path / "eval_spec.json",
-            dataset_path=tmp_path / "dataset.json",
-            instrumented_dir=inst,
-            entrypoint_path=harness,
-        )
-
-    def test_skips_when_no_credentials(self, tmp_path, monkeypatch):
-        from overmind.preflight.autofix import entrypoint as ep_autofix
-
-        # Ensure no provider keys are set.
-        for var in (
-            "ANTHROPIC_API_KEY",
-            "OPENAI_API_KEY",
-            "OPENROUTER_API_KEY",
-            "GROQ_API_KEY",
-            "MISTRAL_API_KEY",
-            "GEMINI_API_KEY",
-            "GOOGLE_API_KEY",
-        ):
-            monkeypatch.delenv(var, raising=False)
-        monkeypatch.delenv("ANALYZER_MODEL", raising=False)
-
-        state_obj = self._state_with_harness(tmp_path)
-        issue = IssueRecord(
-            kind=KIND_ENTRYPOINT_REPAIR,
-            severity="fix",
-            target="entrypoint",
-            reason="harness crashed",
-            details={"row_index": 0, "raw": "boom"},
-        )
-        patches = ep_autofix.apply_entrypoint_repair(state_obj, issue)
-        assert patches == []
-        # Budget is consumed only when we actually try, so it must
-        # still be 0 here.
-        assert state_obj.entrypoint_repair_attempts == 0
-
-    def test_skips_when_budget_exhausted(self, tmp_path, monkeypatch):
-        from overmind.preflight.autofix import entrypoint as ep_autofix
-
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
-        state_obj = self._state_with_harness(tmp_path)
-        state_obj.max_entrypoint_repairs = 1
-        state_obj.entrypoint_repair_attempts = 1
-
-        issue = IssueRecord(
-            kind=KIND_ENTRYPOINT_REPAIR,
-            severity="fix",
-            target="entrypoint",
-            reason="r",
-            details={},
-        )
-        patches = ep_autofix.apply_entrypoint_repair(state_obj, issue)
-        assert patches == []
-
-    def test_reverts_when_no_change(self, tmp_path, monkeypatch):
-        from overmind.preflight.autofix import entrypoint as ep_autofix
-
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
-        state_obj = self._state_with_harness(tmp_path)
-        original = state_obj.entrypoint_path.read_bytes()
-
-        # Stub coding agent to do nothing (no-op).
-        with patch("overmind.coding_agent.agent.run") as mock_run:
-            mock_run.return_value = None
-            issue = IssueRecord(
-                kind=KIND_ENTRYPOINT_REPAIR,
-                severity="fix",
-                target="entrypoint",
-                reason="r",
-                details={},
-            )
-            patches = ep_autofix.apply_entrypoint_repair(state_obj, issue)
-        assert patches == []
-        # File must be unchanged.
-        assert state_obj.entrypoint_path.read_bytes() == original
-        assert state_obj.entrypoint_repair_attempts == 1
-
-    def test_records_patch_and_syncs_to_instrumented_copy(self, tmp_path, monkeypatch):
-        from overmind.preflight.autofix import entrypoint as ep_autofix
-
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
-        state_obj = self._state_with_harness(tmp_path)
-
-        new_source = "def run(query):\n    return {'answer': 'fixed'}\n"
-
-        def fake_run(*, instruction, model, cwd, worktree, extra_instructions, max_steps):
-            # Simulate coding agent rewriting the harness file.
-            state_obj.entrypoint_path.write_text(new_source)
-
-        with patch("overmind.coding_agent.agent.run", side_effect=fake_run):
-            issue = IssueRecord(
-                kind=KIND_ENTRYPOINT_REPAIR,
-                severity="fix",
-                target="entrypoint",
-                reason="harness wrong",
-                details={},
-            )
-            patches = ep_autofix.apply_entrypoint_repair(state_obj, issue)
-
-        assert len(patches) == 1
-        patch_rec = patches[0]
-        assert patch_rec.file == str(state_obj.entrypoint_path)
-        assert patch_rec.before_hash and patch_rec.after_hash
-        assert patch_rec.before_hash != patch_rec.after_hash
-        # The instrumented copy was synced.
-        assert (state_obj.instrumented_dir / "agent_entry.py").read_text() == new_source
-        # Re-instrumentation is queued for the runner.
-        assert "agent_entry.py" in state_obj.reinstrument_requests
-
-    def test_reverts_when_collateral_files_touched(self, tmp_path, monkeypatch):
-        from overmind.preflight.autofix import entrypoint as ep_autofix
-
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
-        state_obj = self._state_with_harness(tmp_path)
-        sibling = state_obj.entrypoint_path.parent / "evil.py"
-        sibling.write_text("# pre-existing\n")
-        original = state_obj.entrypoint_path.read_bytes()
-
-        def fake_run(**_kwargs):
-            # Coding agent edits a forbidden sibling — handler must revert.
-            sibling.write_text("# tampered\n")
-            state_obj.entrypoint_path.write_text("def run(): return {'answer': 'x'}\n")
-
-        with patch("overmind.coding_agent.agent.run", side_effect=fake_run):
-            issue = IssueRecord(
-                kind=KIND_ENTRYPOINT_REPAIR,
-                severity="fix",
-                target="entrypoint",
-                reason="r",
-                details={},
-            )
-            patches = ep_autofix.apply_entrypoint_repair(state_obj, issue)
-
-        assert patches == []
-        # Harness reverted to original bytes.
-        assert state_obj.entrypoint_path.read_bytes() == original
-
-
 class TestSortIssues:
-    def test_entrypoint_repair_runs_before_schema_drop(self):
+    def test_weights_before_schema_drop(self):
         from overmind.preflight import autofix
 
-        ep = IssueRecord(kind=KIND_ENTRYPOINT_REPAIR, severity="fix", target="entrypoint", reason="r")
+        wt = IssueRecord(kind=KIND_INVALID_WEIGHTS, severity="fix", target="eval_spec", reason="r")
         sd = IssueRecord(kind=KIND_OUTPUT_SCHEMA_MISMATCH, severity="fix", target="eval_spec", reason="r")
-        sorted_issues = autofix.sort_issues([sd, ep])
-        assert sorted_issues[0].kind == KIND_ENTRYPOINT_REPAIR
+        sorted_issues = autofix.sort_issues([sd, wt])
+        assert sorted_issues[0].kind == KIND_INVALID_WEIGHTS
         assert sorted_issues[1].kind == KIND_OUTPUT_SCHEMA_MISMATCH

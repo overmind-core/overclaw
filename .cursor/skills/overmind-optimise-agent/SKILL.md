@@ -23,19 +23,18 @@ The skill is built on top of `overmind optimize-step`, a JSON-in/JSON-out CLI th
 
 1. The agent is registered in `.overmind/agents.toml` (`/overmind-register-agent`).
 1. `setup_spec/eval_spec.json` and `setup_spec/dataset.json` exist under `.overmind/agents/<name>/` (`/overmind-generate-spec-and-dataset`).
-1. **`overmind preflight` has run and the report is `green` or `green_with_quality_notes`** (`/overmind-preflight`). The optimize CLI refuses to start otherwise — every infrastructure failure mode (missing env vars, weight drift, output schema mismatch, broken metrics, instrumentation gaps) is supposed to be caught and autonomously fixed by preflight. Optimize is for *agent quality*, not plumbing.
 1. Provider API keys are set in `.overmind/.env` or `.overmind/agents/<name>/.env`.
 
-If any prerequisite is missing, **stop** and tell the user which skill to run next:
+`overmind preflight` is **recommended but optional**. Running `/overmind-preflight` first catches and autonomously fixes most plumbing issues (missing env vars, weight drift, output schema mismatch, broken metrics, instrumentation gaps, harness bugs) so optimize can focus on *agent quality* instead of debugging infrastructure mid-loop. If the user wants to skip preflight, optimize will just run; any plumbing failure surfaces as an iteration error and the user can re-try after fixing it (or run preflight then).
 
 ```bash
 overmind preflight status <agent-name>
-# -> {"status": "green", ...}                 ← go ahead
-# -> {"status": "blocked_secrets", ...}       ← run /overmind-preflight
-# -> {"status": "error", "error": "no_preflight_report"}  ← run /overmind-preflight
+# -> {"status": "green", ...}                  ← good to go
+# -> {"status": "blocked_secrets", ...}        ← suggest /overmind-preflight
+# -> {"status": "error", "error": "no_preflight_report"}  ← suggest /overmind-preflight or proceed if the user prefers
 ```
 
-Never bypass the gate via `OVERMIND_SKIP_PREFLIGHT=1` unless the user explicitly demands it and acknowledges that infrastructure failures during optimize become their problem.
+If preflight has run and is non-green, surface the message to the user but let them decide whether to fix it first or proceed.
 
 Note: in this repo the `.overmind/` state directory may live at the project root **or** inside a sub-project (e.g. `new_examples/langextract/.overmind/`). Run all commands from the directory that contains the relevant `.overmind/`.
 
@@ -56,9 +55,9 @@ Optimization Progress:
 
 ### Step 1 — Resolve agent + check prerequisites
 
-Look up the agent in `.overmind/agents.toml`. Confirm `setup_spec/eval_spec.json` and `setup_spec/dataset.json` exist.
+Look up the agent in `.overmind/agents.toml`. Confirm `setup_spec/eval_spec.json` and `setup_spec/dataset.json` exist. If either is missing, stop and refer the user to `/overmind-generate-spec-and-dataset`.
 
-Then check the preflight gate:
+Then check the preflight status (advisory only):
 
 ```bash
 overmind preflight status <agent-name>
@@ -67,11 +66,8 @@ overmind preflight status <agent-name>
 | Response | Action |
 |---|---|
 | `status: green` or `green_with_quality_notes` | continue |
-| `error: no_preflight_report` | stop and run `/overmind-preflight` |
-| `status: blocked_secrets` / `blocked_no_convergence` | stop, surface `message` and `missing_secrets`, run `/overmind-preflight` |
-| `error: preflight_stale` (raised later by `optimize-step init`) | the artifacts changed — re-run `/overmind-preflight` |
-
-Stop with a clear message if anything is missing.
+| `error: no_preflight_report` | mention `/overmind-preflight` is available but proceed if the user wants to skip it |
+| `status: blocked_secrets` / `blocked_no_convergence` | surface `message` and `missing_secrets`, suggest `/overmind-preflight`, then ask the user whether to fix first or proceed anyway |
 
 ### Step 2 — Collect configuration via `AskQuestion`
 
@@ -107,7 +103,7 @@ echo '<settings JSON>' | overmind optimize-step init <agent-name>
 # add --overwrite if a prior skill_state.json exists and the user agreed
 ```
 
-Parse the JSON envelope. On `status: error, error: state_already_exists`, ask the user whether to start fresh and re-run with `--overwrite`. On `missing_eval_spec` / `missing_dataset`, stop and refer them to `/overmind-generate-spec-and-dataset`. On `preflight_missing` / `preflight_not_green` / `preflight_stale`, stop and refer them to `/overmind-preflight` — do not pass `--overwrite` to bypass.
+Parse the JSON envelope. On `status: error, error: state_already_exists`, ask the user whether to start fresh and re-run with `--overwrite`. On `missing_eval_spec` / `missing_dataset`, stop and refer them to `/overmind-generate-spec-and-dataset`. The response includes a `preflight` field summarising the latest preflight status (or `null` if it never ran) — surface this to the user but do not block on it.
 
 Capture `STATE_PATH` from the response — every subsequent step uses `--state $STATE_PATH`.
 
@@ -345,7 +341,7 @@ overmind optimize-step status --state $STATE_PATH
 | State already exists | Ask whether to resume or start fresh. Use overwrite only with explicit approval. |
 | Missing eval spec | Stop and run or recommend `/overmind-generate-spec-and-dataset` |
 | Missing dataset | Stop and run or recommend `/overmind-generate-spec-and-dataset` |
-| Preflight missing / not green / stale | Stop and run `/overmind-preflight`; never bypass via `OVERMIND_SKIP_PREFLIGHT=1` without explicit user demand |
+| Preflight missing or not green | Mention `/overmind-preflight` to the user; proceed if they want to skip it |
 | Zero baseline | Classify as setup / scoring / dataset / genuine failure before proceeding (see Step 4) |
 | Analyzer warning | Stop and report the warning's last error and hint; fix env / model config, then re-run |
 | Candidate worktree missing | Mark that candidate failed and continue evaluating the others |
