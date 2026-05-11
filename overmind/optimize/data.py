@@ -69,8 +69,10 @@ def load_data(path: str) -> list[dict]:
 
     if isinstance(data, list):
         return data
+    logger.info(f"Data is a : {data}")
     if isinstance(data, dict) and "test_cases" in data:
-        return data["test_cases"]
+        logger.info(f"Data is a dict with a 'test_cases' key: {data.keys()}")
+        return data.get("test_cases", [])
 
     raise ValueError(f"Unrecognized data format in {path}. Expected a JSON array or an object with a 'test_cases' key.")
 
