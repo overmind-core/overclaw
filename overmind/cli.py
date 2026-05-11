@@ -9,6 +9,7 @@ Commands:
     overmind agent update <name> <module:function>     Update a registered agent's entrypoint
     overmind agent show <name>                         Show agent registration and pipeline status
     overmind setup <name> [--data PATH] [--fast]      Analyze agent and define eval criteria
+    overmind preflight <STEP> <name>                   Validate the pipeline before optimize
     overmind optimize <name> [--fast]                  Run the optimization loop
     overmind doctor <name>                             Diagnose bundle scope and eval spec (read-only)
     overmind sync [name]                               Sync local setup artifacts to Overmind
@@ -44,6 +45,10 @@ from overmind.commands.optimize_step_cmd import (
     build_subparser as _build_optimize_step_parser,
 )
 from overmind.commands.optimize_step_cmd import main as _optimize_step
+from overmind.commands.preflight_cmd import (
+    build_subparser as _build_preflight_parser,
+)
+from overmind.commands.preflight_cmd import main as _preflight
 from overmind.commands.setup_cmd import main as _setup
 from overmind.core.constants import OVERMIND_DIR_NAME, overmind_rel
 from overmind.core.logging import setup_logging
@@ -416,9 +421,20 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="override max total characters in the bundle (default: from Config)",
     )
+    opt_p.add_argument(
+        "--skip-preflight",
+        action="store_true",
+        help=(
+            "bypass the preflight gate (NOT recommended — infrastructure "
+            "failures during optimize become your responsibility)"
+        ),
+    )
 
     # ── optimize-step (skill-driven) ────────────────────────────────────────
     _build_optimize_step_parser(subparsers)
+
+    # ── preflight (skill-driven validation gate) ────────────────────────────
+    _build_preflight_parser(subparsers)
 
     # ── doctor ───────────────────────────────────────────────────────────────
     doctor_p = subparsers.add_parser(
@@ -504,7 +520,7 @@ def main() -> None:
     # via SKILL.md.  Avoid prompting for OVERMIND_API_KEY when none is set —
     # initialise with a placeholder so spans/tags work locally even without
     # a real OTLP endpoint.
-    if args.command == "optimize-step" and not os.getenv("OVERMIND_API_KEY"):
+    if args.command in ("optimize-step", "preflight") and not os.getenv("OVERMIND_API_KEY"):
         os.environ["OVERMIND_API_KEY"] = "skill-local-no-export"
     overmind.init(service_name="overmind.cli", providers=None)
 
@@ -556,6 +572,8 @@ def main() -> None:
         elif args.command == "optimize":
             _kw = _bundle_cli_kwargs(args)
             context.attach(context.set_value(attrs.AGENT_NAME, args.agent))
+            if getattr(args, "skip_preflight", False):
+                os.environ["OVERMIND_SKIP_PREFLIGHT"] = "1"
             _optimize(agent_name=args.agent, fast=args.fast, **_kw)
 
         elif args.command == "optimize-step":
@@ -563,6 +581,12 @@ def main() -> None:
             if agent_name:
                 context.attach(context.set_value(attrs.AGENT_NAME, agent_name))
             raise SystemExit(_optimize_step(args))
+
+        elif args.command == "preflight":
+            agent_name = getattr(args, "agent", None)
+            if agent_name:
+                context.attach(context.set_value(attrs.AGENT_NAME, agent_name))
+            raise SystemExit(_preflight(args))
 
     except KeyboardInterrupt:
         span = _otel_trace.get_current_span()

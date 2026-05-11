@@ -7,6 +7,9 @@ Usage:
 """
 
 import logging
+import os
+
+from rich.console import Console
 
 from overmind import SpanType, attrs, set_tag
 from overmind.client import flush_pending_api_updates
@@ -14,10 +17,81 @@ from overmind.core.paths import load_agent_dotenv
 from overmind.core.registry import get_agent_id
 from overmind.optimize.config import collect_config
 from overmind.optimize.optimizer import Optimizer
+from overmind.preflight import load_report, preflight_report_path
+from overmind.preflight.hashes import compute_hashes, hashes_match
+from overmind.preflight.state import GREEN_STATUSES
 from overmind.storage import configure_storage
 from overmind.utils.tracing import force_flush_traces, traced
 
 logger = logging.getLogger("overmind.commands.optimize")
+
+
+def _enforce_preflight_gate(agent_name: str) -> None:
+    """Refuse to optimize unless preflight is green and hashes match.
+
+    Bypass with the ``OVERMIND_SKIP_PREFLIGHT=1`` env var or
+    ``--skip-preflight`` CLI flag (when running interactively this is a
+    foot-gun — the optimize loop will fail later for the same plumbing
+    reasons preflight would have caught and fixed).
+    """
+    if os.environ.get("OVERMIND_SKIP_PREFLIGHT") == "1":
+        logger.warning(
+            "optimize: OVERMIND_SKIP_PREFLIGHT=1 — bypassing the preflight gate; "
+            "infrastructure failures during optimize are now your responsibility.",
+        )
+        return
+
+    console = Console(stderr=True)
+    report_path = preflight_report_path(agent_name)
+    report = load_report(agent_name)
+    if report is None:
+        console.print(
+            "\n  [bold red]Error:[/bold red] preflight has not been run for this agent.\n"
+            f"  Expected report at: [cyan]{report_path}[/cyan]\n\n"
+            "  Run the validation gate first:\n"
+            f"    [bold]overmind preflight run {agent_name}[/bold]\n"
+            f"  …or invoke the [bold]/overmind-preflight[/bold] skill.\n\n"
+            "  To skip this check (not recommended):\n"
+            "    [dim]OVERMIND_SKIP_PREFLIGHT=1 overmind optimize <name>[/dim]\n"
+        )
+        raise SystemExit(2)
+
+    if report.status not in GREEN_STATUSES:
+        console.print(
+            f"\n  [bold red]Error:[/bold red] preflight status is "
+            f"[bold]{report.status}[/bold] — pipeline is not ready for optimize.\n"
+            f"  {report.message}\n\n"
+            f"  Inspect the report:  [cyan]{report_path}[/cyan]\n"
+            f"  Re-run the gate:    [bold]overmind preflight run {agent_name}[/bold]\n"
+        )
+        if report.missing_secrets:
+            console.print(
+                "  Missing credentials: "
+                f"[bold]{', '.join(report.missing_secrets)}[/bold]\n"
+                f"  Save each via:    [bold]echo -n <value> | overmind preflight set-secret "
+                f"{agent_name} --key <KEY>[/bold]\n"
+            )
+        raise SystemExit(2)
+
+    fresh = compute_hashes(agent_name)
+    ok, diff = hashes_match(report.hashes or {}, fresh)
+    if not ok:
+        console.print(
+            "\n  [bold yellow]Warning:[/bold yellow] preflight is "
+            f"[bold]stale[/bold] — these artifacts changed since it ran: "
+            f"[bold]{', '.join(diff)}[/bold]\n"
+            f"  Re-run:    [bold]overmind preflight run {agent_name}[/bold]\n\n"
+            "  To proceed anyway (not recommended):\n"
+            "    [dim]OVERMIND_SKIP_PREFLIGHT=1 overmind optimize <name>[/dim]\n"
+        )
+        raise SystemExit(2)
+
+    logger.info(
+        "optimize: preflight gate ok status=%s baseline=%.4f iterations=%d",
+        report.status,
+        report.baseline_score or 0.0,
+        report.iterations,
+    )
 
 
 @traced(span_name="overmind_optimize", type=SpanType.WORKFLOW)
@@ -34,6 +108,10 @@ def main(
     # are available throughout the entire optimize run (config collection,
     # agent execution, and evaluation).
     load_agent_dotenv(agent_name)
+
+    # Hard gate: refuse to optimize unless preflight has signed off and the
+    # artifacts haven't drifted.  This is the contract preflight provides.
+    _enforce_preflight_gate(agent_name)
 
     config = collect_config(
         agent_name=agent_name,

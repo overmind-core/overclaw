@@ -21,11 +21,21 @@ The skill is built on top of `overmind optimize-step`, a JSON-in/JSON-out CLI th
 
 ## Prerequisites
 
-1. The agent is registered in `.overmind/agents.toml` (`/overmind-register-agent` skill or `overmind agent register`).
-1. `setup_spec/eval_spec.json` and `setup_spec/dataset.json` exist under `.overmind/agents/<name>/`. If not, run `/overmind-generate-policy-and-eval` and `/overmind-generate-dataset` first.
+1. The agent is registered in `.overmind/agents.toml` (`/overmind-register-agent`).
+1. `setup_spec/eval_spec.json` and `setup_spec/dataset.json` exist under `.overmind/agents/<name>/` (`/overmind-generate-spec-and-dataset`).
+1. **`overmind preflight` has run and the report is `green` or `green_with_quality_notes`** (`/overmind-preflight`). The optimize CLI refuses to start otherwise — every infrastructure failure mode (missing env vars, weight drift, output schema mismatch, broken metrics, instrumentation gaps) is supposed to be caught and autonomously fixed by preflight. Optimize is for *agent quality*, not plumbing.
 1. Provider API keys are set in `.overmind/.env` or `.overmind/agents/<name>/.env`.
 
-If any prerequisite is missing, **stop** and tell the user which one to satisfy.
+If any prerequisite is missing, **stop** and tell the user which skill to run next:
+
+```bash
+overmind preflight status <agent-name>
+# -> {"status": "green", ...}                 ← go ahead
+# -> {"status": "blocked_secrets", ...}       ← run /overmind-preflight
+# -> {"status": "error", "error": "no_preflight_report"}  ← run /overmind-preflight
+```
+
+Never bypass the gate via `OVERMIND_SKIP_PREFLIGHT=1` unless the user explicitly demands it and acknowledges that infrastructure failures during optimize become their problem.
 
 Note: in this repo the `.overmind/` state directory may live at the project root **or** inside a sub-project (e.g. `new_examples/langextract/.overmind/`). Run all commands from the directory that contains the relevant `.overmind/`.
 
@@ -46,7 +56,22 @@ Optimization Progress:
 
 ### Step 1 — Resolve agent + check prerequisites
 
-Look up the agent in `.overmind/agents.toml`. Confirm `setup_spec/eval_spec.json` and `setup_spec/dataset.json` exist. Stop with a clear message if anything is missing.
+Look up the agent in `.overmind/agents.toml`. Confirm `setup_spec/eval_spec.json` and `setup_spec/dataset.json` exist.
+
+Then check the preflight gate:
+
+```bash
+overmind preflight status <agent-name>
+```
+
+| Response | Action |
+|---|---|
+| `status: green` or `green_with_quality_notes` | continue |
+| `error: no_preflight_report` | stop and run `/overmind-preflight` |
+| `status: blocked_secrets` / `blocked_no_convergence` | stop, surface `message` and `missing_secrets`, run `/overmind-preflight` |
+| `error: preflight_stale` (raised later by `optimize-step init`) | the artifacts changed — re-run `/overmind-preflight` |
+
+Stop with a clear message if anything is missing.
 
 ### Step 2 — Collect configuration via `AskQuestion`
 
@@ -82,7 +107,7 @@ echo '<settings JSON>' | overmind optimize-step init <agent-name>
 # add --overwrite if a prior skill_state.json exists and the user agreed
 ```
 
-Parse the JSON envelope. On `status: error, error: state_already_exists`, ask the user whether to start fresh and re-run with `--overwrite`. On `missing_eval_spec` / `missing_dataset`, stop and refer them to the appropriate skill.
+Parse the JSON envelope. On `status: error, error: state_already_exists`, ask the user whether to start fresh and re-run with `--overwrite`. On `missing_eval_spec` / `missing_dataset`, stop and refer them to `/overmind-generate-spec-and-dataset`. On `preflight_missing` / `preflight_not_green` / `preflight_stale`, stop and refer them to `/overmind-preflight` — do not pass `--overwrite` to bypass.
 
 Capture `STATE_PATH` from the response — every subsequent step uses `--state $STATE_PATH`.
 
@@ -318,8 +343,9 @@ overmind optimize-step status --state $STATE_PATH
 | Problem | Fix |
 |---|---|
 | State already exists | Ask whether to resume or start fresh. Use overwrite only with explicit approval. |
-| Missing eval spec | Stop and run or recommend `overmind-generate-policy-and-eval` |
-| Missing dataset | Stop and run or recommend `overmind-generate-dataset` |
+| Missing eval spec | Stop and run or recommend `/overmind-generate-spec-and-dataset` |
+| Missing dataset | Stop and run or recommend `/overmind-generate-spec-and-dataset` |
+| Preflight missing / not green / stale | Stop and run `/overmind-preflight`; never bypass via `OVERMIND_SKIP_PREFLIGHT=1` without explicit user demand |
 | Zero baseline | Classify as setup / scoring / dataset / genuine failure before proceeding (see Step 4) |
 | Analyzer warning | Stop and report the warning's last error and hint; fix env / model config, then re-run |
 | Candidate worktree missing | Mark that candidate failed and continue evaluating the others |

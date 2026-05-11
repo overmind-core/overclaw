@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,9 @@ from overmind.core.paths import (
 from overmind.core.registry import get_agent_id, resolve_agent
 from overmind.optimize.config import Config, apply_eval_spec_scope
 from overmind.optimize.steps.state import SkillRunState
+from overmind.preflight import load_report, preflight_report_path
+from overmind.preflight.hashes import compute_hashes, hashes_match
+from overmind.preflight.state import GREEN_STATUSES
 
 logger = logging.getLogger("overmind.optimize.steps.init")
 
@@ -107,7 +111,7 @@ def run_init(
             "message": (
                 f"No evaluation spec found at {spec_path}. "
                 f"Run `overmind setup {agent_name}` (or invoke the "
-                "/generate-policy-and-eval skill) first."
+                "/overmind-generate-spec-and-dataset skill) first."
             ),
         }
     if not data_path.is_file():
@@ -117,9 +121,48 @@ def run_init(
             "message": (
                 f"No dataset found at {data_path}. "
                 f"Run `overmind setup {agent_name}` (or invoke the "
-                "/generate-dataset skill) first."
+                "/overmind-generate-spec-and-dataset skill) first."
             ),
         }
+
+    # Preflight gate — same contract as `overmind optimize`: refuse to
+    # init optimization state unless preflight is green and the artifacts
+    # haven't drifted since it last ran.
+    if os.environ.get("OVERMIND_SKIP_PREFLIGHT") != "1":
+        report_path = preflight_report_path(agent_name)
+        report = load_report(agent_name)
+        if report is None:
+            return {
+                "status": "error",
+                "error": "preflight_missing",
+                "message": (
+                    f"No preflight report at {report_path}. "
+                    f"Run `overmind preflight run {agent_name}` "
+                    "(or invoke /overmind-preflight) before initializing optimization."
+                ),
+                "report_path": str(report_path),
+            }
+        if report.status not in GREEN_STATUSES:
+            return {
+                "status": "error",
+                "error": "preflight_not_green",
+                "message": (
+                    f"Preflight status is '{report.status}': {report.message}. "
+                    "Re-run preflight after addressing the issues."
+                ),
+                "preflight": report.to_dict(),
+            }
+        ok, diff = hashes_match(report.hashes or {}, compute_hashes(agent_name))
+        if not ok:
+            return {
+                "status": "error",
+                "error": "preflight_stale",
+                "message": (
+                    f"Preflight is stale; these artifacts changed since it ran: {diff}. "
+                    f"Re-run `overmind preflight run {agent_name}`."
+                ),
+                "drifted_artifacts": diff,
+            }
 
     experiments_dir = agent_experiments_dir(agent_name)
     experiments_dir.mkdir(parents=True, exist_ok=True)

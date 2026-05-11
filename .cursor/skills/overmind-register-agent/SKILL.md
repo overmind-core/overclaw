@@ -301,7 +301,10 @@ If no sample data is available, skip validation and note that runtime validation
 - Whether instrumentation was refreshed.
 - Whether an `.env` placeholder file was created or updated; that they must fill in placeholders before running.
 - Whether `overmind agent validate` was run or skipped.
-- Next step: run `/overmind-generate-dataset` for the agent. Mention they can provide a seed dataset file path if they have example inputs/outputs.
+- Next steps, in order:
+  1. `/overmind-generate-spec-and-dataset` — creates the policy, eval spec, and dataset in one pass so the input/output schemas always agree. Mention the user can pass a seed dataset path here.
+  2. `/overmind-preflight` — runs the agent end-to-end against a 2-row slice and autonomously fixes every plumbing issue (eval-spec / dataset / instrumentation) before optimization.
+  3. `/overmind-optimise-agent` — runs the iterative optimization loop. It will refuse to start until preflight is green.
 
 ## Common issues
 
