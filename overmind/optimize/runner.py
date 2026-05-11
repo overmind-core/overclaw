@@ -577,9 +577,9 @@ def _provision_python(agent_dir: Path) -> Path:
             return py
 
     # --- Fallback: hardcoded uv / pip logic ---
-    logger.info("Provisioning Python environment for %s (fallback) …", agent_dir)
-
     use_uv = bool(shutil.which("uv"))
+    tool = "uv" if use_uv else "pip"
+    logger.info("Provisioning Python environment for %s using %s …", agent_dir, tool)
 
     if use_uv:
         if has_pyproject:
@@ -966,12 +966,25 @@ class AgentRunner:
         if not has_dep_manifest(self.env_dir, self.language):
             ext_imports = detect_external_imports(self.env_dir, self.entry_file, self.language)
             if ext_imports:
-                logger.error(
-                    "Missing dependency manifest for %s; detected external imports: %s",
-                    self.env_dir,
-                    ext_imports,
-                )
-                raise MissingDependenciesError(self.env_dir, self.language, ext_imports)
+                if self.language == Language.PYTHON:
+                    packages = imports_to_package_names(ext_imports, self.language)
+                    req_path = self.env_dir / "requirements.txt"
+                    req_path.write_text(generate_requirements_txt(packages))
+                    logger.info(
+                        "Auto-generated requirements.txt with %d package(s) for %s: %s",
+                        len(packages),
+                        self.env_dir,
+                        packages,
+                    )
+                    # Fall through — _provision_python() will find the manifest
+                    # and use uv (preferred) or pip to install.
+                else:
+                    logger.error(
+                        "Missing dependency manifest for %s; detected external imports: %s",
+                        self.env_dir,
+                        ext_imports,
+                    )
+                    raise MissingDependenciesError(self.env_dir, self.language, ext_imports)
 
         if self.language == Language.PYTHON:
             self._python_path = _provision_python(self.env_dir)
