@@ -1,298 +1,321 @@
 ---
 name: overmind-register-agent
-description: Register an agent with the Overmind registry without interactive CLI prompts. Use when the user wants to register an agent, run `overmind agent register`, set up agent credentials, configure an LLM provider for an agent, or add a new agent to an Overmind project. Discovers the entrypoint function, derives the module path, runs registration, then asks the user to fill in their credentials.
-disable-model-invocation: true
+description: "Create or register an Overmind-compatible agent entrypoint without interactive CLI prompts. Use when the user wants Overmind to run and evaluate an agent, create a separate callable interaction file for an existing agent, register an agent, run overmind agent register, set up agent credentials, configure an LLM provider, add a new agent to an Overmind project, or fix a failed/partial agent registration."
+metadata:
+  version: "2.0"
+  product: "Overmind"
 ---
 
-# Register an Overmind Agent
+# Create and Register an Overmind Agent Entrypoint
 
-Registers an agent in `.overmind/agents.toml` without interactive CLI prompts.
-Runs registration immediately, then asks the user to fill in their credentials at the end.
+Registers an agent in `.overmind/agents.toml` without interactive CLI prompts. Creates a **separate Overmind entrypoint file** — a thin interaction harness that wraps the native agent — rather than registering the native agent file directly.
+
+## Operating principles
+
+- **Codebase-derived artifacts**: Inspect the agent source, adjacent modules, configuration, README files, examples, tests, and existing invocation paths before asking the user for anything.
+- **Project-root discipline**: Run all commands from the directory containing `.overmind/`. Do not run from a parent directory.
+- **No secret inspection**: Never ask the user to paste API keys into chat. Never print or inspect secret values. Create placeholder entries and tell the user where to fill them in.
+- **Separate entrypoint file**: Always create or maintain a distinct entrypoint file for Overmind-agent interaction. Do not register the native agent implementation file directly.
+- **Interaction harness, not agent logic**: The entrypoint imports and invokes the native agent, maps dataset inputs to the agent's native call, and normalizes outputs for evaluation. It must not contain optimizable behavior.
+- **Entrypoint is fixed and invisible to optimization**: It exists only to let Overmind invoke the agent. Never treat it as logic to optimize.
+- **Snapshot safety**: The entrypoint and every local file it imports must live under the project root and be included in the instrumented snapshot.
+- **Re-instrument on entrypoint changes**: If the entrypoint changes after registration, refresh the instrumented copy even when the agent name and callable string are unchanged.
+- **Minimal edits**: Only modify Overmind registration artifacts, the separate entrypoint file, and the agent-specific `.env` placeholder file.
+- **Ask only for blockers**: Prefer autonomous codebase analysis over questions. Ask only when the codebase cannot resolve a material ambiguity.
 
 ## Workflow
 
-Copy this checklist into your response and check off each step as you complete it:
-
 ```
 Registration Progress:
-- [ ] Step 1: Collect agent file path and name
-- [ ] Step 2: Discover and validate entrypoint function
-- [ ] Step 3: Scan for env vars
-- [ ] Step 4: Detect model usage and confirm
-- [ ] Step 5: Ask for LLM provider
-- [ ] Step 6: Run registration
-- [ ] Step 7: Create .env file with placeholders
-- [ ] Step 8: Summarize
+- [ ] Step 1: Collect agent path and name
+- [ ] Step 2: Ask analyzer model + run credential preflight
+- [ ] Step 3: Build codebase context and understand native interface
+- [ ] Step 4: Create or validate separate Overmind entrypoint file
+- [ ] Step 5: Scan for env vars + ask LLM provider
+- [ ] Step 6: Run registration via CLI
+- [ ] Step 7: Validate local imports and instrumentation snapshot
+- [ ] Step 8: Create .env placeholder file
+- [ ] Step 9: Validate with sample data + summarize
 ```
 
-### Step 1 — Collect inputs
+### Step 1 — Collect agent path and name
 
-Ask (use `AskQuestion` for multiple-choice, plain conversation for free-form):
+Derive from the codebase where possible. Ask only for:
 
-1. **Agent file path** — relative to the project root (e.g. `examples/hotel/agent.py`)
-1. **Agent name (slug)** — default to the parent folder name; confirm before proceeding
+1. **Agent file path** — relative to project root (e.g. `examples/hotel/agent.py`).
+1. **Agent name (slug)** — default to the parent folder name; confirm before proceeding.
+1. **Entrypoint choice** — ask whether the user already has an Overmind-compatible entrypoint they want to point Overmind at, or whether they want one created:
+   - If they have one: ask for the project-relative path and callable if known. Validate it satisfies the entrypoint contract (importable, non-interactive, returns serializable top-level fields) before proceeding to Step 6.
+   - If they want one created: continue with codebase inspection below.
 
-### Step 2 — Discover and validate the entrypoint function
+### Step 2 — Ask analyzer model + credential preflight
 
-Read the agent file. Find the entrypoint in priority order:
+**Collect analyzer choices via `AskQuestion`:**
 
-1. `def run(`
-1. `def run_agent(`
-1. `def agent(`
-1. Any top-level `def` that returns `dict` or `str`
+> "Which provider should Overmind use for its analyzer (failure diagnosis)?"
+> Options: Anthropic | OpenAI | Other OpenAI-compatible | Keep existing environment configuration
 
-If multiple candidates exist, ask the user to pick one.
+> "Which analyzer model?"
+> Options: `anthropic/claude-sonnet-4-20250514` | `openai/gpt-4o` | Custom model string | Keep existing `ANALYZER_MODEL`
 
-**If no entrypoint function is found**, ask the user (use `AskQuestion`):
+If the user chooses a custom model, collect the model string in a follow-up free-text question.
 
-> "No entrypoint function was found in `<file>`. Would you like me to scaffold a `run` function for you?"
-> Options: Yes, scaffold one for me | No, I'll add it manually
+**Run credential preflight** — bootstrap `.overmind/.env` and check required keys are set without printing values:
 
-- If **No**: tell the user the function should accept at least one input parameter and return a `dict` or `str`, then stop and ask them to re-run the skill after adding it.
+```bash
+python - <<'PY'
+import os, pathlib
 
-- If **Yes**: scaffold a `run` function at the bottom of the file. The scaffolded function must:
+env_path = pathlib.Path(".overmind/.env")
+if not env_path.exists():
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    env_path.write_text("# Overmind environment\n")
 
-  - Be named `run`
-  - Accept typed input parameters that make sense for the agent's apparent purpose (infer from the file's other code, imports, constants, and comments)
-  - Have a docstring explaining what it does and what each parameter means
-  - Return a `dict` with named output keys that reflect what the agent produces
-  - Include a short inline comment on each parameter and return field
+text = env_path.read_text()
+keys = {ln.split("=", 1)[0].strip() for ln in text.splitlines()
+        if ln.strip() and not ln.strip().startswith("#") and "=" in ln}
 
-  Also ensure the **top of the file** loads the agent's `.env`. If `dotenv` imports are not already present, add these lines at the top (after any existing imports):
+def add_placeholder(key):
+    global text
+    if not text.endswith("\n"):
+        text += "\n"
+    text += f"{key}=<set-me>\n"
+
+if "OVERMIND_API_KEY" not in keys:
+    add_placeholder("OVERMIND_API_KEY")
+
+selected_provider = "<anthropic|openai|openai-compatible|keep-existing>"
+selected_model    = "<anthropic/claude-sonnet-4-20250514|openai/gpt-4o|custom|keep-existing>"
+
+if selected_provider == "anthropic" and "ANTHROPIC_API_KEY" not in keys:
+    add_placeholder("ANTHROPIC_API_KEY")
+elif selected_provider in {"openai", "openai-compatible"} and "OPENAI_API_KEY" not in keys:
+    add_placeholder("OPENAI_API_KEY")
+if selected_provider == "openai-compatible" and "OPENAI_BASE_URL" not in keys:
+    add_placeholder("OPENAI_BASE_URL")
+
+env_path.write_text(text)
+
+# Write chosen model unless keeping existing
+if selected_model not in {"keep-existing"}:
+    lines = env_path.read_text().splitlines()
+    updated, found = [], False
+    for ln in lines:
+        if ln.strip().startswith("ANALYZER_MODEL="):
+            updated.append(f"ANALYZER_MODEL={selected_model}")
+            found = True
+        else:
+            updated.append(ln)
+    if not found:
+        updated.append(f"ANALYZER_MODEL={selected_model}")
+    env_path.write_text("\n".join(updated).rstrip() + "\n")
+
+# Check readiness (no values printed)
+required = ["OVERMIND_API_KEY"]
+if selected_provider == "anthropic":
+    required.append("ANTHROPIC_API_KEY")
+elif selected_provider in {"openai", "openai-compatible"}:
+    required.append("OPENAI_API_KEY")
+
+def is_configured(name):
+    if os.getenv(name):
+        return True
+    for line in env_path.read_text().splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or "=" not in s:
+            continue
+        k, v = s.split("=", 1)
+        if k.strip() == name and v.strip() and v.strip() != "<set-me>":
+            return True
+    return False
+
+missing = [k for k in required if not is_configured(k)]
+print("configured" if not missing else "missing:" + ",".join(missing))
+PY
+```
+
+If any key is missing, stop and tell the user to fill in `.overmind/.env` (which was just created), then confirm before continuing.
+
+### Step 3 — Build codebase context and understand native interface
+
+Read:
+
+- The target agent file and adjacent modules.
+- CLI commands, app routes, framework runners, or tests that invoke the agent.
+- Example inputs/outputs in README files, examples, fixtures, or notebooks.
+- Existing Overmind artifacts, if any.
+- Environment variable names needed to run the agent.
+
+Identify how the agent is invoked today. Look for public functions (`run`, `run_agent`, `agent`, `main`, `invoke`, `predict`, `respond`, `__call__`), classes with invocation methods, CLI entrypoints, and route handlers. Distinguish the **native interface** (how it runs today) from the **Overmind entrypoint** (the separate harness).
+
+### Step 4 — Create or validate the separate Overmind entrypoint file
+
+The entrypoint file must:
+
+- Be importable from Python.
+- Accept explicit, serializable inputs representable in a dataset.
+- Return a serializable, evaluator-compatible result.
+- Not require interactive input, start a server/UI loop, or run more than once per call.
+
+The entrypoint should expose a single function (`run` or `run_agent`) that:
+
+- Accepts explicit keyword arguments matching dataset input fields.
+- Converts them into the native agent's expected input shape.
+- Calls the native agent exactly once.
+- Normalizes the result into evaluator-compatible **top-level fields** (`text`, `enum`, `number`, `boolean`).
+- Loads its `.env` at the top if not already loaded elsewhere:
 
   ```python
   from dotenv import load_dotenv
   from pathlib import Path
-
   load_dotenv(Path(__file__).parent / ".env", override=True)
   ```
 
-  If `load_dotenv` is already called anywhere in the file, do not add it again.
+For native list or nested outputs, normalize into top-level fields (JSON text representation, item count, extracted key fields, validity booleans). Never require the evaluator to score nested keys or list items directly.
 
-  After writing it, **show the scaffolded function in full to the user** and explain it in plain English:
+After creating the harness, **show it in full to the user** and explain inputs, outputs, and what it does in plain English. Wait for confirmation before continuing.
 
-  > "Here's the entrypoint I created:
-  >
-  > ```python
-  > <full scaffolded function>
-  > ```
-  >
-  > **What it does:** \<1–2 sentence plain-English description of the function's purpose>
-  > **Inputs:** <list each parameter and what it represents>
-  > **Output:** <describe what the returned dict contains>
-  >
-  > Please review this. If the parameter names, types, or return shape don't match how you plan to call the agent, edit `<file>` now before continuing. When you're ready, reply to proceed."
+**Derive the module path**: strip `.py`, replace `/` with `.` (e.g. `examples/hotel/overmind_ep.py` → `examples.hotel.overmind_ep`). Exception: paths with segments starting with `.` must use the slash form. Construct the entrypoint string: `<module_path>:<function_name>`.
 
-  Wait for the user to confirm before continuing. Do not proceed to Step 3 until they explicitly say the function looks correct.
+**Smoke-check the callable** before registering:
 
-**Do not modify the file for any other reason.** Only scaffold when the user explicitly requests it via the question above.
+```bash
+python - <<'PY'
+import importlib, inspect
+module = importlib.import_module("<module_path>")
+fn = getattr(module, "<callable>")
+print("callable" if callable(fn) else "not-callable")
+print("async" if inspect.iscoroutinefunction(fn) else "sync")
+print(inspect.signature(fn))
+PY
+```
 
-**Once a candidate is found, analyze it — do not modify it:**
+If import or signature checks fail, repair the entrypoint before continuing. If the entrypoint is async (`async def`), Overmind and downstream smoke tests will wrap it in `asyncio.run` automatically — no harness change is needed, but make sure the agent does not also start its own event loop (e.g. `asyncio.run(...)` inside the entrypoint body), which would fail with `RuntimeError: asyncio.run() cannot be called from a running event loop`.
 
-1. **Accepts inputs?** — Does the function have at least one parameter (excluding `self`)? If not, stop and tell the user:
+### Step 5 — Scan for env vars + ask LLM provider
 
-   > "The function `<name>` takes no parameters. It needs at least one input parameter so Overmind can pass data to it. Please update `<file>` and re-run this skill."
-
-1. **Returns a value?** — Does the function have a return type annotation of `dict`, `str`, `list`, or similar (not `None`)? Or does the body contain a `return` statement with a non-`None` value? If the function clearly returns nothing, stop and tell the user:
-
-   > "The function `<name>` does not appear to return a value. It should return a `dict` or `str`. Please update `<file>` and re-run this skill."
-
-If both checks pass, proceed — record the exact parameter names and return type for use in later steps.
-
-**Derive the module path** from the file path — strip the extension, replace `/` with `.`:
-
-| File path                 | Module path            |
-| ------------------------- | ---------------------- |
-| `examples/hotel/agent.py` | `examples.hotel.agent` |
-| `examples/support/bot.py` | `examples.support.bot` |
-| `agents/myagent/main.py`  | `agents.myagent.main`  |
-
-> Exception: paths containing a directory starting with `.` (e.g. `.overmind/`) must use the slash form — Python can't import dotted names starting with a dot.
-
-Construct the entrypoint string: `<module_path>:<function_name>`
-Example: `examples.hotel.agent:run`
-
-### Step 3 — Scan for env vars
-
-Scan the file for these patterns:
-
-- `os.environ.get("KEY")` / `os.environ.get("KEY", "default")`
-- `os.getenv("KEY")` / `os.getenv("KEY", "default")`
-- `os.environ["KEY"]`
-
-Exclude system vars: `PATH HOME USER LOGNAME SHELL TERM LANG PWD TMPDIR TMP TEMP`.
-
-Note any literal default values from the code — use them as placeholder text in the `.env` file.
-
-### Step 4 — Detect model usage and confirm
-
-Scan the agent file for any hardcoded model names. Look for patterns like:
-
-- `model="..."` / `model='...'`
-- `"model": "..."` in dicts
-- Common model name strings: `gpt-4`, `gpt-3.5`, `claude-3`, `claude-opus`, `mistral`, `llama`, etc.
-
-**If a model name is found**, ask the user (use `AskQuestion`):
-
-> "Your agent uses `<detected-model>`. Do you want to keep using this model?"
-> Options: Yes, keep `<detected-model>` | No, I want to use a different model
-
-- If **No**: ask them to type the model name they want to use, then update the model string in the agent file before continuing.
-
-**If no model name is detected**, skip this step silently.
-
-### Step 5 — Ask for provider (for .env scaffolding only)
+Scan the native agent source and the entrypoint file for `os.environ.get`, `os.getenv`, `os.environ["KEY"]`. Exclude system vars (`PATH HOME USER LOGNAME SHELL TERM LANG PWD TMPDIR TMP TEMP`). Note defaults as placeholder hints.
 
 Use `AskQuestion`:
 
 > "Which LLM provider does this agent use?"
 > Options: OpenAI | Anthropic | Other (OpenAI-compatible) | No LLM / configure manually
 
-Determine the required key(s):
-
+Provider → required key(s):
 - **OpenAI** → `OPENAI_API_KEY`
 - **Anthropic** → `ANTHROPIC_API_KEY`
 - **Other** → `OPENAI_BASE_URL` + `OPENAI_API_KEY`
-- **No LLM / manually** → no provider keys
+- **No LLM** → no provider keys (unless env vars were discovered)
 
-### Step 5b — Final confirmation before registering (only when entrypoint was scaffolded)
+### Step 6 — Run registration via CLI
 
-**Skip this step if the entrypoint already existed in the file.** Only run it when Step 2 scaffolded the function.
-
-Tell the user:
-
-> "Before I register the agent, please open `<file>` and check that the entrypoint looks correct:
->
-> - Parameter names and types match how you intend to call the agent
-> - The return dict keys match what the agent actually produces
-> - The `load_dotenv` line at the top will find the right `.env`
->
-> Take a moment to edit the file if anything needs adjusting. Reply when you're ready to register."
-
-Wait for explicit confirmation. Do not proceed to Step 6 until the user confirms they have reviewed the file and are happy with it.
-
-### Step 6 — Run registration
-
-Write `_register_runner.py` in the project root:
-
-```python
-import sys
-from rich.console import Console
-
-import overmind
-from overmind.core.paths import load_overmind_dotenv
-
-load_overmind_dotenv()
-overmind.init()
-
-from overmind.commands.agent_env import instrument_agent_files
-from overmind.core.registry import resolve_entrypoint, save_agent, load_registry
-
-console = Console()
-
-AGENT_NAME = "<name>"
-ENTRYPOINT = "<module:function>"
-AGENT_FILE = "<relative/path/to/agent.py>"
-
-
-# Guard: already registered?
-registry = load_registry()
-if AGENT_NAME in registry:
-    current = registry[AGENT_NAME]["entrypoint"].strip()
-    if current == ENTRYPOINT.strip():
-        console.print(
-            f"  [dim]'{AGENT_NAME}' is already registered with this entrypoint — nothing to do.[/dim]"
-        )
-        sys.exit(0)
-    console.print(
-        f"  [bold red]Error:[/bold red] '{AGENT_NAME}' is already registered with a "
-        f"different entrypoint: [dim]{current}[/dim]\n\n"
-        f"  To change it:  [bold]overmind agent update {AGENT_NAME} {ENTRYPOINT}[/bold]"
-    )
-    sys.exit(1)
-
-# 1. Copy source tree into .overmind/agents/<name>/instrumented/
-instrument_agent_files(AGENT_FILE, AGENT_NAME, console)
-
-# 2. Validate the entrypoint function exists and has the right signature
-try:
-    file_path, fn = resolve_entrypoint(ENTRYPOINT)
-    console.print(
-        f"  [bold green]✓[/bold green]  Entrypoint validated: [bold]{fn}[/bold] in {file_path}"
-    )
-except Exception as exc:
-    console.print(f"\n  [bold red]✗  Entrypoint error:[/bold red] {exc}")
-    sys.exit(1)
-
-# 3. Write to registry
-save_agent(AGENT_NAME, ENTRYPOINT)
-console.print(
-    f"\n  [bold green]✓[/bold green]  Agent '[bold]{AGENT_NAME}[/bold]' registered.\n"
-    f"  [dim]Entrypoint:[/dim] {ENTRYPOINT}\n"
-    f"  [dim]File:[/dim]      {AGENT_FILE}\n"
-)
-```
-
-Run it from the **project root** (the directory containing `.overmind/`). Never `cd` to a parent directory:
+Check if already registered:
 
 ```bash
-python _register_runner.py
+python - <<'PY'
+import pathlib, tomllib
+p = pathlib.Path(".overmind/agents.toml")
+data = tomllib.loads(p.read_text()) if p.exists() else {}
+agents = data.get("agents", {}) if isinstance(data, dict) else {}
+print("exists" if "<agent-name>" in agents else "missing")
+PY
 ```
 
-After success, delete `_register_runner.py`.
+If already registered with the same entrypoint, check whether the entrypoint file changed and refresh instrumentation if needed. If registered with a **different** entrypoint, stop and tell the user to use `overmind agent update <name> <entrypoint>`.
 
-### Step 7 — Create the .env file with placeholders
+Run registration non-interactively from the project root:
 
-After registration succeeds, create `.overmind/agents/<name>/.env` with placeholders for the credentials identified in Step 4:
+```bash
+overmind agent register --help   # inspect supported flags first
+overmind agent register "<agent-name>" "<module_path>:<callable>"
+```
+
+Pass both parameters explicitly. Do not run interactive prompt flows. If the CLI uses different flag names, map the same values and document the exact command executed.
+
+If registration fails with `ImportError` or `ModuleNotFoundError`:
+
+```bash
+# With pip
+pip install overmind && overmind agent register "<agent-name>" "<module_path>:<callable>"
+
+# With uv (from project root only — do NOT cd to a parent directory)
+uv add overmind && uv run overmind agent register "<agent-name>" "<module_path>:<callable>"
+```
+
+Verify registration succeeded:
+
+```bash
+python - <<'PY'
+import pathlib, tomllib
+p = pathlib.Path(".overmind/agents.toml")
+data = tomllib.loads(p.read_text())
+print(data.get("agents", {}).get("<agent-name>", {}).get("entrypoint", "missing"))
+PY
+```
+
+Confirm the stored entrypoint matches the expected callable string.
+
+### Step 7 — Validate local imports and instrumentation snapshot
+
+For every local import in the entrypoint file:
+
+- Resolve the imported file or package.
+- Confirm it lives under the project root.
+- Confirm it will be included in the instrumented snapshot (`.overmind/agents/<name>/instrumented/`).
+- If any local import lives outside the project root, stop. Adjust the project structure so all dependencies are inside the registered snapshot.
+
+If the entrypoint changed after a previous registration, refresh the instrumented copy by re-running registration with the same name and callable.
+
+### Step 8 — Create .env placeholder file
+
+Create `.overmind/agents/<name>/.env`:
 
 ```
 # Overmind agent env — <name>
 
 OPENAI_API_KEY=<your-openai-api-key-here>
+# ANTHROPIC_API_KEY=<your-anthropic-api-key-here>
 ```
 
 For "Other": include both `OPENAI_BASE_URL=<your-base-url-here>` and `OPENAI_API_KEY=<your-key-here>`.
 
-For each additional env var discovered in Step 3 that isn't already covered, add a placeholder line:
+For each additional env var discovered in Step 5, add a placeholder line. Preserve existing non-placeholder lines. Do not overwrite real-looking secret values. Skip the file if "No LLM" was chosen and no env vars were discovered.
 
-```
-SOME_OTHER_KEY=<value-here>
-```
+### Step 9 — Validate with sample data + summarize
 
-If "No LLM / manually" was chosen and no env vars were discovered, skip creating the file.
-
-### Step 8 — Summarize
-
-Tell the user:
-
-- Agent name and entrypoint that was registered
-- If a `.env` was created: tell them to open `.overmind/agents/<name>/.env` and fill in the placeholder value(s) before running the agent.
-- Next step: run `/overmind-generate-dataset` with agent name `<name>`. Mention that if they already have example inputs/outputs for this agent, they can provide a seed dataset file path when running that skill.
-
-Do **not** mention runner scripts, file cleanup, registry internals, or any implementation details.
-
-## Fallback: if overmind internals can't be imported
-
-If the runner fails with `ImportError` on `overmind.commands` or `overmind.core`, overmind is not installed in the active Python environment. Tell the user to install it first, then re-run:
+**If the user has sample input data**, run:
 
 ```bash
-pip install overmind
-python _register_runner.py
+overmind agent validate "<agent-name>" --data "<sample-data-path>"
 ```
 
-If the project uses `uv`, run from the **project root** (do NOT `cd` to a parent directory or pass `--project` to `uv run`):
+Use a JSON object whose keys exactly match the entrypoint parameter names. This catches parameter-name mismatches before dataset generation. If this fails with a signature error, repair the entrypoint or sample keys before proceeding.
 
-```bash
-uv add overmind && uv run python _register_runner.py
-```
+If no sample data is available, skip validation and note that runtime validation requires real credentials and a sample input.
+
+**Tell the user:**
+
+- The agent name and entrypoint (file + callable) registered.
+- Which native agent interface the harness invokes.
+- Which analyzer model/provider was configured in `.overmind/.env`.
+- Whether instrumentation was refreshed.
+- Whether an `.env` placeholder file was created or updated; that they must fill in placeholders before running.
+- Whether `overmind agent validate` was run or skipped.
+- Next step: run `/overmind-generate-dataset` for the agent. Mention they can provide a seed dataset file path if they have example inputs/outputs.
 
 ## Common issues
 
-| Problem                                                  | Fix                                                                                                  |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `Module 'x.y.z' resolves to '...', which does not exist` | Module path is wrong — check slashes vs dots; try the `/`-based form if the path has unusual dirs    |
-| `EntrypointNotFoundError`                                | Function name not found in the file — re-read and confirm the spelling                               |
-| `Agent already registered` (different entrypoint)        | Use `overmind agent update <name> <entrypoint>`                                                      |
-| `EntrypointSignatureError`                               | The function's signature is missing required `dict`/`str` params — offer to generate an auto-wrapper |
-| `ImportError: No module named overmind`                  | Install overmind first: `pip install overmind`, then re-run                                          |
-| User's agent uses no LLM directly                        | Choose "No LLM / manually" in Step 4 — skip the `.env` unless env vars were discovered in Step 3     |
+| Problem | Fix |
+|---|---|
+| `Module 'x.y.z' resolves to '...', which does not exist` | Module path is wrong — check slashes vs dots; try slash form for unusual dirs |
+| `EntrypointNotFoundError` | Function name not found in the file — re-read and confirm the spelling |
+| `Agent already registered` (different entrypoint) | Use `overmind agent update <name> <entrypoint>` |
+| `EntrypointSignatureError` | Function missing required params — offer to repair the harness |
+| `ImportError: No module named overmind` | Run `pip install overmind` or `uv add overmind`, then re-run |
+| Agent has no importable callable | Create a separate Overmind entrypoint harness |
+| Agent starts a server or UI loop | Create a harness that calls the underlying one-shot inference function |
+| Agent returns custom objects | Normalize into top-level `text`, `enum`, `number`, or `boolean` fields |
+| Entrypoint changed but registration exists | Refresh instrumentation by re-running registration |
+| Entrypoint imports files outside project root | Move the harness or adjust project structure |
+| `OVERMIND_API_KEY` or `ANALYZER_MODEL` missing | Fill in `.overmind/.env`; confirm before continuing |
+| No direct LLM usage | Choose "No LLM / manually"; skip provider placeholders unless env vars were discovered |

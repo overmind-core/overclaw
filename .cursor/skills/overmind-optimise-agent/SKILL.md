@@ -1,7 +1,9 @@
 ---
 name: overmind-optimise-agent
-description: Drive the full `overmind optimize` loop from the host coding agent (Cursor / Codex / Claude Code) instead of the in-process Python coder. Use when the user wants to optimize a registered Overmind agent, run iterative improvement, generate N candidate fixes per iteration in parallel, evaluate them, and keep the best — with early stopping. The skill collects all configuration via `AskQuestion`, then drives the optimization loop by calling the `overmind optimize-step` JSON CLI between phases. Heavy lifting (subprocess-isolated agent runs, scoring, regression gating) stays in Python; per-candidate code edits are delegated to parallel sub-coding-agents in git worktrees.
-disable-model-invocation: true
+description: "Drive the full overmind optimize loop from the host coding agent (Cursor / Codex / Claude Code) instead of the in-process Python coder. Use when the user wants to optimize a registered Overmind agent, run iterative improvement, generate N candidate fixes per iteration in parallel, evaluate them, and keep the best — with early stopping."
+metadata:
+  version: "2.0"
+  product: "Overmind"
 ---
 
 # Optimise an Overmind Agent (host-agent driven)
@@ -23,7 +25,7 @@ The skill is built on top of `overmind optimize-step`, a JSON-in/JSON-out CLI th
 1. `setup_spec/eval_spec.json` and `setup_spec/dataset.json` exist under `.overmind/agents/<name>/`. If not, run `/overmind-generate-policy-and-eval` and `/overmind-generate-dataset` first.
 1. Provider API keys are set in `.overmind/.env` or `.overmind/agents/<name>/.env`.
 
-If any prerequisite is missing, **stop** and tell the user which one to satisfy. Do not attempt to proceed.
+If any prerequisite is missing, **stop** and tell the user which one to satisfy.
 
 Note: in this repo the `.overmind/` state directory may live at the project root **or** inside a sub-project (e.g. `new_examples/langextract/.overmind/`). Run all commands from the directory that contains the relevant `.overmind/`.
 
@@ -36,7 +38,7 @@ Optimization Progress:
 - [ ] Step 1: Resolve agent + check prerequisites
 - [ ] Step 2: Collect configuration
 - [ ] Step 3: Initialize
-- [ ] Step 4: Run baseline eval
+- [ ] Step 4: Run baseline eval (classify zero baselines before proceeding)
 - [ ] Step 5: Optimization loop (per iteration: diagnose → edit candidates → evaluate → accept/reject)
 - [ ] Step 6: Render report
 - [ ] Step 7: Summarize to user
@@ -48,17 +50,24 @@ Look up the agent in `.overmind/agents.toml`. Confirm `setup_spec/eval_spec.json
 
 ### Step 2 — Collect configuration via `AskQuestion`
 
-Use `AskQuestion`. Ask the **core** questions in one batch first; only ask the **advanced** ones if the user opts in. Build a `settings` dict from the answers.
+First, ask:
 
-#### Core (always ask)
+> "How would you like to configure the optimizer?"
+> Options: Quick setup (use all defaults) | Adjust parameters
 
-| Field                      | Default                                                      | Question                                                           |
-| -------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------ |
-| `iterations`               | 5                                                            | "How many optimization iterations?"                                |
-| `candidates_per_iteration` | 3                                                            | "Candidates per iteration (best-of-N parallel)?"                   |
-| `early_stopping_patience`  | 3                                                            | "Stop after N iterations with no improvement? (0 = disabled)"      |
-| `analyzer_model`           | `$ANALYZER_MODEL`, else `anthropic/claude-sonnet-4-20250514` | "Which model should diagnose failures and design candidate plans?" |
-| `enable_judge` (yes/no)    | no                                                           | "Enable LLM-as-Judge scoring? (~10% extra eval cost)"              |
+If the user chooses **Quick setup**, apply every default below and skip straight to Step 3.
+
+If the user chooses **Adjust parameters**, ask the **core** questions in one batch first; only ask the **advanced** ones if the user opts in. Build a `settings` dict from the answers.
+
+#### Core (ask when adjusting parameters)
+
+| Field | Default | Question |
+|---|---|---|
+| `iterations` | 5 | "How many optimization iterations?" |
+| `candidates_per_iteration` | 3 | "Candidates per iteration (best-of-N parallel)?" |
+| `early_stopping_patience` | 3 | "Stop after N iterations with no improvement? (0 = disabled)" |
+| `analyzer_model` | `$ANALYZER_MODEL`, else `anthropic/claude-sonnet-4-20250514` | "Which model should diagnose failures and design candidate plans?" |
+| `enable_judge` (yes/no) | no | "Enable LLM-as-Judge scoring? (~10% extra eval cost)" |
 
 If `enable_judge: yes`, set `llm_judge_model = analyzer_model` (or ask for a specific judge model).
 
@@ -77,13 +86,29 @@ Parse the JSON envelope. On `status: error, error: state_already_exists`, ask th
 
 Capture `STATE_PATH` from the response — every subsequent step uses `--state $STATE_PATH`.
 
-### Step 4 — Baseline
+### Step 4 — Baseline (with zero-baseline classification)
 
 ```bash
 overmind optimize-step baseline --state $STATE_PATH
 ```
 
 Returns `{baseline_score, train_size, holdout_size, working_path, ...}`. Tell the user the baseline.
+
+**If the baseline score is exactly 0, stop and investigate before proceeding.** Do not assume optimization should continue from zero — this usually signals a setup problem, not a performance problem.
+
+Use a focused investigation subagent when the baseline artifacts or codebase are large. The investigation subagent should inspect the baseline artifacts, eval spec, dataset, registered entrypoint, and score reports, then return a concise classification.
+
+Classify the zero baseline as one of:
+
+| Classification | Meaning | What to do |
+|---|---|---|
+| **Setup failure** | Agent can't import/run — credentials missing, entrypoint broken, imports fail | Fix registration or credentials; do not optimize |
+| **Scoring failure** | Agent runs but the eval spec can't score its outputs — field mismatches, wrong types, `string` instead of `text` | Fix the eval spec; do not optimize |
+| **Dataset mismatch** | Dataset inputs don't match the registered callable, or expected outputs don't align with evaluator fields | Fix the dataset; do not optimize |
+| **Genuine performance failure** | Agent runs and scores correctly, but fails every case | Proceed with optimization |
+| **Inconclusive** | Not enough evidence to classify | Investigate further before proceeding |
+
+Proceed to optimization **only** if the zero baseline is classified as genuine performance failure, or the user explicitly asks to optimize anyway despite the risk.
 
 ### Step 5 — Optimization loop
 
@@ -106,23 +131,22 @@ Returns:
       "worktree": "<absolute path>",
       "prompt_path": "<worktree>/PROMPT.md",
       "plan_path": "<worktree>/plan.json",
-      "entry_file": "test.py",
-      "entry_path": "<worktree>/test.py",
+      "entry_file": "agent.py",
+      "entry_path": "<worktree>/agent.py",
       "method": "plan(tool_description)",
       "focus_area": "tool_description"
-    },
-    ...
+    }
   ]
 }
 ```
 
-Each worktree is a proper **git worktree** (created via `git worktree add --detach`) populated with the current best agent files plus a `PROMPT.md` containing the full edit instructions for that candidate. The sub-agent can use `git status` / `git diff` inside the worktree to review its own changes.
+Each worktree is a proper **git worktree** (created via `git worktree add --detach`) populated with the current best agent files plus a `PROMPT.md` with full edit instructions for that candidate.
 
-If the envelope has `status: "warn"` and a `diagnose_warning` block, **stop the loop and report to the user**. This means the analyzer LLM call failed (most often a missing `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` for the analyzer model) and `n_candidates` collapsed to a single empty placeholder. Do not silently fall back to manual edits — surface `diagnose_warning.last_error` and `diagnose_warning.hint`, ask the user to fix env / model config, then re-run.
+If the envelope has `status: "warn"` and a `diagnose_warning` block, **stop the loop and report to the user**. This means the analyzer LLM call failed (most often a missing API key for the analyzer model). Do not silently fall back to manual edits — surface `diagnose_warning.last_error` and `diagnose_warning.hint`, ask the user to fix env / model config, then re-run.
 
 #### 5b. Spawn N parallel sub-coding-agents
 
-Detect the host once, at skill start, and use the right spawn method below. **Always** background the spawn and `wait` on all PIDs before evaluating.
+Detect the host once, at skill start, and use the right spawn method below. **Always** background the spawn and wait on all agents before evaluating.
 
 **Cursor (preferred):**
 
@@ -160,7 +184,7 @@ For each candidate, call the Task tool with:
   run_in_background: true
 ```
 
-Collect the returned task IDs and wait for all to complete (poll with `AwaitShell`/`AwaitTask` until each terminates).
+Collect the returned task IDs and wait for all to complete.
 
 **Codex CLI:**
 
@@ -186,7 +210,7 @@ done
 for p in "${PIDS[@]}"; do wait "$p"; done
 ```
 
-If you cannot detect the host, fall back to **sequential** edits: for each candidate, switch to its worktree and apply edits yourself one at a time. This is slower but always works.
+If the host cannot be detected, fall back to **sequential** edits: switch to each worktree and apply edits yourself one at a time.
 
 #### 5c. Evaluate each candidate
 
@@ -200,7 +224,18 @@ for c in $CANDIDATES_JSON; do
 done
 ```
 
-Each evaluate writes `score.json` into the worktree. Build a `candidate_results.json` array listing each candidate's `candidate_id`, `candidate_dir`, `entry_path`, and `score_path`.
+Each evaluate writes `score.json` into the worktree. Build a `candidate_results.json` array. Use **absolute paths** for every path field to avoid resolution errors across host environments:
+
+```json
+[
+  {
+    "candidate_id": "c0",
+    "candidate_dir": "/abs/path/to/.overmind/agents/<name>/experiments/iter_001_c0",
+    "entry_path": "/abs/path/to/.overmind/agents/<name>/experiments/iter_001_c0/agent.py",
+    "score_path": "/abs/path/to/.overmind/agents/<name>/experiments/iter_001_c0/score.json"
+  }
+]
+```
 
 #### 5d. Acceptance + early-stopping
 
@@ -230,7 +265,46 @@ Tell them:
 - Baseline → final score (delta).
 - Iterations completed; whether early-stopping fired.
 - Path to `report.md` and the best-agent working file.
-- The N candidate worktrees per iteration are under `experiments/iter_NNN_cI/` if they want to inspect them.
+- The N candidate worktrees per iteration are under `experiments/iter_NNN_cI/` for inspection.
+
+## Progress updates
+
+Give the user a concise update at each of these milestones (do not wait until the end):
+
+- Prerequisites checked.
+- Settings initialized and `STATE_PATH` captured.
+- Baseline score computed.
+- Zero-baseline investigation result, if applicable.
+- Candidate worktrees materialized for each iteration.
+- Candidate edits completed.
+- Candidate scores and acceptance decision.
+- Early stopping triggered, if applicable.
+- Final report rendered.
+
+## Candidate edit guardrails
+
+Reject or repair candidate work before evaluation when it violates these hard rules:
+
+- It edits generated `.overmind` state or setup artifacts during optimization.
+- It hardcodes exact dataset inputs, expected answers, IDs, or diagnosis examples.
+- It adds lookup tables keyed by example values.
+- It adds brittle `if`, `elif`, `match`, or regex branches that exist only to match known test examples.
+- It deletes core agent behavior rather than improving it.
+- It moves files out of the worktree.
+- It modifies provider secrets or prints secret values.
+- It edits the registered Overmind entrypoint file in a way that breaks the callable contract.
+
+Prefer to let evaluation catch quality regressions, but do not evaluate candidates that violate hardcoding, state-mutation, secret-handling, or worktree-boundary rules.
+
+## Using subagents
+
+Use subagents whenever they improve reliability or parallelism:
+
+- **Candidate subagents**: Spawn one sub-coding-agent per candidate worktree when the host supports background tasks.
+- **Investigation subagents**: Spawn a focused codebase/debugging subagent for zero baselines, confusing evaluator failures, or analyzer warnings that require artifact inspection.
+- **Review subagents**: Spawn a review subagent when candidate patches are large or touch shared behavior before evaluation.
+
+Do not spawn subagents that edit the same worktree concurrently.
 
 ## Useful inspection commands
 
@@ -239,9 +313,22 @@ overmind optimize-step status --state $STATE_PATH
 # -> {status: ok, state: {...}, early_stop: bool}
 ```
 
+## Handling common failures
+
+| Problem | Fix |
+|---|---|
+| State already exists | Ask whether to resume or start fresh. Use overwrite only with explicit approval. |
+| Missing eval spec | Stop and run or recommend `overmind-generate-policy-and-eval` |
+| Missing dataset | Stop and run or recommend `overmind-generate-dataset` |
+| Zero baseline | Classify as setup / scoring / dataset / genuine failure before proceeding (see Step 4) |
+| Analyzer warning | Stop and report the warning's last error and hint; fix env / model config, then re-run |
+| Candidate worktree missing | Mark that candidate failed and continue evaluating the others |
+| All candidates crash | Report the iteration result, then follow the accept-step state about whether to continue |
+| No improvement for patience window | Stop early when the accept step reports early stopping |
+
 ## Build status
 
-The current implementation is a working MVP with **simplified acceptance gates**: the highest-scoring candidate wins iff it strictly beats the current best. The following are **not yet ported** from the in-process `Optimizer.run()` (they will be added in a follow-up):
+The current implementation is a working MVP with **simplified acceptance gates**: the highest-scoring candidate wins iff it strictly beats the current best. The following are **not yet ported** from the in-process `Optimizer.run()`:
 
 - Cross-run regression suite checks (`_check_regression_suite`)
 - Holdout enforcement / blended scoring (`_rollback_to_best_snapshot`)
