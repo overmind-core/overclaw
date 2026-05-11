@@ -34,6 +34,7 @@ KIND_RUNTIME_CRASH = "runtime_crash"
 KIND_OUTPUT_SCHEMA_MISMATCH = "output_schema_mismatch"
 KIND_METRIC_BROKEN = "metric_broken"
 KIND_INVALID_WEIGHTS = "invalid_weights"
+KIND_CONSISTENCY_RULES_INVALID = "consistency_rules_invalid"
 KIND_DATASET_ROW_INVALID = "dataset_row_invalid"
 KIND_INSTRUMENTATION_BROKEN = "instrumentation_broken"
 KIND_DEGENERATE_OUTPUT = "degenerate_output"
@@ -241,6 +242,9 @@ def classify(
         weight_issue = _check_weights(eval_spec)
         if weight_issue:
             issues.append(weight_issue)
+        consistency_issue = _check_consistency_rules(eval_spec)
+        if consistency_issue:
+            issues.append(consistency_issue)
 
     # ------------------------------------------------------------------
     # Output schema vs what the agent actually returns
@@ -320,6 +324,32 @@ def _check_weights(eval_spec: dict) -> IssueRecord | None:
         target="eval_spec",
         reason=f"eval_spec weights sum to {actual:.1f} but total_points is {total_declared:.1f}.",
         details={"actual": actual, "expected": total_declared},
+    )
+
+
+def _check_consistency_rules(eval_spec: dict) -> IssueRecord | None:
+    """Detect consistency_rules entries that are strings instead of rule dicts.
+
+    Valid entries must be dicts with at least ``field_a`` and ``field_b`` keys.
+    Free-text strings (which belong in policy.domain_rules) crash the scorer
+    when it tries to do ``json.loads(rule)`` on them.
+    """
+    rules = eval_spec.get("consistency_rules")
+    if not rules or not isinstance(rules, list):
+        return None
+    bad = [r for r in rules if not isinstance(r, dict) or not r.get("field_a") or not r.get("field_b")]
+    if not bad:
+        return None
+    return IssueRecord(
+        kind=KIND_CONSISTENCY_RULES_INVALID,
+        severity="fix",
+        target="eval_spec",
+        reason=(
+            f"{len(bad)} of {len(rules)} consistency_rules entries are not valid rule dicts "
+            "(each entry needs field_a, field_b, and type). "
+            "Free-text strings belong in policy.domain_rules, not here."
+        ),
+        details={"bad_count": len(bad), "total": len(rules)},
     )
 
 

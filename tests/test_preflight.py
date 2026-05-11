@@ -24,6 +24,7 @@ from overmind.preflight.autofix import (
     weights as autofix_weights,
 )
 from overmind.preflight.classifier import (
+    KIND_CONSISTENCY_RULES_INVALID,
     KIND_DEGENERATE_OUTPUT,
     KIND_INSTRUMENTATION_BROKEN,
     KIND_INVALID_WEIGHTS,
@@ -177,6 +178,35 @@ class TestClassifier:
         issues = classifier.classify(smoke, eval_spec={})
         assert not any(i.kind == KIND_DEGENERATE_OUTPUT for i in issues)
 
+    def test_consistency_rules_free_text_detected(self):
+        """Free-text strings in consistency_rules are flagged as fixable."""
+        spec = {
+            "output_fields": {"result": {"type": "text", "weight": 100}},
+            "total_points": 100,
+            "consistency_rules": [
+                "Agent should not escalate if the customer is satisfied",
+                "Refunds should be processed within 5 business days",
+            ],
+        }
+        smoke = _make_smoke(cases=[_ok_case(0, output={"result": "ok"})], span_count=1)
+        issues = classifier.classify(smoke, eval_spec=spec)
+        cr = [i for i in issues if i.kind == KIND_CONSISTENCY_RULES_INVALID]
+        assert cr, "expected consistency_rules_invalid issue"
+        assert cr[0].severity == "fix"
+        assert cr[0].details["bad_count"] == 2
+
+    def test_consistency_rules_valid_dicts_not_flagged(self):
+        spec = {
+            "output_fields": {"urgency": {"type": "number", "weight": 100}},
+            "total_points": 100,
+            "consistency_rules": [
+                {"field_a": "urgency", "field_b": "priority", "type": "correlation"},
+            ],
+        }
+        smoke = _make_smoke(cases=[_ok_case(0, output={"urgency": 1})], span_count=1)
+        issues = classifier.classify(smoke, eval_spec=spec)
+        assert not any(i.kind == KIND_CONSISTENCY_RULES_INVALID for i in issues)
+
 
 # ---------------------------------------------------------------------------
 # Autofix — pure function transforms
@@ -286,6 +316,30 @@ class TestAutofixMetrics:
         )
         assert working_state.eval_spec["output_fields"]["a"]["type"] == "text"
         assert working_state.eval_spec["output_fields"]["b"]["type"] == "text"
+
+    def test_removes_free_text_consistency_rules(self, working_state):
+        working_state.eval_spec["consistency_rules"] = [
+            "Agent should not escalate if customer is satisfied",
+            {"field_a": "urgency", "field_b": "priority", "type": "correlation"},
+            "Another free-text rule",
+        ]
+        autofix_metrics.apply_consistency_rules_invalid(
+            working_state,
+            IssueRecord(kind="consistency_rules_invalid", severity="fix", target="eval_spec", reason="test"),
+        )
+        rules = working_state.eval_spec["consistency_rules"]
+        assert len(rules) == 1
+        assert rules[0]["field_a"] == "urgency"
+
+    def test_idempotent_when_rules_already_valid(self, working_state):
+        working_state.eval_spec["consistency_rules"] = [
+            {"field_a": "a", "field_b": "b", "type": "correlation"},
+        ]
+        patches = autofix_metrics.apply_consistency_rules_invalid(
+            working_state,
+            IssueRecord(kind="consistency_rules_invalid", severity="fix", target="eval_spec", reason="test"),
+        )
+        assert patches == []
 
 
 # ---------------------------------------------------------------------------

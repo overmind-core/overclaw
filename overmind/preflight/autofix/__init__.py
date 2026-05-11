@@ -20,13 +20,14 @@ from overmind.preflight.autofix.instrument import (
     apply_import_error,
     apply_instrumentation_broken,
 )
-from overmind.preflight.autofix.metrics import apply_metric_broken
+from overmind.preflight.autofix.metrics import apply_consistency_rules_invalid, apply_metric_broken
 from overmind.preflight.autofix.schema import (
     apply_entrypoint_signature,
     apply_output_schema_mismatch,
 )
 from overmind.preflight.autofix.weights import apply_invalid_weights
 from overmind.preflight.classifier import (
+    KIND_CONSISTENCY_RULES_INVALID,
     KIND_DATASET_ROW_INVALID,
     KIND_DEP_MISSING,
     KIND_ENTRYPOINT_SIGNATURE,
@@ -42,6 +43,7 @@ from overmind.preflight.workspace import WorkingState
 # Handler dispatch table.
 HANDLERS: dict[str, Callable[[WorkingState, IssueRecord], list[PatchRecord]]] = {
     KIND_INVALID_WEIGHTS: apply_invalid_weights,
+    KIND_CONSISTENCY_RULES_INVALID: apply_consistency_rules_invalid,
     KIND_OUTPUT_SCHEMA_MISMATCH: apply_output_schema_mismatch,
     KIND_ENTRYPOINT_SIGNATURE: apply_entrypoint_signature,
     KIND_METRIC_BROKEN: apply_metric_broken,
@@ -54,6 +56,7 @@ HANDLERS: dict[str, Callable[[WorkingState, IssueRecord], list[PatchRecord]]] = 
 # Handlers run in this order within a fix pass.
 HANDLER_ORDER: list[str] = [
     KIND_INVALID_WEIGHTS,
+    KIND_CONSISTENCY_RULES_INVALID,
     KIND_METRIC_BROKEN,
     KIND_DATASET_ROW_INVALID,
     KIND_ENTRYPOINT_SIGNATURE,

@@ -578,7 +578,13 @@ class SpecEvaluator:
         logger.info(f"Rules: {rules}, type: {type(rules)}")
         for rule in rules:
             if isinstance(rule, str):
-                rule = json.loads(rule)
+                try:
+                    rule = json.loads(rule)
+                except (json.JSONDecodeError, ValueError):
+                    logger.debug("Skipping malformed consistency_rules entry (not a JSON dict): %r", str(rule)[:120])
+                    continue
+            if not isinstance(rule, dict):
+                continue
             field_a = rule.get("field_a", "")
             field_b = rule.get("field_b", "")
             val_a = output.get(field_a)

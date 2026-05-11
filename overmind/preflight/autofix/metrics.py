@@ -1,4 +1,6 @@
-"""Drop ``output_fields`` whose scorer raises so the spec produces a finite total."""
+"""Drop ``output_fields`` whose scorer raises so the spec produces a finite total.
+Also removes malformed ``consistency_rules`` entries that would crash the scorer.
+"""
 
 from __future__ import annotations
 
@@ -76,3 +78,35 @@ def apply_metric_broken(state: WorkingState, issue: IssueRecord) -> list[PatchRe
         )
     )
     return patches
+
+
+def apply_consistency_rules_invalid(state: WorkingState, issue: IssueRecord) -> list[PatchRecord]:
+    """Remove consistency_rules entries that are not valid rule dicts.
+
+    A valid entry needs at minimum ``field_a`` and ``field_b``.  Free-text
+    strings and other non-dict values crash the scorer's ``json.loads`` call.
+    We drop them so scoring can proceed; the user can add real rules manually
+    or via the spec generator.
+    """
+    rules = state.eval_spec.get("consistency_rules")
+    if not isinstance(rules, list):
+        return []
+    valid = [r for r in rules if isinstance(r, dict) and r.get("field_a") and r.get("field_b")]
+    if len(valid) == len(rules):
+        return []
+    dropped = len(rules) - len(valid)
+    state.eval_spec["consistency_rules"] = valid
+    return [
+        PatchRecord(
+            iteration=0,
+            kind=issue.kind,
+            file=str(state.eval_spec_path),
+            before_hash="",
+            after_hash="",
+            reason=issue.reason,
+            diff_summary=(
+                f"Removed {dropped} malformed consistency_rules entries (non-dict or missing field_a/field_b). "
+                "Add proper rule dicts or leave the field empty."
+            ),
+        )
+    ]
