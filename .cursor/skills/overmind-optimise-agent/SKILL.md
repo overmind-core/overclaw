@@ -1,6 +1,8 @@
-______________________________________________________________________
-
-## name: overmind-optimise-agent description: Drive the full `overmind optimize` loop from the host coding agent (Cursor / Codex / Claude Code) instead of the in-process Python coder. Use when the user wants to optimize a registered Overmind agent, run iterative improvement, generate N candidate fixes per iteration in parallel, evaluate them, and keep the best — with early stopping. The skill collects all configuration via `AskQuestion`, then drives the optimization loop by calling the `overmind optimize-step` JSON CLI between phases. Heavy lifting (subprocess-isolated agent runs, scoring, regression gating) stays in Python; per-candidate code edits are delegated to parallel sub-coding-agents in git worktrees. disable-model-invocation: true
+---
+name: overmind-optimise-agent
+description: Drive the full `overmind optimize` loop from the host coding agent (Cursor / Codex / Claude Code) instead of the in-process Python coder. Use when the user wants to optimize a registered Overmind agent, run iterative improvement, generate N candidate fixes per iteration in parallel, evaluate them, and keep the best — with early stopping. The skill collects all configuration via `AskQuestion`, then drives the optimization loop by calling the `overmind optimize-step` JSON CLI between phases. Heavy lifting (subprocess-isolated agent runs, scoring, regression gating) stays in Python; per-candidate code edits are delegated to parallel sub-coding-agents in git worktrees.
+disable-model-invocation: true
+---
 
 # Optimise an Overmind Agent (host-agent driven)
 
@@ -26,6 +28,19 @@ If any prerequisite is missing, **stop** and tell the user which one to satisfy.
 Note: in this repo the `.overmind/` state directory may live at the project root **or** inside a sub-project (e.g. `new_examples/langextract/.overmind/`). Run all commands from the directory that contains the relevant `.overmind/`.
 
 ## Workflow
+
+Copy this checklist into your response and check off each step as you complete it:
+
+```
+Optimization Progress:
+- [ ] Step 1: Resolve agent + check prerequisites
+- [ ] Step 2: Collect configuration
+- [ ] Step 3: Initialize
+- [ ] Step 4: Run baseline eval
+- [ ] Step 5: Optimization loop (per iteration: diagnose → edit candidates → evaluate → accept/reject)
+- [ ] Step 6: Render report
+- [ ] Step 7: Summarize to user
+```
 
 ### Step 1 — Resolve agent + check prerequisites
 

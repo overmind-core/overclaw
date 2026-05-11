@@ -1,6 +1,8 @@
-______________________________________________________________________
-
-## name: overmind-generate-policy-and-eval description: Interactively generate (or repair) the policy file and eval spec for an Overmind/Overclaw agent. Use when the user wants to create a policy.md / eval_spec.json, fix a broken eval spec (wrong input_schema, missing output fields, bad weights), or rebuild policies before running `overmind optimize`. The skill analyzes the agent entrypoint, decomposes inputs and outputs correctly, asks the user clarifying questions about domain rules and edge cases, and writes the canonical artifacts under `.overmind/agents/<name>/setup_spec/`. disable-model-invocation: true
+---
+name: overmind-generate-policy-and-eval
+description: Generates (or repairs) the policy file and eval spec for an Overmind/Overclaw agent. Use when the user wants to create a policy.md / eval_spec.json, fix a broken eval spec (wrong input_schema, missing output fields, bad weights), or rebuild policies before running `overmind optimize`. Analyzes the agent entrypoint, decomposes inputs and outputs correctly, asks clarifying questions about domain rules and edge cases, and writes the canonical artifacts under `.overmind/agents/<name>/setup_spec/`.
+disable-model-invocation: true
+---
 
 # Generate Policy and Eval Spec for an Overmind Agent
 
@@ -38,6 +40,20 @@ Collect, in order, asking only what isn't obvious from context. Use the `AskQues
 | 6   | **Existing artifacts**  | Read any current `setup_spec/eval_spec.json` and `setup_spec/policies.md`. Diff against what we'd generate.                                                                                                                                                                                    |
 
 ## Workflow
+
+Copy this checklist into your response and check off each step as you complete it:
+
+```
+Policy & Eval Spec Progress:
+- [ ] Step 1: Read and analyze the agent
+- [ ] Step 2: Confirm analysis with user
+- [ ] Step 3: Elicit the policy
+- [ ] Step 4: Generate policy and eval spec (held in memory — do not save yet)
+- [ ] Step 5: Show content and get user approval
+- [ ] Step 6: Save artifacts to disk
+- [ ] Step 7: Smoke test (non-blocking)
+- [ ] Step 8: Summarize
+```
 
 ### Step 1 — Read and analyze the agent
 
@@ -384,28 +400,11 @@ End the session with:
 
 ## Repair mode (existing broken artifacts)
 
-When the user points the skill at an agent that already has a `setup_spec/` directory:
-
-1. Read `eval_spec.json` and `policies.md`.
-1. Run static analysis on the agent (Step 1).
-1. Diff: list every field that is wrong (collapsed input, missing output keys, weight sum ≠ 100, empty policy lists, mismatched enum values vs code).
-1. Show the diff to the user. `AskQuestion`: *"Apply all fixes / pick which to apply / abort"*.
-1. Apply selected fixes, re-run validation, re-save.
-
-The diff format must be concrete — show the *current* vs *proposed* value side by side, not a vague "this looks wrong".
+See [references/repair-mode.md](references/repair-mode.md) for the full repair workflow.
 
 ## Common issues
 
-| Problem                                                               | Fix                                                                                                                                                                                                                                               |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ImportError: overmind.setup`                                         | overmind is not installed — run `pip install overmind` and re-run.                                                                                                                                                                                |
-| Policy generation returns empty `domain_rules: []`                    | The LLM produced markdown but no JSON block — re-prompt with: *"Append a `\`\`\`json\` block at the end with keys: domain_rules, domain_edge_cases, terminology, output_constraints, tool_requirements, decision_mapping, quality_expectations."* |
-| `input_schema` has one `object`-typed entry matching a dict parameter | Decompose: read seed data keys or ask the user one question per sub-field.                                                                                                                                                                        |
-| Weights sum to 99 or 101                                              | Apply the rounding-residual fix in Step 4.                                                                                                                                                                                                        |
-| Output field present in `return` but absent from spec                 | Add it; re-allocate weights.                                                                                                                                                                                                                      |
-| Smoke test: `TypeError: unexpected keyword argument`                  | Field name in `input_schema` doesn't match a parameter. Use the entrypoint signature as ground truth and rename.                                                                                                                                  |
-| User has a long policy doc but no structured policy block             | Use `generate_policy_from_document` (when overmind is importable) or wrap it in a single `domain_rules: [<full text>]` entry as a temporary stop-gap and warn the user.                                                                           |
-| Agent's only entrypoint is async                                      | Wrap the smoke-test call in `asyncio.run(fn(**kwargs))`. The eval spec itself doesn't change.                                                                                                                                                     |
+See [references/common-issues.md](references/common-issues.md) for the full troubleshooting table.
 
 ## What the skill must NOT do
 
