@@ -148,6 +148,85 @@ Read:
 
 Identify how the agent is invoked today. Look for public functions (`run`, `run_agent`, `agent`, `main`, `invoke`, `predict`, `respond`, `__call__`), classes with invocation methods, CLI entrypoints, and route handlers. Distinguish the **native interface** (how it runs today) from the **Overmind entrypoint** (the separate harness).
 
+**Check for a dependency manifest and offer to create one if missing:**
+
+```bash
+python - <<'PY'
+import ast, pathlib, sys
+
+agent_file = pathlib.Path("<agent-file-path>")
+agent_dir  = agent_file.parent
+
+# Check whether a manifest already exists
+has_req     = (agent_dir / "requirements.txt").is_file()
+has_proj    = (agent_dir / "pyproject.toml").is_file()
+has_setup   = (agent_dir / "setup.py").is_file()
+
+if has_req or has_proj or has_setup:
+    print("manifest:present")
+    sys.exit(0)
+
+# No manifest — scan the entry file for external imports
+STDLIB = getattr(sys, "stdlib_module_names", frozenset()) | frozenset(sys.builtin_module_names)
+SKIP   = {"overmind", "pkg_resources", "setuptools", "pip"}
+LOCAL  = {p.stem for p in agent_dir.rglob("*.py") if p.stem != "__init__"}
+
+code   = agent_file.read_text(encoding="utf-8")
+try:
+    tree = ast.parse(code)
+except SyntaxError:
+    print("manifest:missing packages:unknown")
+    sys.exit(0)
+
+imports = []
+for node in ast.iter_child_nodes(tree):
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            imports.append(alias.name.split(".")[0])
+    elif isinstance(node, ast.ImportFrom) and node.module:
+        imports.append(node.module.split(".")[0])
+
+ext = sorted({m for m in dict.fromkeys(imports)
+              if m not in STDLIB and m not in SKIP and m not in LOCAL})
+
+if ext:
+    print("manifest:missing packages:" + ",".join(ext))
+else:
+    print("manifest:missing packages:none")
+PY
+```
+
+Parse the output:
+
+- `manifest:present` → dependency manifest already exists; continue to Step 4.
+- `manifest:missing packages:none` → no external packages detected; no manifest needed; continue.
+- `manifest:missing packages:<pkg1,pkg2,...>` → **no manifest and external packages detected**.
+
+When packages are detected but no manifest exists, ask the user via `AskQuestion`:
+
+> "No `requirements.txt` was found in `<agent-dir>`. I detected these external packages in your agent: `<pkg1>`, `<pkg2>`, …
+> Should I create a `requirements.txt` and install them using `uv`?"
+> Options: **Yes, create and install** | **No, I'll handle it manually**
+
+If the user chooses **Yes**:
+
+1. Write `requirements.txt` to the agent directory with the detected package names (one per line, unpinned). Also add `python-dotenv` if not already present (the entrypoint harness needs it).
+2. Create a venv and install using `uv` (fall back to `pip` only if `uv` is not on `$PATH`):
+
+```bash
+# Preferred: uv
+uv venv "<agent-dir>/.venv"
+uv pip install --python "<agent-dir>/.venv/bin/python" -r "<agent-dir>/requirements.txt"
+
+# Fallback if uv is unavailable:
+# python -m venv "<agent-dir>/.venv"
+# "<agent-dir>/.venv/bin/pip" install -r "<agent-dir>/requirements.txt"
+```
+
+3. Confirm the install succeeded. Tell the user which packages were added to `requirements.txt` and that the file is now part of the agent directory.
+
+If the user chooses **No**, note that the runner will auto-generate a `requirements.txt` on the first optimization run (using the same import scan), but manual review of the package list is recommended before then.
+
 ### Step 4 — Create or validate the separate Overmind entrypoint file
 
 The entrypoint file must:
@@ -235,11 +314,11 @@ Pass both parameters explicitly. Do not run interactive prompt flows. If the CLI
 If registration fails with `ImportError` or `ModuleNotFoundError`:
 
 ```bash
-# With pip
-pip install overmind && overmind agent register "<agent-name>" "<module_path>:<callable>"
-
-# With uv (from project root only — do NOT cd to a parent directory)
+# Preferred: uv (from project root only — do NOT cd to a parent directory)
 uv add overmind && uv run overmind agent register "<agent-name>" "<module_path>:<callable>"
+
+# Fallback if uv is unavailable:
+# pip install overmind && overmind agent register "<agent-name>" "<module_path>:<callable>"
 ```
 
 Verify registration succeeded:
@@ -314,7 +393,7 @@ If no sample data is available, skip validation and note that runtime validation
 | `EntrypointNotFoundError` | Function name not found in the file — re-read and confirm the spelling |
 | `Agent already registered` (different entrypoint) | Use `overmind agent update <name> <entrypoint>` |
 | `EntrypointSignatureError` | Function missing required params — offer to repair the harness |
-| `ImportError: No module named overmind` | Run `pip install overmind` or `uv add overmind`, then re-run |
+| `ImportError: No module named overmind` | Run `uv add overmind` (preferred) or `pip install overmind` if uv is unavailable, then re-run |
 | Agent has no importable callable | Create a separate Overmind entrypoint harness |
 | Agent starts a server or UI loop | Create a harness that calls the underlying one-shot inference function |
 | Agent returns custom objects | Normalize into top-level `text`, `enum`, `number`, or `boolean` fields |
