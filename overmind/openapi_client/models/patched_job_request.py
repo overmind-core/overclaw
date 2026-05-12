@@ -45,12 +45,10 @@ class PatchedJobRequest(BaseModel):
     report_markdown: Optional[StrictStr] = None
     best_agent_code: Optional[StrictStr] = None
     backtest_results: Optional[Any] = None
-    current_iteration: Optional[Annotated[int, Field(le=9223372036854775807, strict=True, ge=-9223372036854775808)]] = None
-    logs: Optional[Any] = None
     project: Optional[UUID] = None
     agent: Optional[UUID] = None
     triggered_by: Optional[StrictInt] = None
-    __properties: ClassVar[List[str]] = ["job_type", "prompt_slug", "status", "celery_task_id", "result", "analyzer_model", "num_iterations", "candidates_per_iteration", "data_source", "baseline_score", "best_score", "improvement", "report_markdown", "best_agent_code", "backtest_results", "current_iteration", "logs", "project", "agent", "triggered_by"]
+    __properties: ClassVar[List[str]] = ["job_type", "prompt_slug", "status", "celery_task_id", "result", "analyzer_model", "num_iterations", "candidates_per_iteration", "data_source", "baseline_score", "best_score", "improvement", "report_markdown", "best_agent_code", "backtest_results", "project", "agent", "triggered_by"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -116,16 +114,6 @@ class PatchedJobRequest(BaseModel):
         if self.backtest_results is None and "backtest_results" in self.model_fields_set:
             _dict['backtest_results'] = None
 
-        # set to None if current_iteration (nullable) is None
-        # and model_fields_set contains the field
-        if self.current_iteration is None and "current_iteration" in self.model_fields_set:
-            _dict['current_iteration'] = None
-
-        # set to None if logs (nullable) is None
-        # and model_fields_set contains the field
-        if self.logs is None and "logs" in self.model_fields_set:
-            _dict['logs'] = None
-
         # set to None if project (nullable) is None
         # and model_fields_set contains the field
         if self.project is None and "project" in self.model_fields_set:
@@ -168,8 +156,6 @@ class PatchedJobRequest(BaseModel):
             "report_markdown": obj.get("report_markdown"),
             "best_agent_code": obj.get("best_agent_code"),
             "backtest_results": obj.get("backtest_results"),
-            "current_iteration": obj.get("current_iteration"),
-            "logs": obj.get("logs"),
             "project": obj.get("project"),
             "agent": obj.get("agent"),
             "triggered_by": obj.get("triggered_by")

@@ -12,15 +12,16 @@
 """  # noqa: E501
 
 
-import base64
 import copy
 import http.client as httplib
 import logging
 from logging import FileHandler
+import multiprocessing
 import sys
 from typing import Any, ClassVar, Dict, List, Literal, Optional, TypedDict, Union
 from typing_extensions import NotRequired, Self
 
+import urllib3
 
 
 JSON_SCHEMA_VALIDATION_KEYWORDS = {
@@ -114,6 +115,7 @@ AuthSettings = TypedDict(
     {
         "ApiKeyAuth": APIKeyAuthSetting,
         "BearerAuth": BearerFormatAuthSetting,
+        "ClerkBearerAuth": BearerFormatAuthSetting,
         "cookieAuth": APIKeyAuthSetting,
         "jwtAuth": BearerFormatAuthSetting,
     },
@@ -259,6 +261,7 @@ conf = overmind.openapi_client.Configuration(
         """Logging Settings
         """
         self.logger["package_logger"] = logging.getLogger("overmind.openapi_client")
+        self.logger["urllib3_logger"] = logging.getLogger("urllib3")
         self.logger_format = '%(asctime)s %(levelname)s %(message)s'
         """Log format
         """
@@ -304,9 +307,12 @@ conf = overmind.openapi_client.Configuration(
            Set this to the SNI value expected by the server.
         """
 
-        self.connection_pool_maxsize = 100
-        """This value is passed to the aiohttp to limit simultaneous connections.
-           Default values is 100, None means no-limit.
+        self.connection_pool_maxsize = multiprocessing.cpu_count() * 5
+        """urllib3 connection pool's maximum number of connections saved
+           per pool. urllib3 uses 1 connection as default value, but this is
+           not the best value when you are making a lot of possibly parallel
+           requests to the same host, which is often the case here.
+           cpu_count * 5 is used as default value to increase performance.
         """
 
         self.proxy: Optional[str] = None
@@ -504,9 +510,9 @@ conf = overmind.openapi_client.Configuration(
         if self.password is not None:
             password = self.password
 
-        return "Basic " + base64.b64encode(
-            (username + ":" + password).encode('utf-8')
-        ).decode('utf-8')
+        return urllib3.util.make_headers(
+            basic_auth=username + ':' + password
+        ).get('authorization')
 
     def auth_settings(self)-> AuthSettings:
         """Gets Auth Settings dict for api client.
@@ -525,6 +531,14 @@ conf = overmind.openapi_client.Configuration(
             }
         if self.access_token is not None:
             auth['BearerAuth'] = {
+                'type': 'bearer',
+                'in': 'header',
+                'format': 'JWT',
+                'key': 'Authorization',
+                'value': 'Bearer ' + self.access_token
+            }
+        if self.access_token is not None:
+            auth['ClerkBearerAuth'] = {
                 'type': 'bearer',
                 'in': 'header',
                 'format': 'JWT',

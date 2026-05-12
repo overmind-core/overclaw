@@ -21,8 +21,9 @@ from pydantic import Field, StrictBool, StrictFloat, StrictInt, StrictStr
 from typing import List, Optional, Union
 from typing_extensions import Annotated
 from uuid import UUID
-from overmind.openapi_client.models.paginated_trace_list_list import PaginatedTraceListList
-from overmind.openapi_client.models.trace import Trace
+from overmind.openapi_client.models.paginated_root_span_list_list import PaginatedRootSpanListList
+from overmind.openapi_client.models.trace_detail import TraceDetail
+from overmind.openapi_client.models.traces_services_list200_response import TracesServicesList200Response
 
 from overmind.openapi_client.api_client import ApiClient, RequestSerialized
 from overmind.openapi_client.api_response import ApiResponse
@@ -43,33 +44,40 @@ class TracesApi:
 
 
     @validate_call
-    async def traces_list(
+    def traces_list(
         self,
         agent: Optional[UUID] = None,
-        application_name: Optional[StrictStr] = None,
-        created_at__gte: Optional[datetime] = None,
-        created_at__lte: Optional[datetime] = None,
-        error: Optional[StrictStr] = None,
-        error__isnull: Optional[StrictBool] = None,
-        id: Optional[StrictStr] = None,
-        id__in: Annotated[Optional[List[StrictStr]], Field(description="Multiple values may be separated by commas.")] = None,
+        all_spans: Optional[StrictBool] = None,
+        duration_ns__gte: Optional[StrictInt] = None,
+        duration_ns__lte: Optional[StrictInt] = None,
+        has_error: Optional[StrictBool] = None,
         iteration: Optional[UUID] = None,
         job: Optional[UUID] = None,
+        kind: Optional[StrictInt] = None,
+        max_duration_ms: Optional[Union[StrictFloat, StrictInt]] = None,
+        min_duration_ms: Optional[Union[StrictFloat, StrictInt]] = None,
+        name: Optional[StrictStr] = None,
+        operation: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         project: Optional[UUID] = None,
-        score__gte: Optional[Union[StrictFloat, StrictInt]] = None,
-        score__lte: Optional[Union[StrictFloat, StrictInt]] = None,
+        project_id: Optional[Union[StrictFloat, StrictInt]] = None,
+        received_at__gte: Optional[datetime] = None,
+        received_at__lte: Optional[datetime] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
-        source: Optional[StrictStr] = None,
-        source__in: Annotated[Optional[List[StrictStr]], Field(description="Multiple values may be separated by commas.")] = None,
+        service_name: Optional[StrictStr] = None,
+        service_name__in: Annotated[Optional[List[StrictStr]], Field(description="Multiple values may be separated by commas.")] = None,
+        span_id: Optional[StrictStr] = None,
+        span_type: Optional[StrictStr] = None,
+        start_time_ns__gte: Optional[StrictInt] = None,
+        start_time_ns__lte: Optional[StrictInt] = None,
+        status_code: Optional[StrictInt] = None,
         total_cost__gte: Optional[Union[StrictFloat, StrictInt]] = None,
         total_cost__lte: Optional[Union[StrictFloat, StrictInt]] = None,
-        total_latency_ms__gte: Optional[Union[StrictFloat, StrictInt]] = None,
-        total_latency_ms__lte: Optional[Union[StrictFloat, StrictInt]] = None,
-        total_tokens__gte: Optional[StrictInt] = None,
-        total_tokens__lte: Optional[StrictInt] = None,
-        trace_group: Optional[StrictStr] = None,
+        total_tokens__gte: Optional[Union[StrictFloat, StrictInt]] = None,
+        total_tokens__lte: Optional[Union[StrictFloat, StrictInt]] = None,
+        trace_id: Optional[StrictStr] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -82,60 +90,75 @@ class TracesApi:
         _content_type: Optional[StrictStr] = None,
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
-    ) -> PaginatedTraceListList:
-        """List traces
+    ) -> PaginatedRootSpanListList:
+        """List traces (root spans)
 
+        Returns one row per trace — the root span (``parent_span_id IS NULL``) of each trace the caller can see. 
 
         :param agent:
         :type agent: UUID
-        :param application_name:
-        :type application_name: str
-        :param created_at__gte:
-        :type created_at__gte: datetime
-        :param created_at__lte:
-        :type created_at__lte: datetime
-        :param error:
-        :type error: str
-        :param error__isnull:
-        :type error__isnull: bool
-        :param id:
-        :type id: str
-        :param id__in: Multiple values may be separated by commas.
-        :type id__in: List[str]
+        :param all_spans:
+        :type all_spans: bool
+        :param duration_ns__gte:
+        :type duration_ns__gte: int
+        :param duration_ns__lte:
+        :type duration_ns__lte: int
+        :param has_error:
+        :type has_error: bool
         :param iteration:
         :type iteration: UUID
         :param job:
         :type job: UUID
+        :param kind:
+        :type kind: int
+        :param max_duration_ms:
+        :type max_duration_ms: float
+        :param min_duration_ms:
+        :type min_duration_ms: float
+        :param name:
+        :type name: str
+        :param operation:
+        :type operation: str
         :param ordering: Which field to use when ordering the results.
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param project:
         :type project: UUID
-        :param score__gte:
-        :type score__gte: float
-        :param score__lte:
-        :type score__lte: float
+        :param project_id:
+        :type project_id: float
+        :param received_at__gte:
+        :type received_at__gte: datetime
+        :param received_at__lte:
+        :type received_at__lte: datetime
         :param search: A search term.
         :type search: str
-        :param source:
-        :type source: str
-        :param source__in: Multiple values may be separated by commas.
-        :type source__in: List[str]
+        :param service_name:
+        :type service_name: str
+        :param service_name__in: Multiple values may be separated by commas.
+        :type service_name__in: List[str]
+        :param span_id:
+        :type span_id: str
+        :param span_type:
+        :type span_type: str
+        :param start_time_ns__gte:
+        :type start_time_ns__gte: int
+        :param start_time_ns__lte:
+        :type start_time_ns__lte: int
+        :param status_code:
+        :type status_code: int
         :param total_cost__gte:
         :type total_cost__gte: float
         :param total_cost__lte:
         :type total_cost__lte: float
-        :param total_latency_ms__gte:
-        :type total_latency_ms__gte: float
-        :param total_latency_ms__lte:
-        :type total_latency_ms__lte: float
         :param total_tokens__gte:
-        :type total_tokens__gte: int
+        :type total_tokens__gte: float
         :param total_tokens__lte:
-        :type total_tokens__lte: int
-        :param trace_group:
-        :type trace_group: str
+        :type total_tokens__lte: float
+        :param trace_id:
+        :type trace_id: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -160,30 +183,37 @@ class TracesApi:
 
         _param = self._traces_list_serialize(
             agent=agent,
-            application_name=application_name,
-            created_at__gte=created_at__gte,
-            created_at__lte=created_at__lte,
-            error=error,
-            error__isnull=error__isnull,
-            id=id,
-            id__in=id__in,
+            all_spans=all_spans,
+            duration_ns__gte=duration_ns__gte,
+            duration_ns__lte=duration_ns__lte,
+            has_error=has_error,
             iteration=iteration,
             job=job,
+            kind=kind,
+            max_duration_ms=max_duration_ms,
+            min_duration_ms=min_duration_ms,
+            name=name,
+            operation=operation,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             project=project,
-            score__gte=score__gte,
-            score__lte=score__lte,
+            project_id=project_id,
+            received_at__gte=received_at__gte,
+            received_at__lte=received_at__lte,
             search=search,
-            source=source,
-            source__in=source__in,
+            service_name=service_name,
+            service_name__in=service_name__in,
+            span_id=span_id,
+            span_type=span_type,
+            start_time_ns__gte=start_time_ns__gte,
+            start_time_ns__lte=start_time_ns__lte,
+            status_code=status_code,
             total_cost__gte=total_cost__gte,
             total_cost__lte=total_cost__lte,
-            total_latency_ms__gte=total_latency_ms__gte,
-            total_latency_ms__lte=total_latency_ms__lte,
             total_tokens__gte=total_tokens__gte,
             total_tokens__lte=total_tokens__lte,
-            trace_group=trace_group,
+            trace_id=trace_id,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -191,13 +221,13 @@ class TracesApi:
         )
 
         _response_types_map: Dict[str, Optional[str]] = {
-            '200': "PaginatedTraceListList",
+            '200': "PaginatedRootSpanListList",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -205,33 +235,40 @@ class TracesApi:
 
 
     @validate_call
-    async def traces_list_with_http_info(
+    def traces_list_with_http_info(
         self,
         agent: Optional[UUID] = None,
-        application_name: Optional[StrictStr] = None,
-        created_at__gte: Optional[datetime] = None,
-        created_at__lte: Optional[datetime] = None,
-        error: Optional[StrictStr] = None,
-        error__isnull: Optional[StrictBool] = None,
-        id: Optional[StrictStr] = None,
-        id__in: Annotated[Optional[List[StrictStr]], Field(description="Multiple values may be separated by commas.")] = None,
+        all_spans: Optional[StrictBool] = None,
+        duration_ns__gte: Optional[StrictInt] = None,
+        duration_ns__lte: Optional[StrictInt] = None,
+        has_error: Optional[StrictBool] = None,
         iteration: Optional[UUID] = None,
         job: Optional[UUID] = None,
+        kind: Optional[StrictInt] = None,
+        max_duration_ms: Optional[Union[StrictFloat, StrictInt]] = None,
+        min_duration_ms: Optional[Union[StrictFloat, StrictInt]] = None,
+        name: Optional[StrictStr] = None,
+        operation: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         project: Optional[UUID] = None,
-        score__gte: Optional[Union[StrictFloat, StrictInt]] = None,
-        score__lte: Optional[Union[StrictFloat, StrictInt]] = None,
+        project_id: Optional[Union[StrictFloat, StrictInt]] = None,
+        received_at__gte: Optional[datetime] = None,
+        received_at__lte: Optional[datetime] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
-        source: Optional[StrictStr] = None,
-        source__in: Annotated[Optional[List[StrictStr]], Field(description="Multiple values may be separated by commas.")] = None,
+        service_name: Optional[StrictStr] = None,
+        service_name__in: Annotated[Optional[List[StrictStr]], Field(description="Multiple values may be separated by commas.")] = None,
+        span_id: Optional[StrictStr] = None,
+        span_type: Optional[StrictStr] = None,
+        start_time_ns__gte: Optional[StrictInt] = None,
+        start_time_ns__lte: Optional[StrictInt] = None,
+        status_code: Optional[StrictInt] = None,
         total_cost__gte: Optional[Union[StrictFloat, StrictInt]] = None,
         total_cost__lte: Optional[Union[StrictFloat, StrictInt]] = None,
-        total_latency_ms__gte: Optional[Union[StrictFloat, StrictInt]] = None,
-        total_latency_ms__lte: Optional[Union[StrictFloat, StrictInt]] = None,
-        total_tokens__gte: Optional[StrictInt] = None,
-        total_tokens__lte: Optional[StrictInt] = None,
-        trace_group: Optional[StrictStr] = None,
+        total_tokens__gte: Optional[Union[StrictFloat, StrictInt]] = None,
+        total_tokens__lte: Optional[Union[StrictFloat, StrictInt]] = None,
+        trace_id: Optional[StrictStr] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -244,60 +281,75 @@ class TracesApi:
         _content_type: Optional[StrictStr] = None,
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
-    ) -> ApiResponse[PaginatedTraceListList]:
-        """List traces
+    ) -> ApiResponse[PaginatedRootSpanListList]:
+        """List traces (root spans)
 
+        Returns one row per trace — the root span (``parent_span_id IS NULL``) of each trace the caller can see. 
 
         :param agent:
         :type agent: UUID
-        :param application_name:
-        :type application_name: str
-        :param created_at__gte:
-        :type created_at__gte: datetime
-        :param created_at__lte:
-        :type created_at__lte: datetime
-        :param error:
-        :type error: str
-        :param error__isnull:
-        :type error__isnull: bool
-        :param id:
-        :type id: str
-        :param id__in: Multiple values may be separated by commas.
-        :type id__in: List[str]
+        :param all_spans:
+        :type all_spans: bool
+        :param duration_ns__gte:
+        :type duration_ns__gte: int
+        :param duration_ns__lte:
+        :type duration_ns__lte: int
+        :param has_error:
+        :type has_error: bool
         :param iteration:
         :type iteration: UUID
         :param job:
         :type job: UUID
+        :param kind:
+        :type kind: int
+        :param max_duration_ms:
+        :type max_duration_ms: float
+        :param min_duration_ms:
+        :type min_duration_ms: float
+        :param name:
+        :type name: str
+        :param operation:
+        :type operation: str
         :param ordering: Which field to use when ordering the results.
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param project:
         :type project: UUID
-        :param score__gte:
-        :type score__gte: float
-        :param score__lte:
-        :type score__lte: float
+        :param project_id:
+        :type project_id: float
+        :param received_at__gte:
+        :type received_at__gte: datetime
+        :param received_at__lte:
+        :type received_at__lte: datetime
         :param search: A search term.
         :type search: str
-        :param source:
-        :type source: str
-        :param source__in: Multiple values may be separated by commas.
-        :type source__in: List[str]
+        :param service_name:
+        :type service_name: str
+        :param service_name__in: Multiple values may be separated by commas.
+        :type service_name__in: List[str]
+        :param span_id:
+        :type span_id: str
+        :param span_type:
+        :type span_type: str
+        :param start_time_ns__gte:
+        :type start_time_ns__gte: int
+        :param start_time_ns__lte:
+        :type start_time_ns__lte: int
+        :param status_code:
+        :type status_code: int
         :param total_cost__gte:
         :type total_cost__gte: float
         :param total_cost__lte:
         :type total_cost__lte: float
-        :param total_latency_ms__gte:
-        :type total_latency_ms__gte: float
-        :param total_latency_ms__lte:
-        :type total_latency_ms__lte: float
         :param total_tokens__gte:
-        :type total_tokens__gte: int
+        :type total_tokens__gte: float
         :param total_tokens__lte:
-        :type total_tokens__lte: int
-        :param trace_group:
-        :type trace_group: str
+        :type total_tokens__lte: float
+        :param trace_id:
+        :type trace_id: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -322,30 +374,37 @@ class TracesApi:
 
         _param = self._traces_list_serialize(
             agent=agent,
-            application_name=application_name,
-            created_at__gte=created_at__gte,
-            created_at__lte=created_at__lte,
-            error=error,
-            error__isnull=error__isnull,
-            id=id,
-            id__in=id__in,
+            all_spans=all_spans,
+            duration_ns__gte=duration_ns__gte,
+            duration_ns__lte=duration_ns__lte,
+            has_error=has_error,
             iteration=iteration,
             job=job,
+            kind=kind,
+            max_duration_ms=max_duration_ms,
+            min_duration_ms=min_duration_ms,
+            name=name,
+            operation=operation,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             project=project,
-            score__gte=score__gte,
-            score__lte=score__lte,
+            project_id=project_id,
+            received_at__gte=received_at__gte,
+            received_at__lte=received_at__lte,
             search=search,
-            source=source,
-            source__in=source__in,
+            service_name=service_name,
+            service_name__in=service_name__in,
+            span_id=span_id,
+            span_type=span_type,
+            start_time_ns__gte=start_time_ns__gte,
+            start_time_ns__lte=start_time_ns__lte,
+            status_code=status_code,
             total_cost__gte=total_cost__gte,
             total_cost__lte=total_cost__lte,
-            total_latency_ms__gte=total_latency_ms__gte,
-            total_latency_ms__lte=total_latency_ms__lte,
             total_tokens__gte=total_tokens__gte,
             total_tokens__lte=total_tokens__lte,
-            trace_group=trace_group,
+            trace_id=trace_id,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -353,13 +412,13 @@ class TracesApi:
         )
 
         _response_types_map: Dict[str, Optional[str]] = {
-            '200': "PaginatedTraceListList",
+            '200': "PaginatedRootSpanListList",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -367,33 +426,40 @@ class TracesApi:
 
 
     @validate_call
-    async def traces_list_without_preload_content(
+    def traces_list_without_preload_content(
         self,
         agent: Optional[UUID] = None,
-        application_name: Optional[StrictStr] = None,
-        created_at__gte: Optional[datetime] = None,
-        created_at__lte: Optional[datetime] = None,
-        error: Optional[StrictStr] = None,
-        error__isnull: Optional[StrictBool] = None,
-        id: Optional[StrictStr] = None,
-        id__in: Annotated[Optional[List[StrictStr]], Field(description="Multiple values may be separated by commas.")] = None,
+        all_spans: Optional[StrictBool] = None,
+        duration_ns__gte: Optional[StrictInt] = None,
+        duration_ns__lte: Optional[StrictInt] = None,
+        has_error: Optional[StrictBool] = None,
         iteration: Optional[UUID] = None,
         job: Optional[UUID] = None,
+        kind: Optional[StrictInt] = None,
+        max_duration_ms: Optional[Union[StrictFloat, StrictInt]] = None,
+        min_duration_ms: Optional[Union[StrictFloat, StrictInt]] = None,
+        name: Optional[StrictStr] = None,
+        operation: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         project: Optional[UUID] = None,
-        score__gte: Optional[Union[StrictFloat, StrictInt]] = None,
-        score__lte: Optional[Union[StrictFloat, StrictInt]] = None,
+        project_id: Optional[Union[StrictFloat, StrictInt]] = None,
+        received_at__gte: Optional[datetime] = None,
+        received_at__lte: Optional[datetime] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
-        source: Optional[StrictStr] = None,
-        source__in: Annotated[Optional[List[StrictStr]], Field(description="Multiple values may be separated by commas.")] = None,
+        service_name: Optional[StrictStr] = None,
+        service_name__in: Annotated[Optional[List[StrictStr]], Field(description="Multiple values may be separated by commas.")] = None,
+        span_id: Optional[StrictStr] = None,
+        span_type: Optional[StrictStr] = None,
+        start_time_ns__gte: Optional[StrictInt] = None,
+        start_time_ns__lte: Optional[StrictInt] = None,
+        status_code: Optional[StrictInt] = None,
         total_cost__gte: Optional[Union[StrictFloat, StrictInt]] = None,
         total_cost__lte: Optional[Union[StrictFloat, StrictInt]] = None,
-        total_latency_ms__gte: Optional[Union[StrictFloat, StrictInt]] = None,
-        total_latency_ms__lte: Optional[Union[StrictFloat, StrictInt]] = None,
-        total_tokens__gte: Optional[StrictInt] = None,
-        total_tokens__lte: Optional[StrictInt] = None,
-        trace_group: Optional[StrictStr] = None,
+        total_tokens__gte: Optional[Union[StrictFloat, StrictInt]] = None,
+        total_tokens__lte: Optional[Union[StrictFloat, StrictInt]] = None,
+        trace_id: Optional[StrictStr] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -407,59 +473,74 @@ class TracesApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> RESTResponseType:
-        """List traces
+        """List traces (root spans)
 
+        Returns one row per trace — the root span (``parent_span_id IS NULL``) of each trace the caller can see. 
 
         :param agent:
         :type agent: UUID
-        :param application_name:
-        :type application_name: str
-        :param created_at__gte:
-        :type created_at__gte: datetime
-        :param created_at__lte:
-        :type created_at__lte: datetime
-        :param error:
-        :type error: str
-        :param error__isnull:
-        :type error__isnull: bool
-        :param id:
-        :type id: str
-        :param id__in: Multiple values may be separated by commas.
-        :type id__in: List[str]
+        :param all_spans:
+        :type all_spans: bool
+        :param duration_ns__gte:
+        :type duration_ns__gte: int
+        :param duration_ns__lte:
+        :type duration_ns__lte: int
+        :param has_error:
+        :type has_error: bool
         :param iteration:
         :type iteration: UUID
         :param job:
         :type job: UUID
+        :param kind:
+        :type kind: int
+        :param max_duration_ms:
+        :type max_duration_ms: float
+        :param min_duration_ms:
+        :type min_duration_ms: float
+        :param name:
+        :type name: str
+        :param operation:
+        :type operation: str
         :param ordering: Which field to use when ordering the results.
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param project:
         :type project: UUID
-        :param score__gte:
-        :type score__gte: float
-        :param score__lte:
-        :type score__lte: float
+        :param project_id:
+        :type project_id: float
+        :param received_at__gte:
+        :type received_at__gte: datetime
+        :param received_at__lte:
+        :type received_at__lte: datetime
         :param search: A search term.
         :type search: str
-        :param source:
-        :type source: str
-        :param source__in: Multiple values may be separated by commas.
-        :type source__in: List[str]
+        :param service_name:
+        :type service_name: str
+        :param service_name__in: Multiple values may be separated by commas.
+        :type service_name__in: List[str]
+        :param span_id:
+        :type span_id: str
+        :param span_type:
+        :type span_type: str
+        :param start_time_ns__gte:
+        :type start_time_ns__gte: int
+        :param start_time_ns__lte:
+        :type start_time_ns__lte: int
+        :param status_code:
+        :type status_code: int
         :param total_cost__gte:
         :type total_cost__gte: float
         :param total_cost__lte:
         :type total_cost__lte: float
-        :param total_latency_ms__gte:
-        :type total_latency_ms__gte: float
-        :param total_latency_ms__lte:
-        :type total_latency_ms__lte: float
         :param total_tokens__gte:
-        :type total_tokens__gte: int
+        :type total_tokens__gte: float
         :param total_tokens__lte:
-        :type total_tokens__lte: int
-        :param trace_group:
-        :type trace_group: str
+        :type total_tokens__lte: float
+        :param trace_id:
+        :type trace_id: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -484,30 +565,37 @@ class TracesApi:
 
         _param = self._traces_list_serialize(
             agent=agent,
-            application_name=application_name,
-            created_at__gte=created_at__gte,
-            created_at__lte=created_at__lte,
-            error=error,
-            error__isnull=error__isnull,
-            id=id,
-            id__in=id__in,
+            all_spans=all_spans,
+            duration_ns__gte=duration_ns__gte,
+            duration_ns__lte=duration_ns__lte,
+            has_error=has_error,
             iteration=iteration,
             job=job,
+            kind=kind,
+            max_duration_ms=max_duration_ms,
+            min_duration_ms=min_duration_ms,
+            name=name,
+            operation=operation,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             project=project,
-            score__gte=score__gte,
-            score__lte=score__lte,
+            project_id=project_id,
+            received_at__gte=received_at__gte,
+            received_at__lte=received_at__lte,
             search=search,
-            source=source,
-            source__in=source__in,
+            service_name=service_name,
+            service_name__in=service_name__in,
+            span_id=span_id,
+            span_type=span_type,
+            start_time_ns__gte=start_time_ns__gte,
+            start_time_ns__lte=start_time_ns__lte,
+            status_code=status_code,
             total_cost__gte=total_cost__gte,
             total_cost__lte=total_cost__lte,
-            total_latency_ms__gte=total_latency_ms__gte,
-            total_latency_ms__lte=total_latency_ms__lte,
             total_tokens__gte=total_tokens__gte,
             total_tokens__lte=total_tokens__lte,
-            trace_group=trace_group,
+            trace_id=trace_id,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -515,9 +603,9 @@ class TracesApi:
         )
 
         _response_types_map: Dict[str, Optional[str]] = {
-            '200': "PaginatedTraceListList",
+            '200': "PaginatedRootSpanListList",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -527,30 +615,37 @@ class TracesApi:
     def _traces_list_serialize(
         self,
         agent,
-        application_name,
-        created_at__gte,
-        created_at__lte,
-        error,
-        error__isnull,
-        id,
-        id__in,
+        all_spans,
+        duration_ns__gte,
+        duration_ns__lte,
+        has_error,
         iteration,
         job,
+        kind,
+        max_duration_ms,
+        min_duration_ms,
+        name,
+        operation,
         ordering,
         page,
+        page_size,
         project,
-        score__gte,
-        score__lte,
+        project_id,
+        received_at__gte,
+        received_at__lte,
         search,
-        source,
-        source__in,
+        service_name,
+        service_name__in,
+        span_id,
+        span_type,
+        start_time_ns__gte,
+        start_time_ns__lte,
+        status_code,
         total_cost__gte,
         total_cost__lte,
-        total_latency_ms__gte,
-        total_latency_ms__lte,
         total_tokens__gte,
         total_tokens__lte,
-        trace_group,
+        trace_id,
         _request_auth,
         _content_type,
         _headers,
@@ -560,8 +655,7 @@ class TracesApi:
         _host = None
 
         _collection_formats: Dict[str, str] = {
-            'id__in': 'csv',
-            'source__in': 'csv',
+            'service_name__in': 'csv',
         }
 
         _path_params: Dict[str, str] = {}
@@ -576,123 +670,151 @@ class TracesApi:
         # process the path parameters
         # process the query parameters
         if agent is not None:
-
+            
             _query_params.append(('agent', agent))
-
-        if application_name is not None:
-
-            _query_params.append(('application_name', application_name))
-
-        if created_at__gte is not None:
-            if isinstance(created_at__gte, datetime):
-                _query_params.append(
-                    (
-                        'created_at__gte',
-                        created_at__gte.strftime(
-                            self.api_client.configuration.datetime_format
-                        )
-                    )
-                )
-            else:
-                _query_params.append(('created_at__gte', created_at__gte))
-
-        if created_at__lte is not None:
-            if isinstance(created_at__lte, datetime):
-                _query_params.append(
-                    (
-                        'created_at__lte',
-                        created_at__lte.strftime(
-                            self.api_client.configuration.datetime_format
-                        )
-                    )
-                )
-            else:
-                _query_params.append(('created_at__lte', created_at__lte))
-
-        if error is not None:
-
-            _query_params.append(('error', error))
-
-        if error__isnull is not None:
-
-            _query_params.append(('error__isnull', error__isnull))
-
-        if id is not None:
-
-            _query_params.append(('id', id))
-
-        if id__in is not None:
-
-            _query_params.append(('id__in', id__in))
-
+            
+        if all_spans is not None:
+            
+            _query_params.append(('all_spans', all_spans))
+            
+        if duration_ns__gte is not None:
+            
+            _query_params.append(('duration_ns__gte', duration_ns__gte))
+            
+        if duration_ns__lte is not None:
+            
+            _query_params.append(('duration_ns__lte', duration_ns__lte))
+            
+        if has_error is not None:
+            
+            _query_params.append(('has_error', has_error))
+            
         if iteration is not None:
-
+            
             _query_params.append(('iteration', iteration))
-
+            
         if job is not None:
-
+            
             _query_params.append(('job', job))
-
+            
+        if kind is not None:
+            
+            _query_params.append(('kind', kind))
+            
+        if max_duration_ms is not None:
+            
+            _query_params.append(('max_duration_ms', max_duration_ms))
+            
+        if min_duration_ms is not None:
+            
+            _query_params.append(('min_duration_ms', min_duration_ms))
+            
+        if name is not None:
+            
+            _query_params.append(('name', name))
+            
+        if operation is not None:
+            
+            _query_params.append(('operation', operation))
+            
         if ordering is not None:
-
+            
             _query_params.append(('ordering', ordering))
-
+            
         if page is not None:
-
+            
             _query_params.append(('page', page))
-
+            
+        if page_size is not None:
+            
+            _query_params.append(('page_size', page_size))
+            
         if project is not None:
-
+            
             _query_params.append(('project', project))
-
-        if score__gte is not None:
-
-            _query_params.append(('score__gte', score__gte))
-
-        if score__lte is not None:
-
-            _query_params.append(('score__lte', score__lte))
-
+            
+        if project_id is not None:
+            
+            _query_params.append(('project_id', project_id))
+            
+        if received_at__gte is not None:
+            if isinstance(received_at__gte, datetime):
+                _query_params.append(
+                    (
+                        'received_at__gte',
+                        received_at__gte.strftime(
+                            self.api_client.configuration.datetime_format
+                        )
+                    )
+                )
+            else:
+                _query_params.append(('received_at__gte', received_at__gte))
+            
+        if received_at__lte is not None:
+            if isinstance(received_at__lte, datetime):
+                _query_params.append(
+                    (
+                        'received_at__lte',
+                        received_at__lte.strftime(
+                            self.api_client.configuration.datetime_format
+                        )
+                    )
+                )
+            else:
+                _query_params.append(('received_at__lte', received_at__lte))
+            
         if search is not None:
-
+            
             _query_params.append(('search', search))
-
-        if source is not None:
-
-            _query_params.append(('source', source))
-
-        if source__in is not None:
-
-            _query_params.append(('source__in', source__in))
-
+            
+        if service_name is not None:
+            
+            _query_params.append(('service_name', service_name))
+            
+        if service_name__in is not None:
+            
+            _query_params.append(('service_name__in', service_name__in))
+            
+        if span_id is not None:
+            
+            _query_params.append(('span_id', span_id))
+            
+        if span_type is not None:
+            
+            _query_params.append(('span_type', span_type))
+            
+        if start_time_ns__gte is not None:
+            
+            _query_params.append(('start_time_ns__gte', start_time_ns__gte))
+            
+        if start_time_ns__lte is not None:
+            
+            _query_params.append(('start_time_ns__lte', start_time_ns__lte))
+            
+        if status_code is not None:
+            
+            _query_params.append(('status_code', status_code))
+            
         if total_cost__gte is not None:
-
+            
             _query_params.append(('total_cost__gte', total_cost__gte))
-
+            
         if total_cost__lte is not None:
-
+            
             _query_params.append(('total_cost__lte', total_cost__lte))
-
-        if total_latency_ms__gte is not None:
-
-            _query_params.append(('total_latency_ms__gte', total_latency_ms__gte))
-
-        if total_latency_ms__lte is not None:
-
-            _query_params.append(('total_latency_ms__lte', total_latency_ms__lte))
-
+            
         if total_tokens__gte is not None:
-
+            
             _query_params.append(('total_tokens__gte', total_tokens__gte))
-
+            
         if total_tokens__lte is not None:
-
+            
             _query_params.append(('total_tokens__lte', total_tokens__lte))
-
-        if trace_group is not None:
-
-            _query_params.append(('trace_group', trace_group))
-
+            
+        if trace_id is not None:
+            
+            _query_params.append(('trace_id', trace_id))
+            
         # process the header parameters
         # process the form parameters
         # process the body parameter
@@ -709,9 +831,10 @@ class TracesApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -734,9 +857,9 @@ class TracesApi:
 
 
     @validate_call
-    async def traces_retrieve(
+    def traces_retrieve(
         self,
-        id: Annotated[StrictStr, Field(description="A unique value identifying this trace.")],
+        trace_id: Annotated[StrictStr, Field(description="OTel trace id (32 hex chars).")],
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -749,12 +872,13 @@ class TracesApi:
         _content_type: Optional[StrictStr] = None,
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
-    ) -> Trace:
-        """Get trace (with spans)
+    ) -> TraceDetail:
+        """Get a trace and all its spans
 
+        Looked up by ``trace_id`` (the OTel 32-char hex), not by row id. Returns the root span plus every span sharing that ``trace_id``.
 
-        :param id: A unique value identifying this trace. (required)
-        :type id: str
+        :param trace_id: OTel trace id (32 hex chars). (required)
+        :type trace_id: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -778,7 +902,7 @@ class TracesApi:
         """ # noqa: E501
 
         _param = self._traces_retrieve_serialize(
-            id=id,
+            trace_id=trace_id,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -786,13 +910,13 @@ class TracesApi:
         )
 
         _response_types_map: Dict[str, Optional[str]] = {
-            '200': "Trace",
+            '200': "TraceDetail",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -800,9 +924,9 @@ class TracesApi:
 
 
     @validate_call
-    async def traces_retrieve_with_http_info(
+    def traces_retrieve_with_http_info(
         self,
-        id: Annotated[StrictStr, Field(description="A unique value identifying this trace.")],
+        trace_id: Annotated[StrictStr, Field(description="OTel trace id (32 hex chars).")],
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -815,12 +939,13 @@ class TracesApi:
         _content_type: Optional[StrictStr] = None,
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
-    ) -> ApiResponse[Trace]:
-        """Get trace (with spans)
+    ) -> ApiResponse[TraceDetail]:
+        """Get a trace and all its spans
 
+        Looked up by ``trace_id`` (the OTel 32-char hex), not by row id. Returns the root span plus every span sharing that ``trace_id``.
 
-        :param id: A unique value identifying this trace. (required)
-        :type id: str
+        :param trace_id: OTel trace id (32 hex chars). (required)
+        :type trace_id: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -844,7 +969,7 @@ class TracesApi:
         """ # noqa: E501
 
         _param = self._traces_retrieve_serialize(
-            id=id,
+            trace_id=trace_id,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -852,13 +977,13 @@ class TracesApi:
         )
 
         _response_types_map: Dict[str, Optional[str]] = {
-            '200': "Trace",
+            '200': "TraceDetail",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -866,9 +991,9 @@ class TracesApi:
 
 
     @validate_call
-    async def traces_retrieve_without_preload_content(
+    def traces_retrieve_without_preload_content(
         self,
-        id: Annotated[StrictStr, Field(description="A unique value identifying this trace.")],
+        trace_id: Annotated[StrictStr, Field(description="OTel trace id (32 hex chars).")],
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -882,11 +1007,12 @@ class TracesApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> RESTResponseType:
-        """Get trace (with spans)
+        """Get a trace and all its spans
 
+        Looked up by ``trace_id`` (the OTel 32-char hex), not by row id. Returns the root span plus every span sharing that ``trace_id``.
 
-        :param id: A unique value identifying this trace. (required)
-        :type id: str
+        :param trace_id: OTel trace id (32 hex chars). (required)
+        :type trace_id: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -910,7 +1036,7 @@ class TracesApi:
         """ # noqa: E501
 
         _param = self._traces_retrieve_serialize(
-            id=id,
+            trace_id=trace_id,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -918,9 +1044,9 @@ class TracesApi:
         )
 
         _response_types_map: Dict[str, Optional[str]] = {
-            '200': "Trace",
+            '200': "TraceDetail",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -929,7 +1055,7 @@ class TracesApi:
 
     def _traces_retrieve_serialize(
         self,
-        id,
+        trace_id,
         _request_auth,
         _content_type,
         _headers,
@@ -951,8 +1077,8 @@ class TracesApi:
         _body_params: Optional[bytes] = None
 
         # process the path parameters
-        if id is not None:
-            _path_params['id'] = id
+        if trace_id is not None:
+            _path_params['trace_id'] = trace_id
         # process the query parameters
         # process the header parameters
         # process the form parameters
@@ -970,15 +1096,829 @@ class TracesApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
         return self.api_client.param_serialize(
             method='GET',
-            resource_path='/api/traces/{id}/',
+            resource_path='/api/traces/{trace_id}/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def traces_services_list(
+        self,
+        agent: Optional[UUID] = None,
+        all_spans: Optional[StrictBool] = None,
+        duration_ns__gte: Optional[StrictInt] = None,
+        duration_ns__lte: Optional[StrictInt] = None,
+        has_error: Optional[StrictBool] = None,
+        iteration: Optional[UUID] = None,
+        job: Optional[UUID] = None,
+        kind: Optional[StrictInt] = None,
+        max_duration_ms: Optional[Union[StrictFloat, StrictInt]] = None,
+        min_duration_ms: Optional[Union[StrictFloat, StrictInt]] = None,
+        name: Optional[StrictStr] = None,
+        operation: Optional[StrictStr] = None,
+        ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
+        page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
+        project: Optional[UUID] = None,
+        project_id: Optional[Union[StrictFloat, StrictInt]] = None,
+        received_at__gte: Optional[datetime] = None,
+        received_at__lte: Optional[datetime] = None,
+        search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
+        service_name: Optional[StrictStr] = None,
+        service_name__in: Annotated[Optional[List[StrictStr]], Field(description="Multiple values may be separated by commas.")] = None,
+        span_id: Optional[StrictStr] = None,
+        span_type: Optional[StrictStr] = None,
+        start_time_ns__gte: Optional[StrictInt] = None,
+        start_time_ns__lte: Optional[StrictInt] = None,
+        status_code: Optional[StrictInt] = None,
+        total_cost__gte: Optional[Union[StrictFloat, StrictInt]] = None,
+        total_cost__lte: Optional[Union[StrictFloat, StrictInt]] = None,
+        total_tokens__gte: Optional[Union[StrictFloat, StrictInt]] = None,
+        total_tokens__lte: Optional[Union[StrictFloat, StrictInt]] = None,
+        trace_id: Optional[StrictStr] = None,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> TracesServicesList200Response:
+        """List distinct service names visible to the caller
+
+        The single trace-data viewset — one Span table, two read shapes.
+
+        :param agent:
+        :type agent: UUID
+        :param all_spans:
+        :type all_spans: bool
+        :param duration_ns__gte:
+        :type duration_ns__gte: int
+        :param duration_ns__lte:
+        :type duration_ns__lte: int
+        :param has_error:
+        :type has_error: bool
+        :param iteration:
+        :type iteration: UUID
+        :param job:
+        :type job: UUID
+        :param kind:
+        :type kind: int
+        :param max_duration_ms:
+        :type max_duration_ms: float
+        :param min_duration_ms:
+        :type min_duration_ms: float
+        :param name:
+        :type name: str
+        :param operation:
+        :type operation: str
+        :param ordering: Which field to use when ordering the results.
+        :type ordering: str
+        :param page: A page number within the paginated result set.
+        :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
+        :param project:
+        :type project: UUID
+        :param project_id:
+        :type project_id: float
+        :param received_at__gte:
+        :type received_at__gte: datetime
+        :param received_at__lte:
+        :type received_at__lte: datetime
+        :param search: A search term.
+        :type search: str
+        :param service_name:
+        :type service_name: str
+        :param service_name__in: Multiple values may be separated by commas.
+        :type service_name__in: List[str]
+        :param span_id:
+        :type span_id: str
+        :param span_type:
+        :type span_type: str
+        :param start_time_ns__gte:
+        :type start_time_ns__gte: int
+        :param start_time_ns__lte:
+        :type start_time_ns__lte: int
+        :param status_code:
+        :type status_code: int
+        :param total_cost__gte:
+        :type total_cost__gte: float
+        :param total_cost__lte:
+        :type total_cost__lte: float
+        :param total_tokens__gte:
+        :type total_tokens__gte: float
+        :param total_tokens__lte:
+        :type total_tokens__lte: float
+        :param trace_id:
+        :type trace_id: str
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._traces_services_list_serialize(
+            agent=agent,
+            all_spans=all_spans,
+            duration_ns__gte=duration_ns__gte,
+            duration_ns__lte=duration_ns__lte,
+            has_error=has_error,
+            iteration=iteration,
+            job=job,
+            kind=kind,
+            max_duration_ms=max_duration_ms,
+            min_duration_ms=min_duration_ms,
+            name=name,
+            operation=operation,
+            ordering=ordering,
+            page=page,
+            page_size=page_size,
+            project=project,
+            project_id=project_id,
+            received_at__gte=received_at__gte,
+            received_at__lte=received_at__lte,
+            search=search,
+            service_name=service_name,
+            service_name__in=service_name__in,
+            span_id=span_id,
+            span_type=span_type,
+            start_time_ns__gte=start_time_ns__gte,
+            start_time_ns__lte=start_time_ns__lte,
+            status_code=status_code,
+            total_cost__gte=total_cost__gte,
+            total_cost__lte=total_cost__lte,
+            total_tokens__gte=total_tokens__gte,
+            total_tokens__lte=total_tokens__lte,
+            trace_id=trace_id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "TracesServicesList200Response",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def traces_services_list_with_http_info(
+        self,
+        agent: Optional[UUID] = None,
+        all_spans: Optional[StrictBool] = None,
+        duration_ns__gte: Optional[StrictInt] = None,
+        duration_ns__lte: Optional[StrictInt] = None,
+        has_error: Optional[StrictBool] = None,
+        iteration: Optional[UUID] = None,
+        job: Optional[UUID] = None,
+        kind: Optional[StrictInt] = None,
+        max_duration_ms: Optional[Union[StrictFloat, StrictInt]] = None,
+        min_duration_ms: Optional[Union[StrictFloat, StrictInt]] = None,
+        name: Optional[StrictStr] = None,
+        operation: Optional[StrictStr] = None,
+        ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
+        page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
+        project: Optional[UUID] = None,
+        project_id: Optional[Union[StrictFloat, StrictInt]] = None,
+        received_at__gte: Optional[datetime] = None,
+        received_at__lte: Optional[datetime] = None,
+        search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
+        service_name: Optional[StrictStr] = None,
+        service_name__in: Annotated[Optional[List[StrictStr]], Field(description="Multiple values may be separated by commas.")] = None,
+        span_id: Optional[StrictStr] = None,
+        span_type: Optional[StrictStr] = None,
+        start_time_ns__gte: Optional[StrictInt] = None,
+        start_time_ns__lte: Optional[StrictInt] = None,
+        status_code: Optional[StrictInt] = None,
+        total_cost__gte: Optional[Union[StrictFloat, StrictInt]] = None,
+        total_cost__lte: Optional[Union[StrictFloat, StrictInt]] = None,
+        total_tokens__gte: Optional[Union[StrictFloat, StrictInt]] = None,
+        total_tokens__lte: Optional[Union[StrictFloat, StrictInt]] = None,
+        trace_id: Optional[StrictStr] = None,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[TracesServicesList200Response]:
+        """List distinct service names visible to the caller
+
+        The single trace-data viewset — one Span table, two read shapes.
+
+        :param agent:
+        :type agent: UUID
+        :param all_spans:
+        :type all_spans: bool
+        :param duration_ns__gte:
+        :type duration_ns__gte: int
+        :param duration_ns__lte:
+        :type duration_ns__lte: int
+        :param has_error:
+        :type has_error: bool
+        :param iteration:
+        :type iteration: UUID
+        :param job:
+        :type job: UUID
+        :param kind:
+        :type kind: int
+        :param max_duration_ms:
+        :type max_duration_ms: float
+        :param min_duration_ms:
+        :type min_duration_ms: float
+        :param name:
+        :type name: str
+        :param operation:
+        :type operation: str
+        :param ordering: Which field to use when ordering the results.
+        :type ordering: str
+        :param page: A page number within the paginated result set.
+        :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
+        :param project:
+        :type project: UUID
+        :param project_id:
+        :type project_id: float
+        :param received_at__gte:
+        :type received_at__gte: datetime
+        :param received_at__lte:
+        :type received_at__lte: datetime
+        :param search: A search term.
+        :type search: str
+        :param service_name:
+        :type service_name: str
+        :param service_name__in: Multiple values may be separated by commas.
+        :type service_name__in: List[str]
+        :param span_id:
+        :type span_id: str
+        :param span_type:
+        :type span_type: str
+        :param start_time_ns__gte:
+        :type start_time_ns__gte: int
+        :param start_time_ns__lte:
+        :type start_time_ns__lte: int
+        :param status_code:
+        :type status_code: int
+        :param total_cost__gte:
+        :type total_cost__gte: float
+        :param total_cost__lte:
+        :type total_cost__lte: float
+        :param total_tokens__gte:
+        :type total_tokens__gte: float
+        :param total_tokens__lte:
+        :type total_tokens__lte: float
+        :param trace_id:
+        :type trace_id: str
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._traces_services_list_serialize(
+            agent=agent,
+            all_spans=all_spans,
+            duration_ns__gte=duration_ns__gte,
+            duration_ns__lte=duration_ns__lte,
+            has_error=has_error,
+            iteration=iteration,
+            job=job,
+            kind=kind,
+            max_duration_ms=max_duration_ms,
+            min_duration_ms=min_duration_ms,
+            name=name,
+            operation=operation,
+            ordering=ordering,
+            page=page,
+            page_size=page_size,
+            project=project,
+            project_id=project_id,
+            received_at__gte=received_at__gte,
+            received_at__lte=received_at__lte,
+            search=search,
+            service_name=service_name,
+            service_name__in=service_name__in,
+            span_id=span_id,
+            span_type=span_type,
+            start_time_ns__gte=start_time_ns__gte,
+            start_time_ns__lte=start_time_ns__lte,
+            status_code=status_code,
+            total_cost__gte=total_cost__gte,
+            total_cost__lte=total_cost__lte,
+            total_tokens__gte=total_tokens__gte,
+            total_tokens__lte=total_tokens__lte,
+            trace_id=trace_id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "TracesServicesList200Response",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def traces_services_list_without_preload_content(
+        self,
+        agent: Optional[UUID] = None,
+        all_spans: Optional[StrictBool] = None,
+        duration_ns__gte: Optional[StrictInt] = None,
+        duration_ns__lte: Optional[StrictInt] = None,
+        has_error: Optional[StrictBool] = None,
+        iteration: Optional[UUID] = None,
+        job: Optional[UUID] = None,
+        kind: Optional[StrictInt] = None,
+        max_duration_ms: Optional[Union[StrictFloat, StrictInt]] = None,
+        min_duration_ms: Optional[Union[StrictFloat, StrictInt]] = None,
+        name: Optional[StrictStr] = None,
+        operation: Optional[StrictStr] = None,
+        ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
+        page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
+        project: Optional[UUID] = None,
+        project_id: Optional[Union[StrictFloat, StrictInt]] = None,
+        received_at__gte: Optional[datetime] = None,
+        received_at__lte: Optional[datetime] = None,
+        search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
+        service_name: Optional[StrictStr] = None,
+        service_name__in: Annotated[Optional[List[StrictStr]], Field(description="Multiple values may be separated by commas.")] = None,
+        span_id: Optional[StrictStr] = None,
+        span_type: Optional[StrictStr] = None,
+        start_time_ns__gte: Optional[StrictInt] = None,
+        start_time_ns__lte: Optional[StrictInt] = None,
+        status_code: Optional[StrictInt] = None,
+        total_cost__gte: Optional[Union[StrictFloat, StrictInt]] = None,
+        total_cost__lte: Optional[Union[StrictFloat, StrictInt]] = None,
+        total_tokens__gte: Optional[Union[StrictFloat, StrictInt]] = None,
+        total_tokens__lte: Optional[Union[StrictFloat, StrictInt]] = None,
+        trace_id: Optional[StrictStr] = None,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """List distinct service names visible to the caller
+
+        The single trace-data viewset — one Span table, two read shapes.
+
+        :param agent:
+        :type agent: UUID
+        :param all_spans:
+        :type all_spans: bool
+        :param duration_ns__gte:
+        :type duration_ns__gte: int
+        :param duration_ns__lte:
+        :type duration_ns__lte: int
+        :param has_error:
+        :type has_error: bool
+        :param iteration:
+        :type iteration: UUID
+        :param job:
+        :type job: UUID
+        :param kind:
+        :type kind: int
+        :param max_duration_ms:
+        :type max_duration_ms: float
+        :param min_duration_ms:
+        :type min_duration_ms: float
+        :param name:
+        :type name: str
+        :param operation:
+        :type operation: str
+        :param ordering: Which field to use when ordering the results.
+        :type ordering: str
+        :param page: A page number within the paginated result set.
+        :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
+        :param project:
+        :type project: UUID
+        :param project_id:
+        :type project_id: float
+        :param received_at__gte:
+        :type received_at__gte: datetime
+        :param received_at__lte:
+        :type received_at__lte: datetime
+        :param search: A search term.
+        :type search: str
+        :param service_name:
+        :type service_name: str
+        :param service_name__in: Multiple values may be separated by commas.
+        :type service_name__in: List[str]
+        :param span_id:
+        :type span_id: str
+        :param span_type:
+        :type span_type: str
+        :param start_time_ns__gte:
+        :type start_time_ns__gte: int
+        :param start_time_ns__lte:
+        :type start_time_ns__lte: int
+        :param status_code:
+        :type status_code: int
+        :param total_cost__gte:
+        :type total_cost__gte: float
+        :param total_cost__lte:
+        :type total_cost__lte: float
+        :param total_tokens__gte:
+        :type total_tokens__gte: float
+        :param total_tokens__lte:
+        :type total_tokens__lte: float
+        :param trace_id:
+        :type trace_id: str
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._traces_services_list_serialize(
+            agent=agent,
+            all_spans=all_spans,
+            duration_ns__gte=duration_ns__gte,
+            duration_ns__lte=duration_ns__lte,
+            has_error=has_error,
+            iteration=iteration,
+            job=job,
+            kind=kind,
+            max_duration_ms=max_duration_ms,
+            min_duration_ms=min_duration_ms,
+            name=name,
+            operation=operation,
+            ordering=ordering,
+            page=page,
+            page_size=page_size,
+            project=project,
+            project_id=project_id,
+            received_at__gte=received_at__gte,
+            received_at__lte=received_at__lte,
+            search=search,
+            service_name=service_name,
+            service_name__in=service_name__in,
+            span_id=span_id,
+            span_type=span_type,
+            start_time_ns__gte=start_time_ns__gte,
+            start_time_ns__lte=start_time_ns__lte,
+            status_code=status_code,
+            total_cost__gte=total_cost__gte,
+            total_cost__lte=total_cost__lte,
+            total_tokens__gte=total_tokens__gte,
+            total_tokens__lte=total_tokens__lte,
+            trace_id=trace_id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "TracesServicesList200Response",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _traces_services_list_serialize(
+        self,
+        agent,
+        all_spans,
+        duration_ns__gte,
+        duration_ns__lte,
+        has_error,
+        iteration,
+        job,
+        kind,
+        max_duration_ms,
+        min_duration_ms,
+        name,
+        operation,
+        ordering,
+        page,
+        page_size,
+        project,
+        project_id,
+        received_at__gte,
+        received_at__lte,
+        search,
+        service_name,
+        service_name__in,
+        span_id,
+        span_type,
+        start_time_ns__gte,
+        start_time_ns__lte,
+        status_code,
+        total_cost__gte,
+        total_cost__lte,
+        total_tokens__gte,
+        total_tokens__lte,
+        trace_id,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+            'service_name__in': 'csv',
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        # process the query parameters
+        if agent is not None:
+            
+            _query_params.append(('agent', agent))
+            
+        if all_spans is not None:
+            
+            _query_params.append(('all_spans', all_spans))
+            
+        if duration_ns__gte is not None:
+            
+            _query_params.append(('duration_ns__gte', duration_ns__gte))
+            
+        if duration_ns__lte is not None:
+            
+            _query_params.append(('duration_ns__lte', duration_ns__lte))
+            
+        if has_error is not None:
+            
+            _query_params.append(('has_error', has_error))
+            
+        if iteration is not None:
+            
+            _query_params.append(('iteration', iteration))
+            
+        if job is not None:
+            
+            _query_params.append(('job', job))
+            
+        if kind is not None:
+            
+            _query_params.append(('kind', kind))
+            
+        if max_duration_ms is not None:
+            
+            _query_params.append(('max_duration_ms', max_duration_ms))
+            
+        if min_duration_ms is not None:
+            
+            _query_params.append(('min_duration_ms', min_duration_ms))
+            
+        if name is not None:
+            
+            _query_params.append(('name', name))
+            
+        if operation is not None:
+            
+            _query_params.append(('operation', operation))
+            
+        if ordering is not None:
+            
+            _query_params.append(('ordering', ordering))
+            
+        if page is not None:
+            
+            _query_params.append(('page', page))
+            
+        if page_size is not None:
+            
+            _query_params.append(('page_size', page_size))
+            
+        if project is not None:
+            
+            _query_params.append(('project', project))
+            
+        if project_id is not None:
+            
+            _query_params.append(('project_id', project_id))
+            
+        if received_at__gte is not None:
+            if isinstance(received_at__gte, datetime):
+                _query_params.append(
+                    (
+                        'received_at__gte',
+                        received_at__gte.strftime(
+                            self.api_client.configuration.datetime_format
+                        )
+                    )
+                )
+            else:
+                _query_params.append(('received_at__gte', received_at__gte))
+            
+        if received_at__lte is not None:
+            if isinstance(received_at__lte, datetime):
+                _query_params.append(
+                    (
+                        'received_at__lte',
+                        received_at__lte.strftime(
+                            self.api_client.configuration.datetime_format
+                        )
+                    )
+                )
+            else:
+                _query_params.append(('received_at__lte', received_at__lte))
+            
+        if search is not None:
+            
+            _query_params.append(('search', search))
+            
+        if service_name is not None:
+            
+            _query_params.append(('service_name', service_name))
+            
+        if service_name__in is not None:
+            
+            _query_params.append(('service_name__in', service_name__in))
+            
+        if span_id is not None:
+            
+            _query_params.append(('span_id', span_id))
+            
+        if span_type is not None:
+            
+            _query_params.append(('span_type', span_type))
+            
+        if start_time_ns__gte is not None:
+            
+            _query_params.append(('start_time_ns__gte', start_time_ns__gte))
+            
+        if start_time_ns__lte is not None:
+            
+            _query_params.append(('start_time_ns__lte', start_time_ns__lte))
+            
+        if status_code is not None:
+            
+            _query_params.append(('status_code', status_code))
+            
+        if total_cost__gte is not None:
+            
+            _query_params.append(('total_cost__gte', total_cost__gte))
+            
+        if total_cost__lte is not None:
+            
+            _query_params.append(('total_cost__lte', total_cost__lte))
+            
+        if total_tokens__gte is not None:
+            
+            _query_params.append(('total_tokens__gte', total_tokens__gte))
+            
+        if total_tokens__lte is not None:
+            
+            _query_params.append(('total_tokens__lte', total_tokens__lte))
+            
+        if trace_id is not None:
+            
+            _query_params.append(('trace_id', trace_id))
+            
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='GET',
+            resource_path='/api/traces/services/',
             path_params=_path_params,
             query_params=_query_params,
             header_params=_header_params,

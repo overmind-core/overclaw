@@ -45,7 +45,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_create(
+    def agents_create(
         self,
         agent_request: AgentRequest,
         _request_timeout: Union[
@@ -99,11 +99,11 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "Agent",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -111,7 +111,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_create_with_http_info(
+    def agents_create_with_http_info(
         self,
         agent_request: AgentRequest,
         _request_timeout: Union[
@@ -165,11 +165,11 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "Agent",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -177,7 +177,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_create_without_preload_content(
+    def agents_create_without_preload_content(
         self,
         agent_request: AgentRequest,
         _request_timeout: Union[
@@ -231,7 +231,7 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "Agent",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -285,8 +285,8 @@ class AgentsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -296,9 +296,10 @@ class AgentsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -321,7 +322,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_destroy(
+    def agents_destroy(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this agent.")],
         _request_timeout: Union[
@@ -375,11 +376,11 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '204': None,
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -387,7 +388,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_destroy_with_http_info(
+    def agents_destroy_with_http_info(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this agent.")],
         _request_timeout: Union[
@@ -441,11 +442,11 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '204': None,
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -453,7 +454,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_destroy_without_preload_content(
+    def agents_destroy_without_preload_content(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this agent.")],
         _request_timeout: Union[
@@ -507,7 +508,7 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '204': None,
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -550,9 +551,10 @@ class AgentsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -575,7 +577,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_eval_spec_retrieve(
+    def agents_eval_spec_retrieve(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this agent.")],
         _request_timeout: Union[
@@ -629,11 +631,11 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "EvalSpecResponse",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -641,7 +643,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_eval_spec_retrieve_with_http_info(
+    def agents_eval_spec_retrieve_with_http_info(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this agent.")],
         _request_timeout: Union[
@@ -695,11 +697,11 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "EvalSpecResponse",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -707,7 +709,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_eval_spec_retrieve_without_preload_content(
+    def agents_eval_spec_retrieve_without_preload_content(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this agent.")],
         _request_timeout: Union[
@@ -761,7 +763,7 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "EvalSpecResponse",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -811,9 +813,10 @@ class AgentsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -836,12 +839,13 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_list(
+    def agents_list(
         self,
         model: Optional[StrictStr] = None,
         name: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         project: Optional[UUID] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         slug: Optional[StrictStr] = None,
@@ -870,6 +874,8 @@ class AgentsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param project:
         :type project: UUID
         :param search: A search term.
@@ -905,6 +911,7 @@ class AgentsApi:
             name=name,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             project=project,
             search=search,
             slug=slug,
@@ -918,11 +925,11 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "PaginatedAgentListList",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -930,12 +937,13 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_list_with_http_info(
+    def agents_list_with_http_info(
         self,
         model: Optional[StrictStr] = None,
         name: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         project: Optional[UUID] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         slug: Optional[StrictStr] = None,
@@ -964,6 +972,8 @@ class AgentsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param project:
         :type project: UUID
         :param search: A search term.
@@ -999,6 +1009,7 @@ class AgentsApi:
             name=name,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             project=project,
             search=search,
             slug=slug,
@@ -1012,11 +1023,11 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "PaginatedAgentListList",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1024,12 +1035,13 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_list_without_preload_content(
+    def agents_list_without_preload_content(
         self,
         model: Optional[StrictStr] = None,
         name: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         project: Optional[UUID] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         slug: Optional[StrictStr] = None,
@@ -1058,6 +1070,8 @@ class AgentsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param project:
         :type project: UUID
         :param search: A search term.
@@ -1093,6 +1107,7 @@ class AgentsApi:
             name=name,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             project=project,
             search=search,
             slug=slug,
@@ -1106,7 +1121,7 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "PaginatedAgentListList",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -1119,6 +1134,7 @@ class AgentsApi:
         name,
         ordering,
         page,
+        page_size,
         project,
         search,
         slug,
@@ -1146,37 +1162,41 @@ class AgentsApi:
         # process the path parameters
         # process the query parameters
         if model is not None:
-
+            
             _query_params.append(('model', model))
-
+            
         if name is not None:
-
+            
             _query_params.append(('name', name))
-
+            
         if ordering is not None:
-
+            
             _query_params.append(('ordering', ordering))
-
+            
         if page is not None:
-
+            
             _query_params.append(('page', page))
-
+            
+        if page_size is not None:
+            
+            _query_params.append(('page_size', page_size))
+            
         if project is not None:
-
+            
             _query_params.append(('project', project))
-
+            
         if search is not None:
-
+            
             _query_params.append(('search', search))
-
+            
         if slug is not None:
-
+            
             _query_params.append(('slug', slug))
-
+            
         if status is not None:
-
+            
             _query_params.append(('status', status))
-
+            
         # process the header parameters
         # process the form parameters
         # process the body parameter
@@ -1193,9 +1213,10 @@ class AgentsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1218,7 +1239,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_partial_update(
+    def agents_partial_update(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this agent.")],
         patched_agent_request: Optional[PatchedAgentRequest] = None,
@@ -1276,11 +1297,11 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "Agent",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1288,7 +1309,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_partial_update_with_http_info(
+    def agents_partial_update_with_http_info(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this agent.")],
         patched_agent_request: Optional[PatchedAgentRequest] = None,
@@ -1346,11 +1367,11 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "Agent",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1358,7 +1379,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_partial_update_without_preload_content(
+    def agents_partial_update_without_preload_content(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this agent.")],
         patched_agent_request: Optional[PatchedAgentRequest] = None,
@@ -1416,7 +1437,7 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "Agent",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -1473,8 +1494,8 @@ class AgentsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -1484,9 +1505,10 @@ class AgentsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1509,7 +1531,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_retrieve(
+    def agents_retrieve(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this agent.")],
         _request_timeout: Union[
@@ -1563,11 +1585,11 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "Agent",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1575,7 +1597,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_retrieve_with_http_info(
+    def agents_retrieve_with_http_info(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this agent.")],
         _request_timeout: Union[
@@ -1629,11 +1651,11 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "Agent",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1641,7 +1663,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_retrieve_without_preload_content(
+    def agents_retrieve_without_preload_content(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this agent.")],
         _request_timeout: Union[
@@ -1695,7 +1717,7 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "Agent",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -1745,9 +1767,10 @@ class AgentsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1770,7 +1793,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_update(
+    def agents_update(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this agent.")],
         agent_request: AgentRequest,
@@ -1828,11 +1851,11 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "Agent",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1840,7 +1863,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_update_with_http_info(
+    def agents_update_with_http_info(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this agent.")],
         agent_request: AgentRequest,
@@ -1898,11 +1921,11 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "Agent",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1910,7 +1933,7 @@ class AgentsApi:
 
 
     @validate_call
-    async def agents_update_without_preload_content(
+    def agents_update_without_preload_content(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this agent.")],
         agent_request: AgentRequest,
@@ -1968,7 +1991,7 @@ class AgentsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "Agent",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -2025,8 +2048,8 @@ class AgentsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -2036,9 +2059,10 @@ class AgentsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 

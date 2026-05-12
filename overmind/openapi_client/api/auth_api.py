@@ -50,7 +50,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_api_keys_create(
+    def auth_api_keys_create(
         self,
         api_token_create_request_request: APITokenCreateRequestRequest,
         _request_timeout: Union[
@@ -105,11 +105,11 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "APITokenCreateResponse",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -117,7 +117,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_api_keys_create_with_http_info(
+    def auth_api_keys_create_with_http_info(
         self,
         api_token_create_request_request: APITokenCreateRequestRequest,
         _request_timeout: Union[
@@ -172,11 +172,11 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "APITokenCreateResponse",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -184,7 +184,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_api_keys_create_without_preload_content(
+    def auth_api_keys_create_without_preload_content(
         self,
         api_token_create_request_request: APITokenCreateRequestRequest,
         _request_timeout: Union[
@@ -239,7 +239,7 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "APITokenCreateResponse",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -293,8 +293,8 @@ class AuthApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -304,9 +304,10 @@ class AuthApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -329,7 +330,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_api_keys_destroy(
+    def auth_api_keys_destroy(
         self,
         id: UUID,
         _request_timeout: Union[
@@ -384,11 +385,11 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '204': None,
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -396,7 +397,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_api_keys_destroy_with_http_info(
+    def auth_api_keys_destroy_with_http_info(
         self,
         id: UUID,
         _request_timeout: Union[
@@ -451,11 +452,11 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '204': None,
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -463,7 +464,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_api_keys_destroy_without_preload_content(
+    def auth_api_keys_destroy_without_preload_content(
         self,
         id: UUID,
         _request_timeout: Union[
@@ -518,7 +519,7 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '204': None,
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -561,9 +562,10 @@ class AuthApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -586,10 +588,11 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_api_keys_list(
+    def auth_api_keys_list(
         self,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         _request_timeout: Union[
             None,
@@ -612,6 +615,8 @@ class AuthApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
         :param _request_timeout: timeout setting for this request. If one
@@ -639,6 +644,7 @@ class AuthApi:
         _param = self._auth_api_keys_list_serialize(
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
             _request_auth=_request_auth,
             _content_type=_content_type,
@@ -649,11 +655,11 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "PaginatedAPITokenMetadataList",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -661,10 +667,11 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_api_keys_list_with_http_info(
+    def auth_api_keys_list_with_http_info(
         self,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         _request_timeout: Union[
             None,
@@ -687,6 +694,8 @@ class AuthApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
         :param _request_timeout: timeout setting for this request. If one
@@ -714,6 +723,7 @@ class AuthApi:
         _param = self._auth_api_keys_list_serialize(
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
             _request_auth=_request_auth,
             _content_type=_content_type,
@@ -724,11 +734,11 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "PaginatedAPITokenMetadataList",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -736,10 +746,11 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_api_keys_list_without_preload_content(
+    def auth_api_keys_list_without_preload_content(
         self,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         _request_timeout: Union[
             None,
@@ -762,6 +773,8 @@ class AuthApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
         :param _request_timeout: timeout setting for this request. If one
@@ -789,6 +802,7 @@ class AuthApi:
         _param = self._auth_api_keys_list_serialize(
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
             _request_auth=_request_auth,
             _content_type=_content_type,
@@ -799,7 +813,7 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "PaginatedAPITokenMetadataList",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -810,6 +824,7 @@ class AuthApi:
         self,
         ordering,
         page,
+        page_size,
         search,
         _request_auth,
         _content_type,
@@ -834,17 +849,21 @@ class AuthApi:
         # process the path parameters
         # process the query parameters
         if ordering is not None:
-
+            
             _query_params.append(('ordering', ordering))
-
+            
         if page is not None:
-
+            
             _query_params.append(('page', page))
-
+            
+        if page_size is not None:
+            
+            _query_params.append(('page_size', page_size))
+            
         if search is not None:
-
+            
             _query_params.append(('search', search))
-
+            
         # process the header parameters
         # process the form parameters
         # process the body parameter
@@ -861,9 +880,10 @@ class AuthApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -886,7 +906,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_me_retrieve(
+    def auth_me_retrieve(
         self,
         _request_timeout: Union[
             None,
@@ -937,11 +957,11 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "UserMe",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -949,7 +969,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_me_retrieve_with_http_info(
+    def auth_me_retrieve_with_http_info(
         self,
         _request_timeout: Union[
             None,
@@ -1000,11 +1020,11 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "UserMe",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1012,7 +1032,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_me_retrieve_without_preload_content(
+    def auth_me_retrieve_without_preload_content(
         self,
         _request_timeout: Union[
             None,
@@ -1063,7 +1083,7 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "UserMe",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -1110,9 +1130,10 @@ class AuthApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1135,7 +1156,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_register_create(
+    def auth_register_create(
         self,
         register_request: RegisterRequest,
         _request_timeout: Union[
@@ -1190,11 +1211,11 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "AuthTokensResponse",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1202,7 +1223,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_register_create_with_http_info(
+    def auth_register_create_with_http_info(
         self,
         register_request: RegisterRequest,
         _request_timeout: Union[
@@ -1257,11 +1278,11 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "AuthTokensResponse",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1269,7 +1290,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_register_create_without_preload_content(
+    def auth_register_create_without_preload_content(
         self,
         register_request: RegisterRequest,
         _request_timeout: Union[
@@ -1324,7 +1345,7 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "AuthTokensResponse",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -1378,8 +1399,8 @@ class AuthApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -1389,9 +1410,10 @@ class AuthApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1414,7 +1436,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_token_create(
+    def auth_token_create(
         self,
         token_obtain_pair_request: TokenObtainPairRequest,
         _request_timeout: Union[
@@ -1469,11 +1491,11 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "TokenObtainPair",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1481,7 +1503,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_token_create_with_http_info(
+    def auth_token_create_with_http_info(
         self,
         token_obtain_pair_request: TokenObtainPairRequest,
         _request_timeout: Union[
@@ -1536,11 +1558,11 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "TokenObtainPair",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1548,7 +1570,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_token_create_without_preload_content(
+    def auth_token_create_without_preload_content(
         self,
         token_obtain_pair_request: TokenObtainPairRequest,
         _request_timeout: Union[
@@ -1603,7 +1625,7 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "TokenObtainPair",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -1657,8 +1679,8 @@ class AuthApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -1668,7 +1690,7 @@ class AuthApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'ApiKeyAuth',
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1691,7 +1713,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_token_refresh_create(
+    def auth_token_refresh_create(
         self,
         token_refresh_request: TokenRefreshRequest,
         _request_timeout: Union[
@@ -1746,11 +1768,11 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "TokenRefresh",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1758,7 +1780,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_token_refresh_create_with_http_info(
+    def auth_token_refresh_create_with_http_info(
         self,
         token_refresh_request: TokenRefreshRequest,
         _request_timeout: Union[
@@ -1813,11 +1835,11 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "TokenRefresh",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1825,7 +1847,7 @@ class AuthApi:
 
 
     @validate_call
-    async def auth_token_refresh_create_without_preload_content(
+    def auth_token_refresh_create_without_preload_content(
         self,
         token_refresh_request: TokenRefreshRequest,
         _request_timeout: Union[
@@ -1880,7 +1902,7 @@ class AuthApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "TokenRefresh",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -1934,8 +1956,8 @@ class AuthApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -1945,7 +1967,7 @@ class AuthApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'ApiKeyAuth',
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 

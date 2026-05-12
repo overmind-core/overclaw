@@ -35,9 +35,10 @@ class PatchedJobIterationRequest(BaseModel):
     status: Optional[JobIterationStatusEnum] = None
     description: Optional[StrictStr] = None
     dimension_scores: Optional[Any] = None
+    candidates: Optional[Any] = None
     agent_code: Optional[StrictStr] = None
     job: Optional[UUID] = None
-    __properties: ClassVar[List[str]] = ["iteration_name", "order", "avg_score", "status", "description", "dimension_scores", "agent_code", "job"]
+    __properties: ClassVar[List[str]] = ["iteration_name", "order", "avg_score", "status", "description", "dimension_scores", "candidates", "agent_code", "job"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -83,6 +84,11 @@ class PatchedJobIterationRequest(BaseModel):
         if self.dimension_scores is None and "dimension_scores" in self.model_fields_set:
             _dict['dimension_scores'] = None
 
+        # set to None if candidates (nullable) is None
+        # and model_fields_set contains the field
+        if self.candidates is None and "candidates" in self.model_fields_set:
+            _dict['candidates'] = None
+
         return _dict
 
     @classmethod
@@ -101,6 +107,7 @@ class PatchedJobIterationRequest(BaseModel):
             "status": obj.get("status"),
             "description": obj.get("description"),
             "dimension_scores": obj.get("dimension_scores"),
+            "candidates": obj.get("candidates"),
             "agent_code": obj.get("agent_code"),
             "job": obj.get("job")
         })

@@ -18,42 +18,35 @@ import re  # noqa: F401
 import json
 
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt, StrictStr
+from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
 from typing import Any, ClassVar, Dict, List, Optional
 from uuid import UUID
 from typing import Optional, Set
 from typing_extensions import Self
 
-class Span(BaseModel):
+class RootSpanList(BaseModel):
     """
-    Full span — used both for ``/api/traces/{trace_id}/`` (one span row in the per-trace list) and as the per-row representation for any span query.
+    Lightweight ``GET /api/traces/`` row — the trace's root span only.  Mirrors what a Jaeger-style \"list traces\" call returns: identity plus the headline fields a UI needs to render a row.
     """ # noqa: E501
-    span_id: StrictStr
     trace_id: StrictStr
-    parent_span_id: Optional[StrictStr]
-    is_root: StrictBool
+    span_id: StrictStr
     project: UUID
-    span_type: StrictStr
-    operation: StrictStr
-    name: StrictStr
-    kind: StrictInt
-    start_time_ns: StrictInt
-    end_time_ns: StrictInt
-    duration_ns: StrictInt
-    status_code: StrictInt
-    status_message: StrictStr
-    service_name: StrictStr
-    resource_attrs: Optional[Any]
-    scope_name: StrictStr
-    scope_version: StrictStr
-    attributes: Optional[Any]
-    events: Optional[Any]
-    links: Optional[Any]
     agent: Optional[UUID]
     job: Optional[UUID]
     iteration: Optional[UUID]
+    span_type: StrictStr
+    operation: StrictStr
+    name: StrictStr
+    service_name: StrictStr
+    kind: StrictInt
+    status_code: StrictInt
+    status_message: StrictStr
+    start_time_ns: StrictInt
+    end_time_ns: StrictInt
+    duration_ns: StrictInt
+    total_tokens: Optional[StrictInt]
     received_at: datetime
-    __properties: ClassVar[List[str]] = ["span_id", "trace_id", "parent_span_id", "is_root", "project", "span_type", "operation", "name", "kind", "start_time_ns", "end_time_ns", "duration_ns", "status_code", "status_message", "service_name", "resource_attrs", "scope_name", "scope_version", "attributes", "events", "links", "agent", "job", "iteration", "received_at"]
+    __properties: ClassVar[List[str]] = ["trace_id", "span_id", "project", "agent", "job", "iteration", "span_type", "operation", "name", "service_name", "kind", "status_code", "status_message", "start_time_ns", "end_time_ns", "duration_ns", "total_tokens", "received_at"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -73,7 +66,7 @@ class Span(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Optional[Self]:
-        """Create an instance of Span from a JSON string"""
+        """Create an instance of RootSpanList from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -103,39 +96,25 @@ class Span(BaseModel):
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
-        * OpenAPI `readOnly` fields are excluded.
-        * OpenAPI `readOnly` fields are excluded.
-        * OpenAPI `readOnly` fields are excluded.
-        * OpenAPI `readOnly` fields are excluded.
-        * OpenAPI `readOnly` fields are excluded.
-        * OpenAPI `readOnly` fields are excluded.
-        * OpenAPI `readOnly` fields are excluded.
         """
         excluded_fields: Set[str] = set([
-            "span_id",
             "trace_id",
-            "parent_span_id",
-            "is_root",
+            "span_id",
             "project",
-            "span_type",
-            "operation",
-            "name",
-            "kind",
-            "start_time_ns",
-            "end_time_ns",
-            "duration_ns",
-            "status_code",
-            "status_message",
-            "service_name",
-            "resource_attrs",
-            "scope_name",
-            "scope_version",
-            "attributes",
-            "events",
-            "links",
             "agent",
             "job",
             "iteration",
+            "span_type",
+            "operation",
+            "name",
+            "service_name",
+            "kind",
+            "status_code",
+            "status_message",
+            "start_time_ns",
+            "end_time_ns",
+            "duration_ns",
+            "total_tokens",
             "received_at",
         ])
 
@@ -144,31 +123,6 @@ class Span(BaseModel):
             exclude=excluded_fields,
             exclude_none=True,
         )
-        # set to None if parent_span_id (nullable) is None
-        # and model_fields_set contains the field
-        if self.parent_span_id is None and "parent_span_id" in self.model_fields_set:
-            _dict['parent_span_id'] = None
-
-        # set to None if resource_attrs (nullable) is None
-        # and model_fields_set contains the field
-        if self.resource_attrs is None and "resource_attrs" in self.model_fields_set:
-            _dict['resource_attrs'] = None
-
-        # set to None if attributes (nullable) is None
-        # and model_fields_set contains the field
-        if self.attributes is None and "attributes" in self.model_fields_set:
-            _dict['attributes'] = None
-
-        # set to None if events (nullable) is None
-        # and model_fields_set contains the field
-        if self.events is None and "events" in self.model_fields_set:
-            _dict['events'] = None
-
-        # set to None if links (nullable) is None
-        # and model_fields_set contains the field
-        if self.links is None and "links" in self.model_fields_set:
-            _dict['links'] = None
-
         # set to None if agent (nullable) is None
         # and model_fields_set contains the field
         if self.agent is None and "agent" in self.model_fields_set:
@@ -184,11 +138,16 @@ class Span(BaseModel):
         if self.iteration is None and "iteration" in self.model_fields_set:
             _dict['iteration'] = None
 
+        # set to None if total_tokens (nullable) is None
+        # and model_fields_set contains the field
+        if self.total_tokens is None and "total_tokens" in self.model_fields_set:
+            _dict['total_tokens'] = None
+
         return _dict
 
     @classmethod
     def from_dict(cls, obj: Optional[Dict[str, Any]]) -> Optional[Self]:
-        """Create an instance of Span from a dict"""
+        """Create an instance of RootSpanList from a dict"""
         if obj is None:
             return None
 
@@ -196,30 +155,23 @@ class Span(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "span_id": obj.get("span_id"),
             "trace_id": obj.get("trace_id"),
-            "parent_span_id": obj.get("parent_span_id"),
-            "is_root": obj.get("is_root"),
+            "span_id": obj.get("span_id"),
             "project": obj.get("project"),
-            "span_type": obj.get("span_type"),
-            "operation": obj.get("operation"),
-            "name": obj.get("name"),
-            "kind": obj.get("kind"),
-            "start_time_ns": obj.get("start_time_ns"),
-            "end_time_ns": obj.get("end_time_ns"),
-            "duration_ns": obj.get("duration_ns"),
-            "status_code": obj.get("status_code"),
-            "status_message": obj.get("status_message"),
-            "service_name": obj.get("service_name"),
-            "resource_attrs": obj.get("resource_attrs"),
-            "scope_name": obj.get("scope_name"),
-            "scope_version": obj.get("scope_version"),
-            "attributes": obj.get("attributes"),
-            "events": obj.get("events"),
-            "links": obj.get("links"),
             "agent": obj.get("agent"),
             "job": obj.get("job"),
             "iteration": obj.get("iteration"),
+            "span_type": obj.get("span_type"),
+            "operation": obj.get("operation"),
+            "name": obj.get("name"),
+            "service_name": obj.get("service_name"),
+            "kind": obj.get("kind"),
+            "status_code": obj.get("status_code"),
+            "status_message": obj.get("status_message"),
+            "start_time_ns": obj.get("start_time_ns"),
+            "end_time_ns": obj.get("end_time_ns"),
+            "duration_ns": obj.get("duration_ns"),
+            "total_tokens": obj.get("total_tokens"),
             "received_at": obj.get("received_at")
         })
         return _obj

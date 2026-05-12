@@ -20,12 +20,13 @@ from typing_extensions import Self
 
 class JobIterationStatusEnum(str, Enum):
     """
-    * `keep` - Keep * `discard` - Discard
+    * `running` - Running * `keep` - Keep * `discard` - Discard
     """
 
     """
     allowed enum values
     """
+    RUNNING = 'running'
     KEEP = 'keep'
     DISCARD = 'discard'
 

@@ -17,6 +17,7 @@ import pprint
 import re  # noqa: F401
 import json
 
+from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, field_validator
 from typing import Any, ClassVar, Dict, List, Optional, Union
 from typing_extensions import Annotated
@@ -48,6 +49,9 @@ class PatchedAgentRequest(BaseModel):
     proposed_criteria: Optional[Any] = None
     tool_analysis: Optional[Any] = None
     output_schema: Optional[Any] = None
+    tools_summary: Optional[StrictStr] = None
+    decision_logic: Optional[StrictStr] = None
+    scope: Optional[Any] = None
     dataset_size: Optional[Annotated[int, Field(le=9223372036854775807, strict=True, ge=-9223372036854775808)]] = None
     dataset_input_keys: Optional[Any] = None
     dataset_has_expected_output: Optional[StrictBool] = None
@@ -61,10 +65,14 @@ class PatchedAgentRequest(BaseModel):
     status: Optional[Annotated[str, Field(min_length=1, strict=True, max_length=20)]] = None
     entrypoint_fn: Optional[Annotated[str, Field(strict=True, max_length=255)]] = None
     analyzer_model: Optional[Annotated[str, Field(strict=True, max_length=128)]] = None
+    optimization_summary: Optional[Any] = None
+    setup_summary: Optional[Any] = None
+    usage_stats: Optional[Any] = None
+    last_activity_at: Optional[datetime] = None
     is_deleted: Optional[StrictBool] = None
     project: Optional[UUID] = None
     active_dataset: Optional[UUID] = None
-    __properties: ClassVar[List[str]] = ["tool_config", "consistency_rules", "optimizable_elements", "fixed_elements", "eval_dataset", "name", "slug", "description", "agent_path", "model", "input_schema", "output_fields", "structure_weight", "total_points", "tool_usage_weight", "policy_markdown", "policy_data", "proposed_criteria", "tool_analysis", "output_schema", "dataset_size", "dataset_input_keys", "dataset_has_expected_output", "evaluation_criteria", "improvement_metadata", "agent_description", "backtest_model_suggestions", "backtest_metadata", "tags", "display_name", "status", "entrypoint_fn", "analyzer_model", "is_deleted", "project", "active_dataset"]
+    __properties: ClassVar[List[str]] = ["tool_config", "consistency_rules", "optimizable_elements", "fixed_elements", "eval_dataset", "name", "slug", "description", "agent_path", "model", "input_schema", "output_fields", "structure_weight", "total_points", "tool_usage_weight", "policy_markdown", "policy_data", "proposed_criteria", "tool_analysis", "output_schema", "tools_summary", "decision_logic", "scope", "dataset_size", "dataset_input_keys", "dataset_has_expected_output", "evaluation_criteria", "improvement_metadata", "agent_description", "backtest_model_suggestions", "backtest_metadata", "tags", "display_name", "status", "entrypoint_fn", "analyzer_model", "optimization_summary", "setup_summary", "usage_stats", "last_activity_at", "is_deleted", "project", "active_dataset"]
 
     @field_validator('slug')
     def slug_validate_regular_expression(cls, value):
@@ -170,6 +178,11 @@ class PatchedAgentRequest(BaseModel):
         if self.output_schema is None and "output_schema" in self.model_fields_set:
             _dict['output_schema'] = None
 
+        # set to None if scope (nullable) is None
+        # and model_fields_set contains the field
+        if self.scope is None and "scope" in self.model_fields_set:
+            _dict['scope'] = None
+
         # set to None if dataset_input_keys (nullable) is None
         # and model_fields_set contains the field
         if self.dataset_input_keys is None and "dataset_input_keys" in self.model_fields_set:
@@ -204,6 +217,26 @@ class PatchedAgentRequest(BaseModel):
         # and model_fields_set contains the field
         if self.tags is None and "tags" in self.model_fields_set:
             _dict['tags'] = None
+
+        # set to None if optimization_summary (nullable) is None
+        # and model_fields_set contains the field
+        if self.optimization_summary is None and "optimization_summary" in self.model_fields_set:
+            _dict['optimization_summary'] = None
+
+        # set to None if setup_summary (nullable) is None
+        # and model_fields_set contains the field
+        if self.setup_summary is None and "setup_summary" in self.model_fields_set:
+            _dict['setup_summary'] = None
+
+        # set to None if usage_stats (nullable) is None
+        # and model_fields_set contains the field
+        if self.usage_stats is None and "usage_stats" in self.model_fields_set:
+            _dict['usage_stats'] = None
+
+        # set to None if last_activity_at (nullable) is None
+        # and model_fields_set contains the field
+        if self.last_activity_at is None and "last_activity_at" in self.model_fields_set:
+            _dict['last_activity_at'] = None
 
         # set to None if active_dataset (nullable) is None
         # and model_fields_set contains the field
@@ -242,6 +275,9 @@ class PatchedAgentRequest(BaseModel):
             "proposed_criteria": obj.get("proposed_criteria"),
             "tool_analysis": obj.get("tool_analysis"),
             "output_schema": obj.get("output_schema"),
+            "tools_summary": obj.get("tools_summary"),
+            "decision_logic": obj.get("decision_logic"),
+            "scope": obj.get("scope"),
             "dataset_size": obj.get("dataset_size"),
             "dataset_input_keys": obj.get("dataset_input_keys"),
             "dataset_has_expected_output": obj.get("dataset_has_expected_output"),
@@ -255,6 +291,10 @@ class PatchedAgentRequest(BaseModel):
             "status": obj.get("status"),
             "entrypoint_fn": obj.get("entrypoint_fn"),
             "analyzer_model": obj.get("analyzer_model"),
+            "optimization_summary": obj.get("optimization_summary"),
+            "setup_summary": obj.get("setup_summary"),
+            "usage_stats": obj.get("usage_stats"),
+            "last_activity_at": obj.get("last_activity_at"),
             "is_deleted": obj.get("is_deleted"),
             "project": obj.get("project"),
             "active_dataset": obj.get("active_dataset")

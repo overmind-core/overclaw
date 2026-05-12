@@ -17,21 +17,21 @@ import pprint
 import re  # noqa: F401
 import json
 
-from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
-from typing import Any, ClassVar, Dict, List, Optional
-from overmind.openapi_client.models.span import Span
+from datetime import datetime
+from pydantic import BaseModel, ConfigDict, StrictStr
+from typing import Any, ClassVar, Dict, List
+from uuid import UUID
 from typing import Optional, Set
 from typing_extensions import Self
 
-class PaginatedSpanList(BaseModel):
+class FeedbackCreate(BaseModel):
     """
-    PaginatedSpanList
+    FeedbackCreate
     """ # noqa: E501
-    count: StrictInt
-    next: Optional[StrictStr] = None
-    previous: Optional[StrictStr] = None
-    results: List[Span]
-    __properties: ClassVar[List[str]] = ["count", "next", "previous", "results"]
+    id: UUID
+    feedback: StrictStr
+    created_at: datetime
+    __properties: ClassVar[List[str]] = ["id", "feedback", "created_at"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -51,7 +51,7 @@ class PaginatedSpanList(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Optional[Self]:
-        """Create an instance of PaginatedSpanList from a JSON string"""
+        """Create an instance of FeedbackCreate from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -63,8 +63,12 @@ class PaginatedSpanList(BaseModel):
         * `None` is only added to the output dict for nullable fields that
           were set at model initialization. Other fields with value `None`
           are ignored.
+        * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
         """
         excluded_fields: Set[str] = set([
+            "id",
+            "created_at",
         ])
 
         _dict = self.model_dump(
@@ -72,28 +76,11 @@ class PaginatedSpanList(BaseModel):
             exclude=excluded_fields,
             exclude_none=True,
         )
-        # override the default output from pydantic by calling `to_dict()` of each item in results (list)
-        _items = []
-        if self.results:
-            for _item_results in self.results:
-                if _item_results:
-                    _items.append(_item_results.to_dict())
-            _dict['results'] = _items
-        # set to None if next (nullable) is None
-        # and model_fields_set contains the field
-        if self.next is None and "next" in self.model_fields_set:
-            _dict['next'] = None
-
-        # set to None if previous (nullable) is None
-        # and model_fields_set contains the field
-        if self.previous is None and "previous" in self.model_fields_set:
-            _dict['previous'] = None
-
         return _dict
 
     @classmethod
     def from_dict(cls, obj: Optional[Dict[str, Any]]) -> Optional[Self]:
-        """Create an instance of PaginatedSpanList from a dict"""
+        """Create an instance of FeedbackCreate from a dict"""
         if obj is None:
             return None
 
@@ -101,10 +88,9 @@ class PaginatedSpanList(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "count": obj.get("count"),
-            "next": obj.get("next"),
-            "previous": obj.get("previous"),
-            "results": [Span.from_dict(_item) for _item in obj["results"]] if obj.get("results") is not None else None
+            "id": obj.get("id"),
+            "feedback": obj.get("feedback"),
+            "created_at": obj.get("created_at")
         })
         return _obj
 

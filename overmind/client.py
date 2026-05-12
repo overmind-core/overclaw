@@ -1,18 +1,31 @@
 """Overmind API client.
 
-Configure via environment variables:
-    OVERMIND_API_URL      Base URL of the Overmind backend (e.g. http://localhost:8000)
-    OVERMIND_API_KEY    Bearer token  (ovr_core_... or any JWT)
-    OVERMIND_PROJECT_ID   UUID of the project to associate agents with
+A thin, synchronous-feeling facade over the generated
+``overmind.openapi_client`` SDK.  Configure via the standard environment
+variables:
 
-Every helper here is a thin wrapper around the generated
-``overmind.openapi_client`` SDK — no hand-rolled URLs.
+* ``OVERMIND_API_URL``     Base URL of the Overmind backend (e.g. ``http://localhost:8000``)
+* ``OVERMIND_API_KEY``     Bearer token (``ovr_core_…`` or any JWT)
+* ``OVERMIND_PROJECT_ID``  UUID of the project to associate agents with
 
-Usage::
+Why this module exists
+----------------------
+The generated SDK is fully asynchronous, but the Overmind CLI is a
+synchronous-first surface.  Wrapping every call in ``asyncio.run(...)``
+at the call site is noisy and accidentally creates / tears down a new
+event loop on every invocation.  Instead, we keep a single background
+asyncio loop running on a daemon thread and route every coroutine into
+it — ``OvermindClient`` then exposes ergonomic, blocking helpers
+(``get_agent``, ``resolve_agent``, ``upsert_dataset`` …) that hide that
+machinery from the caller.
 
-    from overmind.client import get_client, upsert_agent
-    from overmind.client import ApiReporter
-    from overmind.client import read_project_toml, write_project_toml
+Example::
+
+    from overmind.client import get_client
+
+    client = get_client()
+    agent = client.resolve_agent("support-triage")
+    dataset = client.upsert_dataset(agent.id, datapoints=[...], source="seed")
 """
 
 from __future__ import annotations
@@ -37,7 +50,6 @@ from overmind.openapi_client.api.datasets_api import DatasetsApi
 from overmind.openapi_client.api.job_iterations_api import JobIterationsApi
 from overmind.openapi_client.api.jobs_api import JobsApi
 from overmind.openapi_client.api.projects_api import ProjectsApi
-from overmind.openapi_client.api.spans_api import SpansApi
 from overmind.openapi_client.api.traces_api import TracesApi
 from overmind.openapi_client.models.agent_request import AgentRequest
 from overmind.openapi_client.models.datapoint_request import DatapointRequest
@@ -152,9 +164,78 @@ class OvermindClient(
     JobIterationsApi,
     JobsApi,
     ProjectsApi,
-    SpansApi,
     TracesApi,
-): ...
+):
+    """Synchronous facade over the generated OpenAPI client.
+
+    The base classes expose every endpoint as an ``async`` method.  This
+    subclass adds blocking helpers for the operations the CLI calls most
+    often — ``resolve_agent``, ``upsert_dataset``, ``patch_job`` — so
+    call sites stay readable.  Async methods inherited from the parents
+    remain available; route them through :func:`_run_async` when you
+    need to invoke them directly.
+    """
+
+    # ------------------------------------------------------------------
+    # Agents
+    # ------------------------------------------------------------------
+
+    def get_agent(self, agent_slug: str) -> Any:
+        """Return the agent identified by *agent_slug*.
+
+        Raises :class:`ValueError` when no agent with that slug exists
+        in the project bound to this client's API token.
+        """
+        page = _run_async(self.agents_list(slug=agent_slug))
+        results = page.results or []
+        if not results:
+            raise ValueError(f"Agent {agent_slug!r} not found")
+        return results[0]
+
+    def resolve_agent(self, agent_slug: str) -> Any | None:
+        """Return the agent identified by *agent_slug*, or ``None``.
+
+        The non-raising counterpart of :meth:`get_agent` — convenient
+        when the caller wants to "create if missing" without juggling
+        exceptions.
+        """
+        try:
+            return self.get_agent(agent_slug)
+        except ValueError:
+            return None
+
+    # ------------------------------------------------------------------
+    # Datasets
+    # ------------------------------------------------------------------
+
+    def upsert_dataset(
+        self,
+        agent_id: str | UUID,
+        datapoints: list[dict],
+        *,
+        source: str = "synthetic",
+        generator_model: str = "",
+        policy_hash: str = "",
+        metadata: dict | None = None,
+        name: str = "",
+        make_active: bool = True,
+    ) -> dict | None:
+        """Create a new versioned :class:`Dataset` for *agent_id*.
+
+        Returns the JSON-serialised dataset record on success, or
+        ``None`` when the API call fails (the error is logged).
+        """
+        return create_dataset(
+            self,
+            agent_id=str(agent_id),
+            datapoints=datapoints,
+            source=source,
+            generator_model=generator_model,
+            policy_hash=policy_hash,
+            metadata=metadata,
+            name=name,
+            make_active=make_active,
+        )
 
 
 def get_client() -> OvermindClient | None:
@@ -516,11 +597,22 @@ def _create_iteration(
 
 
 class ApiReporter:
-    """Streams optimize progress events to the Overmind API.
+    """Streams optimize lifecycle events to the Overmind backend.
 
-    Trace records are emitted by ``overmind`` directly via OTEL — this
-    reporter only handles Job and JobIteration writes, both of which are
-    fully covered by the generated OpenAPI client.
+    Telemetry (per-span attributes, tool calls, LLM usage, iteration
+    analytics) is emitted by the OpenTelemetry pipeline and parsed by
+    ``overbae.api.otlp`` — this reporter only owns the small set of
+    Job / JobIteration writes the OTLP path cannot model cleanly:
+
+    * Creating the parent :class:`Job` row up front so subsequent
+      iteration spans have something to attach to.
+    * Updating ``Job`` status, ``current_iteration`` and rolling logs
+      while the run is in flight.
+    * Stamping the final ``best_agent_code`` / ``report_markdown`` on
+      the Job when the run completes.
+
+    All writes go through :func:`_fire` / :func:`_submit_async` so the
+    optimizer loop never blocks on network I/O.
     """
 
     def __init__(
@@ -529,7 +621,7 @@ class ApiReporter:
         agent_id: str,
         job_id: str,
     ) -> None:
-        self._client = client
+        self._client = client or get_client()
         self._agent_id = agent_id
         self._job_id = job_id
         self._logs: list[dict] = []

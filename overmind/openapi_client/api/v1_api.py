@@ -36,7 +36,7 @@ class V1Api:
 
 
     @validate_call
-    async def v1_traces_create(
+    def v1_traces_create(
         self,
         _request_timeout: Union[
             None,
@@ -53,7 +53,7 @@ class V1Api:
     ) -> None:
         """v1_traces_create
 
-        Ingest OTLP protobuf; upsert traces, insert spans, enqueue ``process_trace`` per id.
+        Ingest OTLP protobuf, upsert spans, post-process every landed span.
 
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -87,11 +87,11 @@ class V1Api:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': None,
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -99,7 +99,7 @@ class V1Api:
 
 
     @validate_call
-    async def v1_traces_create_with_http_info(
+    def v1_traces_create_with_http_info(
         self,
         _request_timeout: Union[
             None,
@@ -116,7 +116,7 @@ class V1Api:
     ) -> ApiResponse[None]:
         """v1_traces_create
 
-        Ingest OTLP protobuf; upsert traces, insert spans, enqueue ``process_trace`` per id.
+        Ingest OTLP protobuf, upsert spans, post-process every landed span.
 
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -150,11 +150,11 @@ class V1Api:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': None,
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -162,7 +162,7 @@ class V1Api:
 
 
     @validate_call
-    async def v1_traces_create_without_preload_content(
+    def v1_traces_create_without_preload_content(
         self,
         _request_timeout: Union[
             None,
@@ -179,7 +179,7 @@ class V1Api:
     ) -> RESTResponseType:
         """v1_traces_create
 
-        Ingest OTLP protobuf; upsert traces, insert spans, enqueue ``process_trace`` per id.
+        Ingest OTLP protobuf, upsert spans, post-process every landed span.
 
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -213,7 +213,7 @@ class V1Api:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': None,
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -253,9 +253,10 @@ class V1Api:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
