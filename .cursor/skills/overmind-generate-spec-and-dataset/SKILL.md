@@ -1,10 +1,6 @@
----
-name: overmind-generate-spec-and-dataset
-description: "Generate the policy, eval spec, and evaluation dataset for an Overmind agent in one pass. Use when the user wants to author or rebuild eval criteria for an agent, fix a broken eval spec (wrong input_schema, missing output fields, bad weights), produce or augment a dataset, or prepare everything needed before running `overmind optimize`. Combines policy elicitation, spec construction, and dataset generation so the artifacts always agree on the same input/output schema."
-metadata:
-  version: "1.2"
-  product: "Overmind"
----
+______________________________________________________________________
+
+## name: overmind-generate-spec-and-dataset description: "Generate the policy, eval spec, and evaluation dataset for an Overmind agent in one pass. Use when the user wants to author or rebuild eval criteria for an agent, fix a broken eval spec (wrong input_schema, missing output fields, bad weights), produce or augment a dataset, or prepare everything needed before running `overmind optimize`. Combines policy elicitation, spec construction, and dataset generation so the artifacts always agree on the same input/output schema." metadata: version: "1.2" product: "Overmind"
 
 # Generate the Policy, Eval Spec, and Dataset
 
@@ -12,8 +8,8 @@ Builds the three canonical artifacts that drive optimization, in a single
 ordered pass so the input/output schemas always agree:
 
 1. `.overmind/agents/<name>/setup_spec/policies.md` — domain knowledge, constraints, edge cases.
-2. `.overmind/agents/<name>/setup_spec/eval_spec.json` — scoring spec (input_schema, output_fields, weights, tools, embedded policy).
-3. `.overmind/agents/<name>/setup_spec/dataset.json` — synthetic + seed test cases that conform to the eval spec.
+1. `.overmind/agents/<name>/setup_spec/eval_spec.json` — scoring spec (input_schema, output_fields, weights, tools, embedded policy).
+1. `.overmind/agents/<name>/setup_spec/dataset.json` — synthetic + seed test cases that conform to the eval spec.
 
 This skill replaces the two earlier ones (`overmind-generate-policy-and-eval` and `overmind-generate-dataset`). Doing both in one pass eliminates the most common failure mode of the old flow: a dataset that was generated against one input/output shape and an eval spec that scores a different shape.
 
@@ -41,7 +37,7 @@ After this skill finishes, run `/overmind-optimise-agent` or `overmind optimize 
 Before Step 3 (policy generation), ask **in order** (use `AskQuestion` when available):
 
 1. **Pre-existing policy**: Do you already have a policy document (markdown or text)? Options: *Yes* / *No*. If *Yes*, ask for the **project-relative path**, read it, and carry it into Step 3 as the starting policy text (merge/improve against code as today).
-2. **Pre-existing dataset or seed file**: Do you already have a dataset, seed JSON/JSONL, or examples file to inform generation? Options: *Yes* / *No*. If *Yes*, ask for the **project-relative path** and use it when generating the dataset (Step 7–8) after the eval spec exists.
+1. **Pre-existing dataset or seed file**: Do you already have a dataset, seed JSON/JSONL, or examples file to inform generation? Options: *Yes* / *No*. If *Yes*, ask for the **project-relative path** and use it when generating the dataset (Step 7–8) after the eval spec exists.
 
 Do not infer “no” from silence or empty directories — ask explicitly.
 
@@ -77,6 +73,7 @@ If the signature exposes a single dict-like payload, pydantic model, dataclass, 
 **Tools** — scan for `@tool`, `Tool(`, `FunctionTool(`, `tools=[...]`, OpenAI/Anthropic tool dicts in the entrypoint and modules it imports. Record name, description, parameter schema.
 
 Also collect:
+
 - Module docstring or `AGENT_DESCRIPTION` constant → `agent_description`.
 - Sibling local packages (top-level imports that resolve to directories next to the entrypoint inside the project root).
 
@@ -110,12 +107,12 @@ Use **only** Step 0 for “do you have an existing policy / dataset path?”. If
 If the codebase lacks enough signal for material domain rules, mark those sections as low-confidence instead of inventing rules. Use interactive elicitation only for blockers or low-confidence areas that materially affect scoring:
 
 1. *Purpose*: one sentence describing the agent's job.
-2. *Domain rules*: real-world business rules the agent must follow.
-3. *Hard constraints*: outcomes that are unacceptable even if the agent technically succeeds.
-4. *Edge cases*: tricky inputs and their correct handling.
-5. *Terminology*: key terms, categories, or thresholds.
-6. *Tool ordering*: required orderings between tools.
-7. *Quality expectations*: style or format requirements for free-text fields.
+1. *Domain rules*: real-world business rules the agent must follow.
+1. *Hard constraints*: outcomes that are unacceptable even if the agent technically succeeds.
+1. *Edge cases*: tricky inputs and their correct handling.
+1. *Terminology*: key terms, categories, or thresholds.
+1. *Tool ordering*: required orderings between tools.
+1. *Quality expectations*: style or format requirements for free-text fields.
 
 Call `overmind.setup.policy_generator.generate_policy_from_code` if available. Otherwise synthesize the policy directly from the inspected codebase context.
 
@@ -206,15 +203,16 @@ If the user wants to score only a subset of outputs, keep unscored outputs visib
 After building `policies.md` content and `eval_spec` dict in memory (Steps 3–4):
 
 1. **Write preview files** (coding agent, deterministic paths under the agent’s `setup_spec/`):
+
    - `.overmind/agents/<agent-name>/setup_spec/_preview_policies.md`
-   - `.overmind/agents/<agent-name>/setup_spec/_preview_eval_spec.json`  
-   Use `json.dumps(spec, indent=2)` for the JSON file. These files are **not** the canonical artifacts until Step 6 copies or replaces them.
+   - `.overmind/agents/<agent-name>/setup_spec/_preview_eval_spec.json`
+     Use `json.dumps(spec, indent=2)` for the JSON file. These files are **not** the canonical artifacts until Step 6 copies or replaces them.
 
-2. **In chat, post a compact summary** (always): one-line purpose, list of `input_schema` keys, list of `output_fields` keys with weights summing to 100, optimizable vs excluded scope highlights, and **absolute paths** to both preview files so the user can open them in the editor.
+1. **In chat, post a compact summary** (always): one-line purpose, list of `input_schema` keys, list of `output_fields` keys with weights summing to 100, optimizable vs excluded scope highlights, and **absolute paths** to both preview files so the user can open them in the editor.
 
-3. **Optional full content**: Only if the user asks for in-chat review, paste full markdown / JSON (may split across messages). Default is **preview files + summary** to avoid token limits and log leakage.
+1. **Optional full content**: Only if the user asks for in-chat review, paste full markdown / JSON (may split across messages). Default is **preview files + summary** to avoid token limits and log leakage.
 
-4. **`AskQuestion`**: **Save and continue** | **Edit policy** | **Edit eval spec** | **Edit both**. On edits, revise in memory, **overwrite the two preview files**, refresh the summary, ask again. **Do not** write `policies.md` or `eval_spec.json` until the user picks **Save and continue**.
+1. **`AskQuestion`**: **Save and continue** | **Edit policy** | **Edit eval spec** | **Edit both**. On edits, revise in memory, **overwrite the two preview files**, refresh the summary, ask again. **Do not** write `policies.md` or `eval_spec.json` until the user picks **Save and continue**.
 
 ### Step 6 — Save policy and spec
 
@@ -245,6 +243,7 @@ If *No*, warn that synthetic-only datasets miss real distribution and adversaria
 If *Yes*, ask for the path. Read and validate against the canonical input/output keys before merging.
 
 Also ask:
+
 - *Number of cases* (default 20)
 - *Number of personas* (default 5) — diverse + adversarial intents
 
@@ -267,8 +266,8 @@ Before generation, create a compact coverage plan:
 Use this model-selection priority:
 
 1. `SYNTHETIC_DATAGEN_MODEL` from the project environment if configured.
-2. A provider implied by available non-secret environment variable names.
-3. A user-selected model when no provider is clear.
+1. A provider implied by available non-secret environment variable names.
+1. A user-selected model when no provider is clear.
 
 Write `_datagen_runner.py` in the **project root**:
 
@@ -381,10 +380,10 @@ Tell the user:
 When the user points the skill at an agent that already has `setup_spec/`:
 
 1. Read existing `eval_spec.json` and `policies.md`.
-2. Run static analysis on the entrypoint (Step 2).
-3. Diff against the existing artifacts: collapsed input schema, missing output keys, missing diagnostic fields, weight sum ≠ 100, zero-weight scored fields, empty policy lists, low-confidence policy areas, mismatched enum values vs code, missing number ranges, `string` type instead of `text`, nested/list scored fields, missing sibling package scope, and entrypoint accidentally in `optimizable_paths`.
-4. Show the diff side-by-side. `AskQuestion`: *Apply all fixes* / *Pick which to apply* / *Abort*.
-5. Re-run validation gates, save, then run the light smoke check when a dataset exists.
+1. Run static analysis on the entrypoint (Step 2).
+1. Diff against the existing artifacts: collapsed input schema, missing output keys, missing diagnostic fields, weight sum ≠ 100, zero-weight scored fields, empty policy lists, low-confidence policy areas, mismatched enum values vs code, missing number ranges, `string` type instead of `text`, nested/list scored fields, missing sibling package scope, and entrypoint accidentally in `optimizable_paths`.
+1. Show the diff side-by-side. `AskQuestion`: *Apply all fixes* / *Pick which to apply* / *Abort*.
+1. Re-run validation gates, save, then run the light smoke check when a dataset exists.
 
 The diff must be concrete, showing current and proposed values rather than vague statements.
 

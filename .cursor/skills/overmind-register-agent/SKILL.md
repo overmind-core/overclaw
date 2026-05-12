@@ -1,10 +1,6 @@
----
-name: overmind-register-agent
-description: "Create or register an Overmind-compatible agent entrypoint: deterministic CLI checks and env gates, with the coding agent doing harness synthesis, stub JSON, and file IO. Use when the user wants Overmind to run and evaluate an agent, register an agent, configure providers, or fix failed registration."
-metadata:
-  version: "2.4"
-  product: "Overmind"
----
+______________________________________________________________________
+
+## name: overmind-register-agent description: "Create or register an Overmind-compatible agent entrypoint: deterministic CLI checks and env gates, with the coding agent doing harness synthesis, stub JSON, and file IO. Use when the user wants Overmind to run and evaluate an agent, register an agent, configure providers, or fix failed registration." metadata: version: "2.4" product: "Overmind"
 
 # Create and Register an Overmind Agent Entrypoint
 
@@ -50,8 +46,8 @@ The coding agent infers technical facts from the repo; the user still **confirms
 - **LLM provider for placeholders**: Ask whether the agent under test uses OpenAI, Anthropic, another OpenAI-compatible provider, or no directly configured LLM.
 - **Mandatory keys pause (AskQuestion, strict — never skip)**: Immediately after **command block 4** has created/updated `.overmind/.env` with placeholders, **stop all forward progress** (no harness work, no `overmind agent register`) until this step completes.
   - Show the **absolute path** to `.overmind/.env` and list **by variable name only** what the user must fill: always `OVERMIND_API_KEY`, plus the analyzer provider key line(s) present in the file (`ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY`, and `OPENAI_BASE_URL` when OpenAI-compatible). Remind them `ANALYZER_MODEL` is already set unless they chose keep-existing and still need to fix it.
-  - **Required `AskQuestion` prompt text** (adapt only for host UI limits; meaning must be preserved):  
-    *Fill in your Overmind API key and your analyzer model provider key(s) in `.overmind/.env` (edit the file on disk). Do not paste secrets in this chat. When you have saved real values, click **Yes — continue**.*  
+  - **Required `AskQuestion` prompt text** (adapt only for host UI limits; meaning must be preserved):
+    *Fill in your Overmind API key and your analyzer model provider key(s) in `.overmind/.env` (edit the file on disk). Do not paste secrets in this chat. When you have saved real values, click **Yes — continue**.*
   - **Options**: **Yes — continue** | **No — which keys are still missing?**
   - On **No**: run **command block 5** (verify) and tell them only the `missing:` names from the script output; then show the same `AskQuestion` again.
   - On **Yes**: run **command block 5**. If output is not exactly `configured`, do **not** continue — explain which names still fail (from `missing:` only), send the user back to edit the file, and **repeat the same `AskQuestion`** until block 5 prints `configured`.
@@ -64,12 +60,14 @@ Use the host agent’s normal user-question mechanism. If no structured question
 Use these command blocks to keep registration deterministic. Do not rely on interactive prompts.
 
 1. **Project root preflight**
+
    - Required: run from the directory that contains `.overmind/`.
    - Command:
      - `test -d .overmind`
    - If this fails, stop and resolve the correct project root before continuing.
 
-2. **Registry preflight**
+1. **Registry preflight**
+
    - Required inputs: `<agent-name>`.
    - Command:
      - `python - <<'PY'`
@@ -81,12 +79,14 @@ Use these command blocks to keep registration deterministic. Do not rely on inte
        `PY`
    - Use this to detect whether registration already exists before writing.
 
-3. **Init configuration gate (AskQuestion required, two steps)**
+1. **Init configuration gate (AskQuestion required, two steps)**
+
    - Required outcome: collect **analyzer provider** first, then **analyzer model** from that provider, before registration.
    - Step A — Provider (multiple choice): Anthropic, OpenAI, Other OpenAI-compatible, Keep existing environment configuration.
    - Step B — Model (multiple choice, conditional on Step A): offer provider-appropriate LiteLLM model ids; include custom model string only when needed (OpenAI-compatible or user requests). If Step A is Keep existing, confirm `ANALYZER_MODEL` is already correct; if not, re-run Step A–B.
 
-4. **Bootstrap `.overmind/.env` (write placeholders only)**
+1. **Bootstrap `.overmind/.env` (write placeholders only)**
+
    - Run **once** after analyzer provider and model are known. Creates the file and **all required placeholder lines** (`OVERMIND_API_KEY=<set-me>`, provider keys, `ANALYZER_MODEL` from the user’s model choice). Does **not** require real secrets yet. Success line: `bootstrap_complete`.
    - Command:
      - `python - <<'PY'`
@@ -129,7 +129,8 @@ Use these command blocks to keep registration deterministic. Do not rely on inte
        `PY`
    - Never print secret values.
 
-5. **Verify `.overmind/.env` keys (same semantics as `overmind init` `key_ok`)**
+1. **Verify `.overmind/.env` keys (same semantics as `overmind init` `key_ok`)**
+
    - Run **after** the user has confirmed the mandatory keys pause (workflow). Prints `configured` or `missing:name,name,...` (names only). Uses `os.environ` merged with file values the same way as the prior combined script.
    - Command:
      - `python - <<'PY'`
@@ -171,7 +172,8 @@ Use these command blocks to keep registration deterministic. Do not rely on inte
        `PY`
    - Do not register until this prints `configured`. If `missing:...`, return the user to the mandatory pause step — never ask them to paste values in chat.
 
-6. **Deterministic registration command**
+1. **Deterministic registration command**
+
    - Required inputs: `<agent-name>`, `<module_path>:<callable>`.
    - First inspect help and run the non-interactive form supported by the installed Overmind version.
    - Commands:
@@ -183,13 +185,15 @@ Use these command blocks to keep registration deterministic. Do not rely on inte
      - Do not run any interactive prompt flow.
      - If the installed CLI requires different flag names, map to the same required values and document the exact command executed in the user update.
 
-7. **Instrumentation refresh**
+1. **Instrumentation refresh**
+
    - Required whenever the entrypoint file changed, even when agent name and callable are unchanged.
    - Command shape:
      - Use the project-local Overmind registration refresh path that updates `.overmind/agents/<agent-name>/...` snapshot artifacts.
    - If the CLI exposes an explicit refresh command, run that command non-interactively. Otherwise rerun registration with the same agent name and callable using the non-interactive form so instrumentation is rebuilt.
 
-8. **Entrypoint smoke-check command**
+1. **Entrypoint smoke-check command**
+
    - Required inputs: `<module_path>`, `<callable>`.
    - Command:
      - `python - <<'PY'`
@@ -201,7 +205,8 @@ Use these command blocks to keep registration deterministic. Do not rely on inte
        `PY`
    - If import or signature checks fail, stop and repair the entrypoint before finalizing registration.
 
-9. **Post-registration verification**
+1. **Post-registration verification**
+
    - Required inputs: `<agent-name>`.
    - Command:
      - `python - <<'PY'`
@@ -213,14 +218,15 @@ Use these command blocks to keep registration deterministic. Do not rely on inte
        `PY`
    - Confirm the stored entrypoint matches the expected callable string.
 
-10. **Optional runtime validation with sample input**
-   - Required inputs: `<agent-name>`, `<sample-data-path>` (only when the user confirmed they have a dataset or sample JSON file during Inputs).
-   - Command:
-     - `overmind agent validate "<agent-name>" --data "<sample-data-path>"`
-   - Sample data shape:
-     - JSON object whose keys match the entrypoint parameter names.
-   - If the user had **no** dataset file, skip this step unless they provide optional sample JSON later.
-   - If this fails with a signature error, repair either the sample keys or the entrypoint signature before proceeding to spec generation.
+1. **Optional runtime validation with sample input**
+
+- Required inputs: `<agent-name>`, `<sample-data-path>` (only when the user confirmed they have a dataset or sample JSON file during Inputs).
+- Command:
+  - `overmind agent validate "<agent-name>" --data "<sample-data-path>"`
+- Sample data shape:
+  - JSON object whose keys match the entrypoint parameter names.
+- If the user had **no** dataset file, skip this step unless they provide optional sample JSON later.
+- If this fails with a signature error, repair either the sample keys or the entrypoint signature before proceeding to spec generation.
 
 ## Workflow
 
@@ -235,7 +241,7 @@ After this project-root step passes, `.overmind/.env` is first **materialized wi
 Before registration, run **two** multiple-choice steps unless the user already chose provider+model in the **same conversation** — then quote their answers and ask “Still use these?” once.
 
 1. **Provider**: Anthropic, OpenAI, Other OpenAI-compatible, Keep existing environment configuration.
-2. **Model**: Offer models appropriate to the provider chosen in step 1. If Keep existing, you will confirm `ANALYZER_MODEL` passes **command block 5** after the mandatory keys pause and bootstrap; if not, return to step 1.
+1. **Model**: Offer models appropriate to the provider chosen in step 1. If Keep existing, you will confirm `ANALYZER_MODEL` passes **command block 5** after the mandatory keys pause and bootstrap; if not, return to step 1.
 
 Persist the chosen model in `.overmind/.env` as `ANALYZER_MODEL=<chosen-model>` unless the user chose Keep existing and confirmed the existing value.
 
@@ -244,9 +250,9 @@ Persist the chosen model in `.overmind/.env` as `ANALYZER_MODEL=<chosen-model>` 
 Order is fixed:
 
 1. Run **command block 4** (bootstrap) so `.overmind/.env` exists and contains `OVERMIND_API_KEY=<set-me>`, the chosen `ANALYZER_MODEL` (or placeholder if not yet chosen), and provider placeholder lines matching the selected analyzer provider.
-2. **Immediately** run the **Mandatory keys pause** from **Inputs** (the strict `AskQuestion` with *Fill in your Overmind API key and your analyzer model provider key(s)…* and **Yes — continue**). Do not interleave other work before the user has clicked **Yes — continue** at least once.
-3. Run **command block 5** (verify). Loop pause + verify until the script prints `configured`.
-4. Only then continue with entrypoint harness work and later `overmind agent register`.
+1. **Immediately** run the **Mandatory keys pause** from **Inputs** (the strict `AskQuestion` with *Fill in your Overmind API key and your analyzer model provider key(s)…* and **Yes — continue**). Do not interleave other work before the user has clicked **Yes — continue** at least once.
+1. Run **command block 5** (verify). Loop pause + verify until the script prints `configured`.
+1. Only then continue with entrypoint harness work and later `overmind agent register`.
 
 ### Choose the entrypoint path
 
@@ -435,12 +441,12 @@ If a real call would trigger external API cost or side effects, do not call it w
 
 After registration and instrumentation refresh, always run the CLI validate step once:
 
-- If the user **provided** a dataset or examples file:  
-  `overmind agent validate "<agent-name>" --data "<user-path>"`  
+- If the user **provided** a dataset or examples file:
+  `overmind agent validate "<agent-name>" --data "<user-path>"`
   (directory of JSON cases is allowed if the CLI supports it.)
 
-- If the user had **no** dataset file: the coding agent **writes** a temporary JSON file under the project root or `.overmind/agents/<agent-name>/` (e.g. `_register_validate_stub.json`) containing **one object** whose keys are exactly the entrypoint keyword parameters, using **type-appropriate safe dummy values** derived from the locked schema (empty string, `0`, `false`, short enum literal, etc.). Then run:  
-  `overmind agent validate "<agent-name>" --data "<path-to-that-json>"`  
+- If the user had **no** dataset file: the coding agent **writes** a temporary JSON file under the project root or `.overmind/agents/<agent-name>/` (e.g. `_register_validate_stub.json`) containing **one object** whose keys are exactly the entrypoint keyword parameters, using **type-appropriate safe dummy values** derived from the locked schema (empty string, `0`, `false`, short enum literal, etc.). Then run:
+  `overmind agent validate "<agent-name>" --data "<path-to-that-json>"`
   Delete the stub file after success or after a terminal failure (unless the user asks to keep it).
 
 If validation fails, read the **innermost** error (imports, kwargs, tracebacks) before attributing failure to API keys.

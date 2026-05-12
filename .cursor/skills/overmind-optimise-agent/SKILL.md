@@ -1,10 +1,6 @@
----
-name: overmind-optimise-agent
-description: "Drive the full host-agent controlled overmind optimize loop for a registered Overmind agent. Use when the user wants to optimise or optimize an agent, run iterative improvement, fan out multiple candidate edits in parallel worktrees, evaluate candidates with overmind optimize-step, accept the best improvement, stop early on stalls, and render an optimization report."
-metadata:
-  version: "2.4"
-  product: "Overmind"
----
+______________________________________________________________________
+
+## name: overmind-optimise-agent description: "Drive the full host-agent controlled overmind optimize loop for a registered Overmind agent. Use when the user wants to optimise or optimize an agent, run iterative improvement, fan out multiple candidate edits in parallel worktrees, evaluate candidates with overmind optimize-step, accept the best improvement, stop early on stalls, and render an optimization report." metadata: version: "2.4" product: "Overmind"
 
 # Optimise an Overmind Agent
 
@@ -88,15 +84,15 @@ When the user chose **Run with defaults**, this script **must** print `ok` befor
 
 When the user chose **Set optimization parameters**, ask for **all** of the following (defaults shown — use them only when the user defers that specific field):
 
-| Field | Default | Description |
-| --- | --- | --- |
-| `iterations` | `5` | Number of optimization iterations. |
-| `candidates_per_iteration` | `3` | Parallel best-of-N candidates per iteration. |
-| `parallel` | `true` | Run candidate / eval work in parallel when supported. |
-| `max_workers` | `5` | Max parallel subprocess workers (meaningful when `parallel` is true). |
-| `early_stopping_patience` | `3` | Stop after N stalled iterations. Use `0` to disable early stopping. |
-| `analyzer_model` | `$ANALYZER_MODEL` or `claude-sonnet-4-20250514` | Model for diagnosing failures and generating plans. |
-| `llm_judge_model` | *(empty)* | **Omit or empty** = no LLM judge. Set to a LiteLLM model id (often same as `analyzer_model`) to enable judge scoring. |
+| Field                      | Default                                         | Description                                                                                                           |
+| -------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `iterations`               | `5`                                             | Number of optimization iterations.                                                                                    |
+| `candidates_per_iteration` | `3`                                             | Parallel best-of-N candidates per iteration.                                                                          |
+| `parallel`                 | `true`                                          | Run candidate / eval work in parallel when supported.                                                                 |
+| `max_workers`              | `5`                                             | Max parallel subprocess workers (meaningful when `parallel` is true).                                                 |
+| `early_stopping_patience`  | `3`                                             | Stop after N stalled iterations. Use `0` to disable early stopping.                                                   |
+| `analyzer_model`           | `$ANALYZER_MODEL` or `claude-sonnet-4-20250514` | Model for diagnosing failures and generating plans.                                                                   |
+| `llm_judge_model`          | *(empty)*                                       | **Omit or empty** = no LLM judge. Set to a LiteLLM model id (often same as `analyzer_model`) to enable judge scoring. |
 
 When the user chose **Run with defaults**, set at minimum: `iterations=5`, `candidates_per_iteration=3`, `parallel=true`, `max_workers=5`, `early_stopping_patience=3`, omit or clear `llm_judge_model`, and set `analyzer_model` from a **real** `ANALYZER_MODEL` env / `.overmind/.env` value (the preflight script above must pass). Apply all **Advanced settings** defaults below without prompting.
 
@@ -104,20 +100,20 @@ When the user chose **Run with defaults**, set at minimum: `iterations=5`, `cand
 
 Ask whether to configure advanced settings **only** when the user chose **Set optimization parameters** and core fields are collected. If the user declines advanced configuration, or when the user chose **Run with defaults**, use the defaults:
 
-| Field | Default | Description |
-| --- | --- | --- |
-| `runs_per_eval` | `1` | How many times to run each candidate full eval; the optimizer can take a median across runs for stability. Raising this reduces noisy candidate scores but does not replace correct entrypoint one-time initialization; baseline scoring behavior depends on the installed Overmind version. |
-| `regression_threshold` | `0.35` | Minimum score delta required to accept a candidate. |
-| `holdout_ratio` | `0.2` | Fraction of dataset reserved as holdout. |
-| `holdout_enforcement` | `true` | Enforce holdout scoring. |
-| `diagnosis_case_fraction` | `0.7` | Fraction of failing cases sent to the analyzer. |
-| `cross_run_persistence` | `true` | Persist fix/failure history across iterations. |
-| `failure_clustering` | `true` | Group similar failures before diagnosis. |
-| `adaptive_focus` | `true` | Adjust focus weights based on failure patterns. |
-| `smoke_test_cases` | `2` | Cases used for catastrophic-failure quick filter. |
-| `codegen_max_steps` | `50` | Max edit steps per candidate sub-agent. |
-| `model_backtesting` | `false` | Enable model backtesting mode. |
-| `backtest_models` | `[]` | **If and only if** `model_backtesting` is `true`, this list **must be non-empty** — ask the user for one or more LiteLLM model ids before `init`. If `model_backtesting` is `false`, keep `[]` and do not ask. |
+| Field                     | Default | Description                                                                                                                                                                                                                                                                                  |
+| ------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runs_per_eval`           | `1`     | How many times to run each candidate full eval; the optimizer can take a median across runs for stability. Raising this reduces noisy candidate scores but does not replace correct entrypoint one-time initialization; baseline scoring behavior depends on the installed Overmind version. |
+| `regression_threshold`    | `0.35`  | Minimum score delta required to accept a candidate.                                                                                                                                                                                                                                          |
+| `holdout_ratio`           | `0.2`   | Fraction of dataset reserved as holdout.                                                                                                                                                                                                                                                     |
+| `holdout_enforcement`     | `true`  | Enforce holdout scoring.                                                                                                                                                                                                                                                                     |
+| `diagnosis_case_fraction` | `0.7`   | Fraction of failing cases sent to the analyzer.                                                                                                                                                                                                                                              |
+| `cross_run_persistence`   | `true`  | Persist fix/failure history across iterations.                                                                                                                                                                                                                                               |
+| `failure_clustering`      | `true`  | Group similar failures before diagnosis.                                                                                                                                                                                                                                                     |
+| `adaptive_focus`          | `true`  | Adjust focus weights based on failure patterns.                                                                                                                                                                                                                                              |
+| `smoke_test_cases`        | `2`     | Cases used for catastrophic-failure quick filter.                                                                                                                                                                                                                                            |
+| `codegen_max_steps`       | `50`    | Max edit steps per candidate sub-agent.                                                                                                                                                                                                                                                      |
+| `model_backtesting`       | `false` | Enable model backtesting mode.                                                                                                                                                                                                                                                               |
+| `backtest_models`         | `[]`    | **If and only if** `model_backtesting` is `true`, this list **must be non-empty** — ask the user for one or more LiteLLM model ids before `init`. If `model_backtesting` is `false`, keep `[]` and do not ask.                                                                               |
 
 If advanced settings are already present in an existing state file or prompt, preserve them unless the user explicitly changes them. If starting fresh, use the defaults above unless the user specifies otherwise.
 
@@ -190,37 +186,44 @@ These rules are invariant-focused so they apply to any language or agent framewo
 Use this exact command sequence. Do not skip required parameters.
 
 1. **Init state**
+
    - Required parameters: `<agent-name>`, settings JSON on stdin.
    - Command:
      - `overmind optimize-step init "<agent-name>"`
    - Parse response and persist `STATE_PATH`.
 
-2. **Baseline**
+1. **Baseline**
+
    - Required parameters: `--state <STATE_PATH>`.
    - Command:
      - `overmind optimize-step baseline --state "<STATE_PATH>"`
 
-3. **Per-iteration diagnosis**
+1. **Per-iteration diagnosis**
+
    - Required parameters: `--state <STATE_PATH> --iteration <i>`.
    - Command:
      - `overmind optimize-step diagnose --state "<STATE_PATH>" --iteration "<i>"`
 
-4. **Per-candidate evaluation**
+1. **Per-candidate evaluation**
+
    - Required parameters: `--state <STATE_PATH> --iteration <i> --candidate-id <candidate_id> --candidate-dir <worktree>`.
    - Command:
      - `overmind optimize-step evaluate --state "<STATE_PATH>" --iteration "<i>" --candidate-id "<candidate_id>" --candidate-dir "<worktree>"`
 
-5. **Iteration accept/reject**
+1. **Iteration accept/reject**
+
    - Required parameters: `--state <STATE_PATH> --iteration <i> --candidate-results <candidate_results_path>`.
    - Command:
      - `overmind optimize-step accept --state "<STATE_PATH>" --iteration "<i>" --candidate-results "<candidate_results_path>"`
 
-6. **Final report**
+1. **Final report**
+
    - Required parameters: `--state <STATE_PATH>`.
    - Command:
      - `overmind optimize-step report --state "<STATE_PATH>"`
 
 Rules:
+
 - Every command after init must use the same `STATE_PATH`.
 - If a required parameter is missing, stop and repair inputs before continuing.
 - Never use interactive CLI prompts for optimization steps.
@@ -278,9 +281,9 @@ For each iteration from 1 through the configured iteration count, run diagnosis,
 **Multi-agent pattern (default when the host supports it):**
 
 1. **Coordinator** (you or a lead subagent you designate) runs `optimize-step diagnose` for iteration `i` and records candidate descriptors.
-2. Spawn **one subagent per candidate worktree** (up to `candidates_per_iteration`) so edits run in parallel — **required** when the host exposes parallel tasks or background agents.
-3. Coordinator runs `evaluate` and `accept` for that iteration (or, if the host allows safe parallel shells only, delegate **per-candidate** `evaluate` to subagents, then coordinator assembles `candidate_results.json` and runs `accept` once).
-4. Optionally **rotate** which subagent receives the next iteration’s edit workload so context stays fresh.
+1. Spawn **one subagent per candidate worktree** (up to `candidates_per_iteration`) so edits run in parallel — **required** when the host exposes parallel tasks or background agents.
+1. Coordinator runs `evaluate` and `accept` for that iteration (or, if the host allows safe parallel shells only, delegate **per-candidate** `evaluate` to subagents, then coordinator assembles `candidate_results.json` and runs `accept` once).
+1. Optionally **rotate** which subagent receives the next iteration’s edit workload so context stays fresh.
 
 If the user wants maximum parallelism, increase **candidate** subagent count first. Use **parallel iteration coordinators** only for **separate** optimization runs (separate `STATE_PATH` or separate agents), never two iteration indices on the same state file.
 
