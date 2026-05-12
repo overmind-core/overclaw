@@ -90,7 +90,6 @@ class PreflightReport:
     cases_run: int = 0
     cases_succeeded: int = 0
     cases_failed: int = 0
-    hashes: dict[str, str] = field(default_factory=dict)
     patches_applied: list[dict[str, Any]] = field(default_factory=list)
     issues_remaining: list[dict[str, Any]] = field(default_factory=list)
     missing_secrets: list[str] = field(default_factory=list)

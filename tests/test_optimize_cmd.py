@@ -8,7 +8,7 @@ from overmind.commands.optimize_cmd import main
 
 
 class TestOptimizeMain:
-    @patch("overmind.commands.optimize_cmd._enforce_preflight_gate")
+    @patch("overmind.commands.optimize_cmd._preflight_advisory")
     @patch("overmind.commands.optimize_cmd.configure_storage")
     @patch("overmind.commands.optimize_cmd.get_agent_id")
     @patch("overmind.commands.optimize_cmd.Optimizer")
@@ -21,7 +21,7 @@ class TestOptimizeMain:
         mock_optimizer,
         mock_get_agent_id,
         mock_configure_storage,
-        mock_preflight_gate,
+        mock_preflight_advisory,
     ):
         mock_cfg = MagicMock()
         mock_config.return_value = mock_cfg

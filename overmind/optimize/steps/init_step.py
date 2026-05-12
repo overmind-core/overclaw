@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -36,7 +35,6 @@ from overmind.core.registry import get_agent_id, resolve_agent
 from overmind.optimize.config import Config, apply_eval_spec_scope
 from overmind.optimize.steps.state import SkillRunState
 from overmind.preflight import load_report, preflight_report_path
-from overmind.preflight.hashes import compute_hashes, hashes_match
 from overmind.preflight.state import GREEN_STATUSES
 
 logger = logging.getLogger("overmind.optimize.steps.init")
@@ -125,44 +123,19 @@ def run_init(
             ),
         }
 
-    # Preflight gate — same contract as `overmind optimize`: refuse to
-    # init optimization state unless preflight is green and the artifacts
-    # haven't drifted since it last ran.
-    if os.environ.get("OVERMIND_SKIP_PREFLIGHT") != "1":
-        report_path = preflight_report_path(agent_name)
-        report = load_report(agent_name)
-        if report is None:
-            return {
-                "status": "error",
-                "error": "preflight_missing",
-                "message": (
-                    f"No preflight report at {report_path}. "
-                    f"Run `overmind preflight run {agent_name}` "
-                    "(or invoke /overmind-preflight) before initializing optimization."
-                ),
-                "report_path": str(report_path),
-            }
-        if report.status not in GREEN_STATUSES:
-            return {
-                "status": "error",
-                "error": "preflight_not_green",
-                "message": (
-                    f"Preflight status is '{report.status}': {report.message}. "
-                    "Re-run preflight after addressing the issues."
-                ),
-                "preflight": report.to_dict(),
-            }
-        ok, diff = hashes_match(report.hashes or {}, compute_hashes(agent_name))
-        if not ok:
-            return {
-                "status": "error",
-                "error": "preflight_stale",
-                "message": (
-                    f"Preflight is stale; these artifacts changed since it ran: {diff}. "
-                    f"Re-run `overmind preflight run {agent_name}`."
-                ),
-                "drifted_artifacts": diff,
-            }
+    # Preflight is recommended but optional — surface its status in
+    # the response envelope so the caller can warn the user, but never
+    # refuse to initialize optimization based on it.
+    preflight_summary: dict[str, Any] | None = None
+    report = load_report(agent_name)
+    if report is not None:
+        preflight_summary = {
+            "status": report.status,
+            "is_green": report.status in GREEN_STATUSES,
+            "message": report.message,
+            "missing_secrets": list(report.missing_secrets),
+            "report_path": str(preflight_report_path(agent_name)),
+        }
 
     experiments_dir = agent_experiments_dir(agent_name)
     experiments_dir.mkdir(parents=True, exist_ok=True)
@@ -218,6 +191,7 @@ def run_init(
         "entrypoint_fn": cfg.entrypoint_fn,
         "eval_spec_path": cfg.eval_spec_path,
         "data_path": cfg.data_path,
+        "preflight": preflight_summary,
         "summary": {
             "agent_name": agent_name,
             "iterations": cfg.iterations,
