@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 from pathlib import Path
 
 from dotenv import dotenv_values, load_dotenv
@@ -24,7 +25,7 @@ from rich.rule import Rule
 from overmind import SpanType, attrs, set_tag
 from overmind.core.constants import OVERMIND_DIR_NAME, overmind_rel
 from overmind.core.registry import init_project_root
-from overmind.utils.display import BRAND, confirm_option
+from overmind.utils.display import BRAND, confirm_option, select_option
 from overmind.utils.display import render_logo as _render_logo
 from overmind.utils.io import read_api_key_masked
 from overmind.utils.model_picker import prompt_for_catalog_litellm_model
@@ -236,6 +237,57 @@ def _collect_synthetic_datagen_model(console: Console, env: dict[str, str]) -> s
     return chosen
 
 
+_SKILLS_SOURCE_DIR = Path(__file__).parent.parent / "skills"
+
+_PLATFORM_SKILLS_DIRS: dict[str, str] = {
+    "cursor": ".cursor/skills",
+    "claude": ".claude/skills",
+}
+
+
+def _install_skills(console: Console, project_root: Path) -> None:
+    """Copy bundled Overmind skills into the user's IDE skills directory."""
+    console.print()
+    console.print(Rule(style="dim"))
+    console.print(Rule("[bold]IDE skills[/bold]", style=BRAND))
+    console.print(
+        "  [dim]Overmind ships skills for Cursor and Claude Code that let your AI agent run Overmind commands.[/dim]"
+    )
+
+    platform_options = ["Cursor (default)", "Claude Code"]
+    idx = select_option(
+        platform_options,
+        title="Which AI coding platform are you using?",
+        default_index=0,
+        console=console,
+    )
+    platform = "cursor" if idx == 0 else "claude"
+
+    skills_dir = project_root / _PLATFORM_SKILLS_DIRS[platform]
+    skills_dir.mkdir(parents=True, exist_ok=True)
+
+    if not _SKILLS_SOURCE_DIR.is_dir():
+        console.print(f"  [yellow]Skills source directory not found at {_SKILLS_SOURCE_DIR}; skipping.[/yellow]")
+        return
+
+    installed: list[str] = []
+    for skill_src in sorted(_SKILLS_SOURCE_DIR.iterdir()):
+        if not skill_src.is_dir():
+            continue
+        skill_dst = skills_dir / skill_src.name
+        if skill_dst.exists():
+            shutil.rmtree(skill_dst)
+        shutil.copytree(skill_src, skill_dst)
+        installed.append(skill_src.name)
+
+    if installed:
+        for name in installed:
+            console.print(f"  [bold green]✓[/bold green] [bold]{name}[/bold] → [dim]{skills_dir / name}[/dim]")
+        console.print(f"\n  [dim]Installed {len(installed)} skill(s) for [bold]{platform_options[idx]}[/bold].[/dim]")
+    else:
+        console.print("  [yellow]No skills found to install.[/yellow]")
+
+
 def _write_env(path: Path, env: dict[str, str]) -> None:
     """Merge wizard state into the existing env file (via ``dotenv_values``), then write."""
     file_vals = dotenv_values(path) or {}
@@ -295,6 +347,8 @@ def main() -> None:
             border_style=BRAND,
         )
     )
+
+    _install_skills(console, oc_dir.parent)
 
     load_dotenv(env_path)
     env = _primary_env_from_os()

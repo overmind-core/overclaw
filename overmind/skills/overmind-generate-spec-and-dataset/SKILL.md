@@ -1,10 +1,6 @@
----
-name: overmind-generate-spec-and-dataset
-description: "Generate the policy, eval spec, and evaluation dataset for an Overmind agent in one pass. Use when the user wants to author or rebuild eval criteria for an agent, fix a broken eval spec (wrong input_schema, missing output fields, bad weights), produce or augment a dataset, or prepare everything needed before running `overmind optimize`. Combines policy elicitation, spec construction, and dataset generation so the artifacts always agree on the same input/output schema."
-metadata:
-  version: "1.3"
-  product: "Overmind"
----
+______________________________________________________________________
+
+## name: overmind-generate-spec-and-dataset description: "Generate the policy, eval spec, and evaluation dataset for an Overmind agent in one pass. Use when the user wants to author or rebuild eval criteria for an agent, fix a broken eval spec (wrong input_schema, missing output fields, bad weights), produce or augment a dataset, or prepare everything needed before running `overmind optimize`. Combines policy elicitation, spec construction, and dataset generation so the artifacts always agree on the same input/output schema." metadata: version: "1.3" product: "Overmind"
 
 # Generate the Policy, Eval Spec, and Dataset
 
@@ -285,8 +281,8 @@ Before generation, create a compact coverage plan:
 Use this model-selection priority (**never** silently default to `openai/gpt-4o` or any vendor model in code):
 
 1. `SYNTHETIC_DATAGEN_MODEL` in the process environment or `.overmind/.env` — value must be a **non-empty** LiteLLM model id after trim.
-2. If unset, stop dataset generation and obtain a model id from the user (`AskQuestion` or chat), then export it for the runner process or append `SYNTHETIC_DATAGEN_MODEL=<id>` to `.overmind/.env` without clobbering unrelated keys.
-3. Do **not** infer a model from “which API key exists” alone; that hides misconfiguration.
+1. If unset, stop dataset generation and obtain a model id from the user (`AskQuestion` or chat), then export it for the runner process or append `SYNTHETIC_DATAGEN_MODEL=<id>` to `.overmind/.env` without clobbering unrelated keys.
+1. Do **not** infer a model from “which API key exists” alone; that hides misconfiguration.
 
 The runner below must call `generate_diverse_synthetic_data` only with a model string that came from step 1 or 2. If still unset, `raise SystemExit("SYNTHETIC_DATAGEN_MODEL is not set — set it or pass a user-chosen LiteLLM model id before running.")`.
 
@@ -377,9 +373,9 @@ The canonical dataset path is `.overmind/agents/<name>/setup_spec/dataset.json`.
 
 > "A dataset already exists. *Replace* / *Append* / *Save backup, then replace*"
 
-  - *Replace*: move aside or delete the old file, then promote the preview to `dataset.json`, then delete `_preview_dataset.json`.
-  - *Append*: load existing `dataset.json`, merge new cases after the existing ones, re-run the schema enforcement on the combined list, write the result to `dataset.json`, then delete `_preview_dataset.json`.
-  - *Save backup, then replace*: copy current `dataset.json` to `dataset.backup.json` (or timestamped), then same as *Replace*.
+- *Replace*: move aside or delete the old file, then promote the preview to `dataset.json`, then delete `_preview_dataset.json`.
+- *Append*: load existing `dataset.json`, merge new cases after the existing ones, re-run the schema enforcement on the combined list, write the result to `dataset.json`, then delete `_preview_dataset.json`.
+- *Save backup, then replace*: copy current `dataset.json` to `dataset.backup.json` (or timestamped), then same as *Replace*.
 
 If the user aborts, delete `_preview_dataset.json` only after they confirm they do not need the preview; leave `dataset.json` unchanged.
 
