@@ -18,7 +18,7 @@ import re  # noqa: F401
 import json
 
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr
 from typing import Any, ClassVar, Dict, List, Optional, Union
 from typing_extensions import Annotated
 from uuid import UUID
@@ -34,17 +34,19 @@ class JobList(BaseModel):
     id: UUID
     project: Optional[UUID] = None
     agent: Optional[UUID] = None
+    agent_display_name: StrictStr
     job_type: Optional[JobTypeEnum] = None
     prompt_slug: Optional[Annotated[str, Field(strict=True, max_length=255)]] = None
     status: Optional[JobStatusEnum] = None
     analyzer_model: Optional[Annotated[str, Field(strict=True, max_length=128)]] = None
     num_iterations: Optional[Annotated[int, Field(le=9223372036854775807, strict=True, ge=-9223372036854775808)]] = None
+    candidates_per_iteration: Optional[Annotated[int, Field(le=9223372036854775807, strict=True, ge=-9223372036854775808)]] = None
     baseline_score: Optional[Union[StrictFloat, StrictInt]] = None
     best_score: Optional[Union[StrictFloat, StrictInt]] = None
     improvement: Optional[Union[StrictFloat, StrictInt]] = None
     created_at: datetime
     updated_at: datetime
-    __properties: ClassVar[List[str]] = ["id", "project", "agent", "job_type", "prompt_slug", "status", "analyzer_model", "num_iterations", "baseline_score", "best_score", "improvement", "created_at", "updated_at"]
+    __properties: ClassVar[List[str]] = ["id", "project", "agent", "agent_display_name", "job_type", "prompt_slug", "status", "analyzer_model", "num_iterations", "candidates_per_iteration", "baseline_score", "best_score", "improvement", "created_at", "updated_at"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -79,9 +81,11 @@ class JobList(BaseModel):
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
         """
         excluded_fields: Set[str] = set([
             "id",
+            "agent_display_name",
             "created_at",
             "updated_at",
         ])
@@ -131,11 +135,13 @@ class JobList(BaseModel):
             "id": obj.get("id"),
             "project": obj.get("project"),
             "agent": obj.get("agent"),
+            "agent_display_name": obj.get("agent_display_name"),
             "job_type": obj.get("job_type"),
             "prompt_slug": obj.get("prompt_slug"),
             "status": obj.get("status"),
             "analyzer_model": obj.get("analyzer_model"),
             "num_iterations": obj.get("num_iterations"),
+            "candidates_per_iteration": obj.get("candidates_per_iteration"),
             "baseline_score": obj.get("baseline_score"),
             "best_score": obj.get("best_score"),
             "improvement": obj.get("improvement"),

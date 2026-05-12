@@ -34,6 +34,7 @@ class Job(BaseModel):
     """ # noqa: E501
     id: UUID
     iterations: List[JobIteration]
+    agent_display_name: StrictStr
     job_type: Optional[JobTypeEnum] = None
     prompt_slug: Optional[Annotated[str, Field(strict=True, max_length=255)]] = None
     status: Optional[JobStatusEnum] = None
@@ -49,14 +50,12 @@ class Job(BaseModel):
     report_markdown: Optional[StrictStr] = None
     best_agent_code: Optional[StrictStr] = None
     backtest_results: Optional[Any] = None
-    current_iteration: Optional[Annotated[int, Field(le=9223372036854775807, strict=True, ge=-9223372036854775808)]] = None
-    logs: Optional[Any] = None
     created_at: datetime
     updated_at: datetime
     project: Optional[UUID] = None
     agent: Optional[UUID] = None
     triggered_by: Optional[StrictInt] = None
-    __properties: ClassVar[List[str]] = ["id", "iterations", "job_type", "prompt_slug", "status", "celery_task_id", "result", "analyzer_model", "num_iterations", "candidates_per_iteration", "data_source", "baseline_score", "best_score", "improvement", "report_markdown", "best_agent_code", "backtest_results", "current_iteration", "logs", "created_at", "updated_at", "project", "agent", "triggered_by"]
+    __properties: ClassVar[List[str]] = ["id", "iterations", "agent_display_name", "job_type", "prompt_slug", "status", "celery_task_id", "result", "analyzer_model", "num_iterations", "candidates_per_iteration", "data_source", "baseline_score", "best_score", "improvement", "report_markdown", "best_agent_code", "backtest_results", "created_at", "updated_at", "project", "agent", "triggered_by"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -92,10 +91,12 @@ class Job(BaseModel):
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
         """
         excluded_fields: Set[str] = set([
             "id",
             "iterations",
+            "agent_display_name",
             "created_at",
             "updated_at",
         ])
@@ -166,6 +167,7 @@ class Job(BaseModel):
         _obj = cls.model_validate({
             "id": obj.get("id"),
             "iterations": [JobIteration.from_dict(_item) for _item in obj["iterations"]] if obj.get("iterations") is not None else None,
+            "agent_display_name": obj.get("agent_display_name"),
             "job_type": obj.get("job_type"),
             "prompt_slug": obj.get("prompt_slug"),
             "status": obj.get("status"),
@@ -181,8 +183,6 @@ class Job(BaseModel):
             "report_markdown": obj.get("report_markdown"),
             "best_agent_code": obj.get("best_agent_code"),
             "backtest_results": obj.get("backtest_results"),
-            "current_iteration": obj.get("current_iteration"),
-            "logs": obj.get("logs"),
             "created_at": obj.get("created_at"),
             "updated_at": obj.get("updated_at"),
             "project": obj.get("project"),

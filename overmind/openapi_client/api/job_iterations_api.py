@@ -44,7 +44,7 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_create(
+    def job_iterations_create(
         self,
         job_iteration_request: JobIterationRequest,
         _request_timeout: Union[
@@ -98,11 +98,11 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "JobIteration",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -110,7 +110,7 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_create_with_http_info(
+    def job_iterations_create_with_http_info(
         self,
         job_iteration_request: JobIterationRequest,
         _request_timeout: Union[
@@ -164,11 +164,11 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "JobIteration",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -176,7 +176,7 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_create_without_preload_content(
+    def job_iterations_create_without_preload_content(
         self,
         job_iteration_request: JobIterationRequest,
         _request_timeout: Union[
@@ -230,7 +230,7 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '201': "JobIteration",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -284,8 +284,8 @@ class JobIterationsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -295,9 +295,10 @@ class JobIterationsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -320,7 +321,7 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_destroy(
+    def job_iterations_destroy(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this job iteration.")],
         _request_timeout: Union[
@@ -374,11 +375,11 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '204': None,
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -386,7 +387,7 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_destroy_with_http_info(
+    def job_iterations_destroy_with_http_info(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this job iteration.")],
         _request_timeout: Union[
@@ -440,11 +441,11 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '204': None,
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -452,7 +453,7 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_destroy_without_preload_content(
+    def job_iterations_destroy_without_preload_content(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this job iteration.")],
         _request_timeout: Union[
@@ -506,7 +507,7 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '204': None,
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -549,9 +550,10 @@ class JobIterationsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -574,16 +576,17 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_list(
+    def job_iterations_list(
         self,
         iteration_name: Optional[StrictStr] = None,
         job: Optional[UUID] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         score_max: Optional[Union[StrictFloat, StrictInt]] = None,
         score_min: Optional[Union[StrictFloat, StrictInt]] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
-        status: Annotated[Optional[StrictStr], Field(description="* `keep` - Keep * `discard` - Discard")] = None,
+        status: Annotated[Optional[StrictStr], Field(description="* `running` - Running * `keep` - Keep * `discard` - Discard")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -608,13 +611,15 @@ class JobIterationsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param score_max:
         :type score_max: float
         :param score_min:
         :type score_min: float
         :param search: A search term.
         :type search: str
-        :param status: * `keep` - Keep * `discard` - Discard
+        :param status: * `running` - Running * `keep` - Keep * `discard` - Discard
         :type status: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -643,6 +648,7 @@ class JobIterationsApi:
             job=job,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             score_max=score_max,
             score_min=score_min,
             search=search,
@@ -656,11 +662,11 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "PaginatedJobIterationList",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -668,16 +674,17 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_list_with_http_info(
+    def job_iterations_list_with_http_info(
         self,
         iteration_name: Optional[StrictStr] = None,
         job: Optional[UUID] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         score_max: Optional[Union[StrictFloat, StrictInt]] = None,
         score_min: Optional[Union[StrictFloat, StrictInt]] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
-        status: Annotated[Optional[StrictStr], Field(description="* `keep` - Keep * `discard` - Discard")] = None,
+        status: Annotated[Optional[StrictStr], Field(description="* `running` - Running * `keep` - Keep * `discard` - Discard")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -702,13 +709,15 @@ class JobIterationsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param score_max:
         :type score_max: float
         :param score_min:
         :type score_min: float
         :param search: A search term.
         :type search: str
-        :param status: * `keep` - Keep * `discard` - Discard
+        :param status: * `running` - Running * `keep` - Keep * `discard` - Discard
         :type status: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -737,6 +746,7 @@ class JobIterationsApi:
             job=job,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             score_max=score_max,
             score_min=score_min,
             search=search,
@@ -750,11 +760,11 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "PaginatedJobIterationList",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -762,16 +772,17 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_list_without_preload_content(
+    def job_iterations_list_without_preload_content(
         self,
         iteration_name: Optional[StrictStr] = None,
         job: Optional[UUID] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         score_max: Optional[Union[StrictFloat, StrictInt]] = None,
         score_min: Optional[Union[StrictFloat, StrictInt]] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
-        status: Annotated[Optional[StrictStr], Field(description="* `keep` - Keep * `discard` - Discard")] = None,
+        status: Annotated[Optional[StrictStr], Field(description="* `running` - Running * `keep` - Keep * `discard` - Discard")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -796,13 +807,15 @@ class JobIterationsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param score_max:
         :type score_max: float
         :param score_min:
         :type score_min: float
         :param search: A search term.
         :type search: str
-        :param status: * `keep` - Keep * `discard` - Discard
+        :param status: * `running` - Running * `keep` - Keep * `discard` - Discard
         :type status: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -831,6 +844,7 @@ class JobIterationsApi:
             job=job,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             score_max=score_max,
             score_min=score_min,
             search=search,
@@ -844,7 +858,7 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "PaginatedJobIterationList",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -857,6 +871,7 @@ class JobIterationsApi:
         job,
         ordering,
         page,
+        page_size,
         score_max,
         score_min,
         search,
@@ -884,37 +899,41 @@ class JobIterationsApi:
         # process the path parameters
         # process the query parameters
         if iteration_name is not None:
-
+            
             _query_params.append(('iteration_name', iteration_name))
-
+            
         if job is not None:
-
+            
             _query_params.append(('job', job))
-
+            
         if ordering is not None:
-
+            
             _query_params.append(('ordering', ordering))
-
+            
         if page is not None:
-
+            
             _query_params.append(('page', page))
-
+            
+        if page_size is not None:
+            
+            _query_params.append(('page_size', page_size))
+            
         if score_max is not None:
-
+            
             _query_params.append(('score_max', score_max))
-
+            
         if score_min is not None:
-
+            
             _query_params.append(('score_min', score_min))
-
+            
         if search is not None:
-
+            
             _query_params.append(('search', search))
-
+            
         if status is not None:
-
+            
             _query_params.append(('status', status))
-
+            
         # process the header parameters
         # process the form parameters
         # process the body parameter
@@ -931,9 +950,10 @@ class JobIterationsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -956,7 +976,7 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_partial_update(
+    def job_iterations_partial_update(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this job iteration.")],
         patched_job_iteration_request: Optional[PatchedJobIterationRequest] = None,
@@ -1014,11 +1034,11 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "JobIteration",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1026,7 +1046,7 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_partial_update_with_http_info(
+    def job_iterations_partial_update_with_http_info(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this job iteration.")],
         patched_job_iteration_request: Optional[PatchedJobIterationRequest] = None,
@@ -1084,11 +1104,11 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "JobIteration",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1096,7 +1116,7 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_partial_update_without_preload_content(
+    def job_iterations_partial_update_without_preload_content(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this job iteration.")],
         patched_job_iteration_request: Optional[PatchedJobIterationRequest] = None,
@@ -1154,7 +1174,7 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "JobIteration",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -1211,8 +1231,8 @@ class JobIterationsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -1222,9 +1242,10 @@ class JobIterationsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1247,7 +1268,7 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_retrieve(
+    def job_iterations_retrieve(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this job iteration.")],
         _request_timeout: Union[
@@ -1301,11 +1322,11 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "JobIteration",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1313,7 +1334,7 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_retrieve_with_http_info(
+    def job_iterations_retrieve_with_http_info(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this job iteration.")],
         _request_timeout: Union[
@@ -1367,11 +1388,11 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "JobIteration",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1379,7 +1400,7 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_retrieve_without_preload_content(
+    def job_iterations_retrieve_without_preload_content(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this job iteration.")],
         _request_timeout: Union[
@@ -1433,7 +1454,7 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "JobIteration",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -1483,9 +1504,10 @@ class JobIterationsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1508,7 +1530,7 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_update(
+    def job_iterations_update(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this job iteration.")],
         job_iteration_request: JobIterationRequest,
@@ -1566,11 +1588,11 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "JobIteration",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1578,7 +1600,7 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_update_with_http_info(
+    def job_iterations_update_with_http_info(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this job iteration.")],
         job_iteration_request: JobIterationRequest,
@@ -1636,11 +1658,11 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "JobIteration",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
-        await response_data.read()
+        response_data.read()
         return self.api_client.response_deserialize(
             response_data=response_data,
             response_types_map=_response_types_map,
@@ -1648,7 +1670,7 @@ class JobIterationsApi:
 
 
     @validate_call
-    async def job_iterations_update_without_preload_content(
+    def job_iterations_update_without_preload_content(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this job iteration.")],
         job_iteration_request: JobIterationRequest,
@@ -1706,7 +1728,7 @@ class JobIterationsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "JobIteration",
         }
-        response_data = await self.api_client.call_api(
+        response_data = self.api_client.call_api(
             *_param,
             _request_timeout=_request_timeout
         )
@@ -1763,8 +1785,8 @@ class JobIterationsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -1774,9 +1796,10 @@ class JobIterationsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
