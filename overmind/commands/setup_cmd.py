@@ -528,12 +528,8 @@ def _smoke_test_agent(
             resolved_agent_dir = pr if pr is not None else p.parent
         entry_file = str(p.relative_to(resolved_agent_dir))
         logger.debug(
-            "smoke_test: agent_path=%s fn=%s entry=%s agent_dir=%s env_dir=%s",
-            agent_path,
-            fn_name,
-            entry_file,
-            resolved_agent_dir,
-            env_dir,
+            f"smoke_test: agent_path={agent_path} fn={fn_name} entry={entry_file} "
+            f"agent_dir={resolved_agent_dir} env_dir={env_dir}"
         )
 
         runner = AgentRunner(
@@ -547,21 +543,16 @@ def _smoke_test_agent(
         result = runner.run(input_case)
         runner.cleanup()
         if result.success:
-            logger.debug("smoke_test: agent=%s succeeded", agent_path)
+            logger.debug(f"smoke_test: agent={agent_path} succeeded")
             return True, None
         parts = [result.error] if result.error else []
         if result.stderr and result.stderr.strip() not in (result.error or ""):
             parts.append(result.stderr[-2000:])
-        logger.warning(
-            "smoke_test: agent=%s failed rc=%s err=%s",
-            agent_path,
-            result.returncode,
-            (result.error or "")[:300],
-        )
+        logger.warning(f"smoke_test: agent={agent_path} failed rc={result.returncode} err={(result.error or '')[:300]}")
         return False, "\n".join(parts) or "Unknown error"
 
     except Exception as exc:
-        logger.exception("smoke_test: exception for agent=%s", agent_path)
+        logger.exception(f"smoke_test: exception for agent={agent_path}")
         return False, str(exc)
 
 
@@ -1597,13 +1588,7 @@ def main(
     max_files: int | None = None,
     max_chars: int | None = None,
 ) -> None:
-    logger.info(
-        "setup: start agent=%s fast=%s policy=%s data=%s",
-        agent_name,
-        fast,
-        policy,
-        data,
-    )
+    logger.info(f"setup: start agent={agent_name} fast={fast} policy={policy} data={data}")
     load_overmind_dotenv()
 
     # CLI-level flags — set as soon as the span is open
@@ -1765,7 +1750,7 @@ def main(
         load_agent_dotenv(agent_name)
 
     # ---- Phase 1: Agent Analysis ----
-    logger.info("PHASE BEGIN setup.phase1.agent_analysis agent=%s model=%s", agent_name, model)
+    logger.info(f"PHASE BEGIN setup.phase1.agent_analysis agent={agent_name} model={model}")
     console.print()
     console.print(Rule(style="dim"))
     console.print()
@@ -1788,9 +1773,8 @@ def main(
         scope_hint_globs=list(scope_globs) if scope_globs else None,
     )
     logger.info(
-        "PHASE END   setup.phase1.agent_analysis fields=%s criteria_fields=%s",
-        list(analysis.get("output_schema", {}).keys()),
-        list(analysis.get("proposed_criteria", {}).get("fields", {}).keys()),
+        f"PHASE END   setup.phase1.agent_analysis fields={list(analysis.get('output_schema', {}).keys())} "
+        f"criteria_fields={list(analysis.get('proposed_criteria', {}).get('fields', {}).keys())}"
     )
 
     set_tag(attrs.SETUP_PHASE, "agent_analysis")
@@ -1800,12 +1784,7 @@ def main(
     set_tag(attrs.SETUP_ENTRYPOINT_FN, fn_name)
 
     # ---- Phase 2: Policy Definition ----
-    logger.info(
-        "PHASE BEGIN setup.phase2.policy agent=%s fast=%s policy_arg=%s",
-        agent_name,
-        fast,
-        policy,
-    )
+    logger.info(f"PHASE BEGIN setup.phase2.policy agent={agent_name} fast={fast} policy_arg={policy}")
     console.print()
     console.print(Rule(style="dim"))
     console.print()
@@ -1833,14 +1812,10 @@ def main(
                 f"to improve optimization quality.[/dim]"
             )
 
-        logger.info("PHASE END   setup.phase2.policy agent=%s fast=True", agent_name)
+        logger.info(f"PHASE END   setup.phase2.policy agent={agent_name} fast=True")
 
         # ---- Phase 3 (fast): Dataset ----
-        logger.info(
-            "PHASE BEGIN setup.phase3.dataset agent=%s fast=True data=%s",
-            agent_name,
-            data_opt,
-        )
+        logger.info(f"PHASE BEGIN setup.phase3.dataset agent={agent_name} fast=True data={data_opt}")
         console.print()
         console.print(Rule(style="dim"))
         console.print()
@@ -1862,7 +1837,7 @@ def main(
             data_path=data_opt,
             entrypoint_fn=fn_name,
         )
-        logger.info("PHASE END   setup.phase3.dataset agent=%s fast=True", agent_name)
+        logger.info(f"PHASE END   setup.phase3.dataset agent={agent_name} fast=True")
 
         set_tag(attrs.SETUP_PHASE, "complete")
         spec = generate_spec_from_proposal(analysis, policy_data=policy_data)
@@ -1876,7 +1851,7 @@ def main(
             instrumented_entry=instrumented_entry,
         )
         _sync_setup_artifacts(agent_name, agent_path, console)
-        logger.info("setup: fast-mode complete agent=%s", agent_name)
+        logger.info(f"setup: fast-mode complete agent={agent_name}")
 
         return
 
@@ -1962,10 +1937,10 @@ def main(
         )
         policy_md, policy_data = refine_policy(policy_md, policy_data, analysis, model, console)
 
-    logger.info("PHASE END   setup.phase2.policy agent=%s fast=False", agent_name)
+    logger.info(f"PHASE END   setup.phase2.policy agent={agent_name} fast=False")
 
     # ---- Phase 3: Dataset ----
-    logger.info("PHASE BEGIN setup.phase3.dataset agent=%s data=%s", agent_name, data_opt)
+    logger.info(f"PHASE BEGIN setup.phase3.dataset agent={agent_name} data={data_opt}")
     console.print()
     console.print(Rule(style="dim"))
     console.print()
@@ -1986,10 +1961,10 @@ def main(
         data_path=data_opt,
         entrypoint_fn=fn_name,
     )
-    logger.info("PHASE END   setup.phase3.dataset agent=%s", agent_name)
+    logger.info(f"PHASE END   setup.phase3.dataset agent={agent_name}")
 
     # ---- Phase 4: Evaluation Criteria ----
-    logger.info("PHASE BEGIN setup.phase4.eval_criteria agent=%s", agent_name)
+    logger.info(f"PHASE BEGIN setup.phase4.eval_criteria agent={agent_name}")
     console.print()
     console.print(Rule(style="dim"))
     console.print()
@@ -2014,9 +1989,7 @@ def main(
             console=console,
         ):
             logger.info(
-                "PHASE END   setup.phase4.eval_criteria agent=%s iterations=%d accepted=True",
-                agent_name,
-                iteration,
+                f"PHASE END   setup.phase4.eval_criteria agent={agent_name} iterations={iteration} accepted=True"
             )
             spec = generate_spec_from_proposal(analysis, policy_data=policy_data)
             _save_and_finish(
@@ -2035,7 +2008,7 @@ def main(
                 instrumented_entry=instrumented_entry,
             )
             _sync_setup_artifacts(agent_name, agent_path, console)
-            logger.info("setup: complete agent=%s", agent_name)
+            logger.info(f"setup: complete agent={agent_name}")
 
             return
 
@@ -2052,9 +2025,8 @@ def main(
 
         if choice == 1:
             logger.info(
-                "PHASE END   setup.phase4.eval_criteria agent=%s iterations=%d accepted=False save_manual=True",
-                agent_name,
-                iteration,
+                f"PHASE END   setup.phase4.eval_criteria agent={agent_name} iterations={iteration} "
+                "accepted=False save_manual=True"
             )
             spec = generate_spec_from_proposal(analysis, policy_data=policy_data)
             _save_and_finish(
@@ -2077,16 +2049,12 @@ def main(
                 instrumented_entry=instrumented_entry,
             )
             _sync_setup_artifacts(agent_name, agent_path, console)
-            logger.info("setup: complete-save-manual agent=%s", agent_name)
+            logger.info(f"setup: complete-save-manual agent={agent_name}")
 
             return
 
         iteration += 1
-        logger.info(
-            "setup.phase4.eval_criteria refinement round=%d agent=%s",
-            iteration,
-            agent_name,
-        )
+        logger.info(f"setup.phase4.eval_criteria refinement round={iteration} agent={agent_name}")
         console.print()
         console.print(Rule(style="dim"))
         console.print()

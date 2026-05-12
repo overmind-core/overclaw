@@ -105,7 +105,7 @@ def run(
     recent_calls: list[tuple[str, str]] = []
 
     for step_num in range(max_steps):
-        logger.debug("Coding agent step %d/%d", step_num + 1, max_steps)
+        logger.debug(f"Coding agent step {step_num + 1}/{max_steps}")
 
         resp = provider.chat(messages=messages, tools=schemas or None)
         for k in ("input", "output"):
@@ -128,11 +128,7 @@ def run(
         if len(recent_calls) >= DOOM_THRESHOLD:
             tail = recent_calls[-DOOM_THRESHOLD:]
             if all(t == tail[0] for t in tail):
-                logger.warning(
-                    "Doom loop: %s called %d times with same args",
-                    tail[0][0],
-                    DOOM_THRESHOLD,
-                )
+                logger.warning(f"Doom loop: {tail[0][0]} called {DOOM_THRESHOLD} times with same args")
                 messages.append({
                     "role": "user",
                     "content": (
@@ -162,7 +158,7 @@ def run(
         messages.append(assistant_msg)
 
         for tc in resp.tool_calls:
-            logger.debug("  Tool: %s", tc.name)
+            logger.debug(f"  Tool: {tc.name}")
             result = registry.execute(tc.name, tc.arguments, ctx)
             output, _was_truncated = truncate(result.output)
             record.tool_calls.append({"name": tc.name, "args": tc.arguments})
@@ -176,7 +172,7 @@ def run(
 
         steps.append(record)
 
-    logger.warning("Coding agent hit max_steps (%d)", max_steps)
+    logger.warning(f"Coding agent hit max_steps ({max_steps})")
     set_tag(attrs.CODING_AGENT_LOOP_STEPS, str(max_steps))
     set_tag(attrs.CODING_AGENT_EXIT_REASON, "max_steps_reached")
     return AgentResult(

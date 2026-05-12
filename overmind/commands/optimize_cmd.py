@@ -28,7 +28,7 @@ def main(
     max_files: int | None = None,
     max_chars: int | None = None,
 ) -> None:
-    logger.info("optimize: start agent=%s fast=%s", agent_name, fast)
+    logger.info(f"optimize: start agent={agent_name} fast={fast}")
 
     # Load agent-specific .env before anything else so the agent's credentials
     # are available throughout the entire optimize run (config collection,
@@ -43,10 +43,8 @@ def main(
         max_chars=max_chars,
     )
     logger.info(
-        "optimize: collected config agent_path=%s iterations=%d parallel=%s",
-        config.agent_path,
-        config.iterations,
-        getattr(config, "parallel", False),
+        f"optimize: collected config agent_path={config.agent_path} "
+        f"iterations={config.iterations} parallel={getattr(config, 'parallel', False)}"
     )
 
     # CLI-level flags
@@ -58,7 +56,7 @@ def main(
     # Refresh agent_id from registry in case setup just created/updated it
     config.agent_id = get_agent_id(agent_name)
 
-    logger.info("optimize: storage agent_id=%s", config.agent_id)
+    logger.info(f"optimize: storage agent_id={config.agent_id}")
     configure_storage(
         agent_path=config.agent_path,
         agent_id=config.agent_id,
@@ -93,15 +91,15 @@ def main(
     try:
         optimizer.run()
     except KeyboardInterrupt:
-        logger.warning("optimize: interrupted by user (KeyboardInterrupt) agent=%s", agent_name)
+        logger.warning(f"optimize: interrupted by user (KeyboardInterrupt) agent={agent_name}")
         _finalize_failed_job(optimizer, reason="Interrupted by user (KeyboardInterrupt)")
         raise
     except BaseException as exc:
-        logger.exception("optimize: run failed for agent=%s", agent_name)
+        logger.exception(f"optimize: run failed for agent={agent_name}")
         reason = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
         _finalize_failed_job(optimizer, reason=reason)
         raise
-    logger.info("optimize: run complete agent=%s", agent_name)
+    logger.info(f"optimize: run complete agent={agent_name}")
 
 
 def _finalize_failed_job(optimizer: Optimizer, *, reason: str) -> None:

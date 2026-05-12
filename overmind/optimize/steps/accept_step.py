@@ -49,7 +49,7 @@ def _prune_git_worktrees(candidate_dirs: list[str]) -> None:
                 timeout=15,
             )
         except Exception as exc:
-            logger.debug("Skipping worktree prune for %s: %s", candidate_dir, exc)
+            logger.debug(f"Skipping worktree prune for {candidate_dir}: {exc}")
 
 
 def _load_candidate_results(path: str) -> list[dict]:
@@ -108,7 +108,7 @@ def run_accept(
                 "case_results": score_data["case_results"],
             })
         except Exception as exc:
-            logger.warning("Failed to load score for %s: %s", cand.get("candidate_id"), exc)
+            logger.warning(f"Failed to load score for {cand.get('candidate_id')}: {exc}")
 
     if not scored:
         state.bump_stall()

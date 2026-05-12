@@ -162,7 +162,7 @@ def elicit_policy(
     """
     description = analysis.get("description", "AI agent")
     agent_name = description.split(":")[0].strip() if ":" in description else "Agent"
-    logger.info("elicit_policy starting agent=%s model=%s", agent_name, model)
+    logger.info(f"elicit_policy starting agent={agent_name} model={model}")
 
     console.print()
     console.print(Rule(style="dim"))

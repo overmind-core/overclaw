@@ -237,7 +237,7 @@ def main(args: argparse.Namespace) -> int:
     try:
         return func(args)
     except Exception as exc:
-        logger.exception("optimize-step %s failed", getattr(args, "step", "?"))
+        logger.exception(f"optimize-step {getattr(args, 'step', '?')} failed")
         return _emit({
             "status": "error",
             "error": type(exc).__name__,

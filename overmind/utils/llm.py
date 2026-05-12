@@ -117,14 +117,8 @@ def llm_completion(
     kwarg_keys = ",".join(sorted(k for k in kwargs if k != "api_key"))
 
     logger.debug(
-        "llm_completion BEGIN model=%s provider=%s messages=%d chars=%d roles=%s tools=%d kwargs=[%s]",
-        model,
-        provider,
-        num_msgs,
-        total_chars,
-        roles,
-        num_tools,
-        kwarg_keys,
+        f"llm_completion BEGIN model={model} provider={provider} messages={num_msgs} "
+        f"chars={total_chars} roles={roles} tools={num_tools} kwargs=[{kwarg_keys}]"
     )
     # Wrap each LLM call in its own child span so it flushes to the backend
     # as soon as the call returns — long-running parent spans don't stall
@@ -152,11 +146,8 @@ def llm_completion(
             set_tag(attrs.LLM_ELAPSED_SECONDS, f"{elapsed:.3f}")
             set_tag(attrs.LLM_ERROR, type(exc).__name__)
             logger.exception(
-                "llm_completion FAIL  model=%s provider=%s elapsed=%.2fs error=%s",
-                model,
-                provider,
-                elapsed,
-                type(exc).__name__,
+                f"llm_completion FAIL  model={model} provider={provider} "
+                f"elapsed={elapsed:.2f}s error={type(exc).__name__}"
             )
             raise
 
@@ -168,13 +159,7 @@ def llm_completion(
         set_tag(attrs.LLM_USAGE_COMPLETION_TOKENS, str(ct))
         set_tag(attrs.LLM_USAGE_TOTAL_TOKENS, str(tt))
         logger.info(
-            "llm_completion OK    model=%s provider=%s elapsed=%.2fs tokens_in=%d tokens_out=%d total=%d preview=%r",
-            model,
-            provider,
-            elapsed,
-            pt,
-            ct,
-            tt,
-            preview,
+            f"llm_completion OK    model={model} provider={provider} elapsed={elapsed:.2f}s "
+            f"tokens_in={pt} tokens_out={ct} total={tt} preview={preview!r}"
         )
         return response

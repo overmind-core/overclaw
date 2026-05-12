@@ -52,31 +52,31 @@ from pathlib import Path
 
 _BOOTSTRAP = r"""
 # -- Overmind shadow bootstrap (auto-generated; do not edit) -----------------
-import json as _ocl_json
-import os as _ocl_os
-import sys as _ocl_sys
-import time as _ocl_time
-import hashlib as _ocl_hashlib
+import json
+import os
+import sys
+import time
+import hashlib
 
-_ocl_sys.argv = [_ocl_sys.argv[0] if _ocl_sys.argv else "_overmind_agent"]
+sys.argv = [sys.argv[0] if sys.argv else "_overmind_agent"]
 
-_ocl_cassette_path = _ocl_os.environ.get("OVERMIND_CASSETTE_FILE")
-_ocl_prov_path = _ocl_os.environ.get("OVERMIND_PROVENANCE_FILE")
-_ocl_shadow = _ocl_os.environ.get("OVERMIND_SHADOW_MODE") == "1"
-_ocl_sim_browser = _ocl_os.environ.get("OVERMIND_SIMULATE_BROWSER") == "1"
-_ocl_sim_network = _ocl_os.environ.get("OVERMIND_SIMULATE_NETWORK") == "1"
+_ocl_cassette_path = os.environ.get("OVERMIND_CASSETTE_FILE")
+_ocl_prov_path = os.environ.get("OVERMIND_PROVENANCE_FILE")
+_ocl_shadow = os.environ.get("OVERMIND_SHADOW_MODE") == "1"
+_ocl_sim_browser = os.environ.get("OVERMIND_SIMULATE_BROWSER") == "1"
+_ocl_sim_network = os.environ.get("OVERMIND_SIMULATE_NETWORK") == "1"
 
 
 def _ocl_canonical(obj):
     try:
-        return _ocl_json.dumps(obj, sort_keys=True, default=repr, separators=(",", ":"))
+        return json.dumps(obj, sort_keys=True, default=repr, separators=(",", ":"))
     except Exception:
         return repr(obj)
 
 
 def _ocl_key(kind, identifier, payload):
     blob = "|".join([kind, identifier, _ocl_canonical(payload)])
-    return _ocl_hashlib.sha256(blob.encode("utf-8")).hexdigest()
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 _OCL_CASSETTE_INDEX = {}
@@ -92,7 +92,7 @@ def _ocl_load_cassette():
                 if not _line:
                     continue
                 try:
-                    _entry = _ocl_json.loads(_line)
+                    _entry = json.loads(_line)
                 except Exception:
                     continue
                 _k = _entry.get("key")
@@ -119,11 +119,11 @@ def _ocl_record(kind, identifier, payload, result, metadata=None):
             "metadata": metadata or {},
             "version": 1,
         }
-        _dir = _ocl_os.path.dirname(_ocl_cassette_path)
+        _dir = os.path.dirname(_ocl_cassette_path)
         if _dir:
-            _ocl_os.makedirs(_dir, exist_ok=True)
+            os.makedirs(_dir, exist_ok=True)
         with open(_ocl_cassette_path, "a", encoding="utf-8") as _fh:
-            _fh.write(_ocl_json.dumps(_entry, default=repr) + "\n")
+            _fh.write(json.dumps(_entry, default=repr) + "\n")
         _OCL_CASSETTE_INDEX[_entry["key"]] = _entry
     except Exception:
         pass
@@ -133,17 +133,17 @@ def _ocl_tag(name, source, reason=""):
     if not _ocl_prov_path:
         return
     try:
-        _dir = _ocl_os.path.dirname(_ocl_prov_path)
+        _dir = os.path.dirname(_ocl_prov_path)
         if _dir:
-            _ocl_os.makedirs(_dir, exist_ok=True)
+            os.makedirs(_dir, exist_ok=True)
         _entry = {
             "name": name,
             "source": source,
             "reason": reason,
-            "ts": _ocl_time.time(),
+            "ts": time.time(),
         }
         with open(_ocl_prov_path, "a", encoding="utf-8") as _fh:
-            _fh.write(_ocl_json.dumps(_entry, default=repr) + "\n")
+            _fh.write(json.dumps(_entry, default=repr) + "\n")
     except Exception:
         pass
 
@@ -345,10 +345,10 @@ if _ocl_shadow and _ocl_sim_network:
             payload = {"method": method, "url": url, "kwargs": {k: v for k, v in kwargs.items() if k != "timeout"}}
             cached = _ocl_replay("http", str(url), payload)
             if cached is not None:
-                from types import SimpleNamespace as _NS
+                from types import SimpleNamespace
                 _ocl_tag("http:" + str(url), "cassette", "replayed http call")
                 raw = cached.get("result") or {}
-                resp = _NS(
+                resp = SimpleNamespace(
                     status_code=raw.get("status_code", 200),
                     text=raw.get("text", ""),
                     content=(raw.get("text") or "").encode("utf-8"),
@@ -358,8 +358,8 @@ if _ocl_shadow and _ocl_sim_network:
                 )
                 return resp
             _ocl_tag("http:" + str(url), "simulated", "no cassette; returning empty response")
-            from types import SimpleNamespace as _NS
-            return _NS(
+            from types import SimpleNamespace
+            return SimpleNamespace(
                 status_code=200,
                 text="",
                 content=b"",
@@ -478,7 +478,7 @@ def bootstrap_source(config: ShadowConfig | None = None) -> str:
     return _BOOTSTRAP
 
 
-_SYS_ARGV_GUARD = "import sys as _ocl_sys\n_ocl_sys.argv = [_ocl_sys.argv[0] if _ocl_sys.argv else '_overmind_agent']\n"
+_SYS_ARGV_GUARD = "import sys\nsys.argv = [sys.argv[0] if sys.argv else '_overmind_agent']\n"
 
 
 def read_provenance_file(path: str | os.PathLike) -> list[dict]:

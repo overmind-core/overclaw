@@ -147,13 +147,12 @@ class RunState:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 state._load_from_dict(data)
                 _log.info(
-                    "Loaded run state: %d prior run(s), %d regression case(s), %d failure cluster(s)",
-                    len(state.run_history),
-                    len(state.regression_cases),
-                    len(state.failure_registry.clusters),
+                    f"Loaded run state: {len(state.run_history)} prior run(s), "
+                    f"{len(state.regression_cases)} regression case(s), "
+                    f"{len(state.failure_registry.clusters)} failure cluster(s)"
                 )
             except (json.JSONDecodeError, KeyError, TypeError) as exc:
-                _log.warning("Corrupt run_state.json, starting fresh: %s", exc)
+                _log.warning(f"Corrupt run_state.json, starting fresh: {exc}")
         return state
 
     def save(self) -> None:
@@ -164,7 +163,7 @@ class RunState:
             encoding="utf-8",
         )
         tmp.replace(self.path)
-        _log.info("Saved run state to %s", self.path)
+        _log.info(f"Saved run state to {self.path}")
 
         set_tag(attrs.RUN_STATE_TOTAL_RUNS, str(len(self.run_history)))
         set_tag(attrs.RUN_STATE_REGRESSION_CASES, str(len(self.regression_cases)))

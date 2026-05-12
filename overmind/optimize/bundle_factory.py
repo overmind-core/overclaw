@@ -46,7 +46,7 @@ def build_agent_bundle(config: Config) -> AgentBundle | None:
     """
     agent_path = Path(config.agent_path).resolve()
     if not agent_path.is_file():
-        logger.warning("Agent file missing: %s", agent_path)
+        logger.warning(f"Agent file missing: {agent_path}")
         return None
 
     try:
@@ -55,7 +55,7 @@ def build_agent_bundle(config: Config) -> AgentBundle | None:
             root = project_root()
         root = Path(root).resolve()
     except Exception as exc:
-        logger.warning("Could not resolve project root: %s", exc)
+        logger.warning(f"Could not resolve project root: {exc}")
         return None
 
     try:
@@ -76,14 +76,11 @@ def build_agent_bundle(config: Config) -> AgentBundle | None:
             should_ignore_rel=_compose_ignore(root, config.exclude_scope),
         )
     except Exception as exc:
-        logger.warning("Bundle construction failed: %s", exc, exc_info=True)
+        logger.warning(f"Bundle construction failed: {exc}", exc_info=True)
         return None
 
     logger.info(
-        "Built bundle: entry=%s files=%d pieces=%d optimizable=%s",
-        entry_rel,
-        len(bundle.original_files),
-        len(bundle.pieces),
-        optimizable_paths,
+        f"Built bundle: entry={entry_rel} files={len(bundle.original_files)} "
+        f"pieces={len(bundle.pieces)} optimizable={optimizable_paths}"
     )
     return bundle

@@ -129,7 +129,7 @@ class ApiBackend(StorageBackend):
             _run_async(client.agents_partial_update(id=UUID(self._agent_id), patched_agent_request=patch))
             return True
         except Exception:
-            logger.exception("agents_partial_update failed agent_id=%s", self._agent_id)
+            logger.exception(f"agents_partial_update failed agent_id={self._agent_id}")
             return False
 
     # ------------------------------------------------------------------

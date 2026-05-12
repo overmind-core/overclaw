@@ -82,11 +82,7 @@ def analyze_agent(
             should_ignore_rel=ign,
         )
         if bundle.is_multi_file():
-            logger.info(
-                "Multi-file agent detected: %d files, %d pieces",
-                len(bundle.original_files),
-                len(bundle.pieces),
-            )
+            logger.info(f"Multi-file agent detected: {len(bundle.original_files)} files, {len(bundle.pieces)} pieces")
     except Exception:
         logger.debug("Bundle construction failed; falling back to single-file", exc_info=True)
         bundle = None

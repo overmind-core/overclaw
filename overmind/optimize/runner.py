@@ -450,12 +450,7 @@ def _provision_with_agent(agent_dir: Path, language: Language) -> bool:
         manifest_contents=manifest_contents,
     )
 
-    logger.info(
-        "Using coding agent (%s) to provision %s environment in %s …",
-        model,
-        lang_label,
-        agent_dir,
-    )
+    logger.info(f"Using coding agent ({model}) to provision {lang_label} environment in {agent_dir} …")
 
     try:
         run_coding_agent(
@@ -465,7 +460,7 @@ def _provision_with_agent(agent_dir: Path, language: Language) -> bool:
             max_steps=15,
         )
     except Exception as exc:
-        logger.warning("Agent-based env setup failed: %s", exc, exc_info=True)
+        logger.warning(f"Agent-based env setup failed: {exc}", exc_info=True)
         return False
 
     if language == Language.PYTHON:
@@ -496,7 +491,7 @@ def _ensure_overmind_sdk(venv_dir: Path, agent_dir: Path) -> None:
     if not py.is_file():
         return
 
-    logger.info("Installing %s into agent venv …", _OVERMIND_PACKAGE)
+    logger.info(f"Installing {_OVERMIND_PACKAGE} into agent venv …")
     use_uv = bool(shutil.which("uv"))
     if use_uv:
         subprocess.run(
@@ -565,7 +560,7 @@ def _provision_python(agent_dir: Path) -> Path:
         py = _venv_python(venv_dir)
         if py.is_file():
             _ensure_overmind_sdk(venv_dir, agent_dir)
-            logger.debug("Python venv up-to-date for %s", agent_dir)
+            logger.debug(f"Python venv up-to-date for {agent_dir}")
             return py
 
     # --- Try agent-based provisioning first ---
@@ -577,7 +572,7 @@ def _provision_python(agent_dir: Path) -> Path:
             return py
 
     # --- Fallback: hardcoded uv / pip logic ---
-    logger.info("Provisioning Python environment for %s (fallback) …", agent_dir)
+    logger.info(f"Provisioning Python environment for {agent_dir} (fallback) …")
 
     use_uv = bool(shutil.which("uv"))
 
@@ -634,7 +629,7 @@ def _provision_python(agent_dir: Path) -> Path:
 
     _ensure_overmind_sdk(venv_dir, agent_dir)
     _write_cached_hash(marker, current_hash)
-    logger.info("Python environment ready for %s", agent_dir)
+    logger.info(f"Python environment ready for {agent_dir}")
     return _venv_python(venv_dir)
 
 
@@ -656,7 +651,7 @@ def _provision_js(agent_dir: Path) -> None:
     current_hash = _hash_dep_files(agent_dir, _JS_DEP_FILES)
 
     if (agent_dir / "node_modules").is_dir() and _read_cached_hash(marker) == current_hash:
-        logger.debug("node_modules up-to-date for %s", agent_dir)
+        logger.debug(f"node_modules up-to-date for {agent_dir}")
         return
 
     # --- Try agent-based provisioning first ---
@@ -665,7 +660,7 @@ def _provision_js(agent_dir: Path) -> None:
         return
 
     # --- Fallback: npm install ---
-    logger.info("Provisioning JS environment for %s (fallback) …", agent_dir)
+    logger.info(f"Provisioning JS environment for {agent_dir} (fallback) …")
     subprocess.run(
         ["npm", "install", "--no-audit", "--no-fund"],
         cwd=str(agent_dir),
@@ -673,7 +668,7 @@ def _provision_js(agent_dir: Path) -> None:
         capture_output=True,
     )
     _write_cached_hash(marker, current_hash)
-    logger.info("JS environment ready for %s", agent_dir)
+    logger.info(f"JS environment ready for {agent_dir}")
 
 
 # ---------------------------------------------------------------------------
@@ -957,28 +952,21 @@ class AgentRunner:
             return
 
         logger.info(
-            "AgentRunner.ensure_environment language=%s env_dir=%s entry=%s",
-            self.language.value,
-            self.env_dir,
-            self.entry_file,
+            f"AgentRunner.ensure_environment language={self.language.value} "
+            f"env_dir={self.env_dir} entry={self.entry_file}"
         )
 
         if not has_dep_manifest(self.env_dir, self.language):
             ext_imports = detect_external_imports(self.env_dir, self.entry_file, self.language)
             if ext_imports:
                 logger.error(
-                    "Missing dependency manifest for %s; detected external imports: %s",
-                    self.env_dir,
-                    ext_imports,
+                    f"Missing dependency manifest for {self.env_dir}; detected external imports: {ext_imports}"
                 )
                 raise MissingDependenciesError(self.env_dir, self.language, ext_imports)
 
         if self.language == Language.PYTHON:
             self._python_path = _provision_python(self.env_dir)
-            logger.info(
-                "AgentRunner.ensure_environment python interpreter resolved: %s",
-                self._python_path,
-            )
+            logger.info(f"AgentRunner.ensure_environment python interpreter resolved: {self._python_path}")
         else:
             _provision_js(self.env_dir)
 
@@ -1016,12 +1004,8 @@ class AgentRunner:
         input_json = json.dumps(input_data, default=str)
 
         logger.debug(
-            "AgentRunner.run spawning subprocess cmd=%s cwd=%s timeout=%ds trace_file=%s input_bytes=%d",
-            cmd,
-            self.agent_dir,
-            effective_timeout,
-            trace_file,
-            len(input_json),
+            f"AgentRunner.run spawning subprocess cmd={cmd} cwd={self.agent_dir} "
+            f"timeout={effective_timeout}s trace_file={trace_file} input_bytes={len(input_json)}"
         )
 
         try:
@@ -1035,11 +1019,7 @@ class AgentRunner:
                 env=env,
             )
         except subprocess.TimeoutExpired as exc:
-            logger.warning(
-                "AgentRunner.run subprocess timeout after %ds cmd=%s",
-                effective_timeout,
-                cmd,
-            )
+            logger.warning(f"AgentRunner.run subprocess timeout after {effective_timeout}s cmd={cmd}")
             partial_stderr = ""
             if exc.stderr:
                 partial_stderr = exc.stderr if isinstance(exc.stderr, str) else exc.stderr.decode(errors="replace")
@@ -1054,7 +1034,7 @@ class AgentRunner:
                 returncode=-1,
             )
         except FileNotFoundError as exc:
-            logger.error("AgentRunner.run interpreter not found cmd=%s err=%s", cmd, exc)
+            logger.error(f"AgentRunner.run interpreter not found cmd={cmd} err={exc}")
             return RunOutput(
                 success=False,
                 error=f"Interpreter not found: {exc}",
@@ -1062,17 +1042,14 @@ class AgentRunner:
             )
 
         logger.debug(
-            "AgentRunner.run subprocess exited rc=%d stdout_bytes=%d stderr_bytes=%d",
-            proc.returncode,
-            len(proc.stdout or ""),
-            len(proc.stderr or ""),
+            f"AgentRunner.run subprocess exited rc={proc.returncode} "
+            f"stdout_bytes={len(proc.stdout or '')} stderr_bytes={len(proc.stderr or '')}"
         )
 
         if proc.returncode != 0:
             logger.warning(
-                "AgentRunner.run subprocess non-zero exit rc=%d stderr_tail=%s",
-                proc.returncode,
-                (proc.stderr or "")[-500:],
+                f"AgentRunner.run subprocess non-zero exit rc={proc.returncode} "
+                f"stderr_tail={(proc.stderr or '')[-500:]}"
             )
             return RunOutput(
                 success=False,

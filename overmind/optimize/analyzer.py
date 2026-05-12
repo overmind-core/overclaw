@@ -871,11 +871,7 @@ def _run_diagnosis(
         global _LAST_DIAGNOSIS_ERROR
         _LAST_DIAGNOSIS_ERROR = f"{type(exc).__name__}: {exc}"
         _log.warning(
-            "diagnosis LLM call failed model=%s focus=%s error=%s: %s",
-            model,
-            focus_area,
-            type(exc).__name__,
-            str(exc)[:300],
+            f"diagnosis LLM call failed model={model} focus={focus_area} error={type(exc).__name__}: {str(exc)[:300]}"
         )
     return None
 
@@ -1139,7 +1135,7 @@ def _run_codegen_agentic(
             max_steps=max_steps,
         )
     except Exception as exc:
-        _log.warning("Agentic codegen failed: %s", exc)
+        _log.warning(f"Agentic codegen failed: {exc}")
         return {
             "analysis": f"Coding agent error: {exc}",
             "suggestions": [],
@@ -1694,9 +1690,7 @@ def generate_candidates(
             all_results.append(_agentic_fork(None))
         else:
             _log.info(
-                "Spawning %d agentic codegen fork(s) in parallel (workers=%d)",
-                num_candidates,
-                min(num_candidates, 5),
+                f"Spawning {num_candidates} agentic codegen fork(s) in parallel (workers={min(num_candidates, 5)})"
             )
             with ThreadPoolExecutor(max_workers=min(num_candidates, 5)) as pool:
                 # Snapshot the parent OTel context so spans created inside
@@ -1722,7 +1716,7 @@ def generate_candidates(
                     try:
                         all_results.append(fut.result())
                     except Exception:
-                        _log.exception("Agentic codegen fork %d failed", i)
+                        _log.exception(f"Agentic codegen fork {i} failed")
                         all_results.append({
                             "analysis": "agentic fork crashed",
                             "suggestions": [],
@@ -1802,11 +1796,7 @@ def generate_candidates(
     if num_candidates <= 1:
         all_results.append(_codegen_for_focus(None))
     else:
-        _log.info(
-            "Spawning %d legacy codegen fork(s) in parallel (workers=%d)",
-            num_candidates,
-            min(num_candidates, 5),
-        )
+        _log.info(f"Spawning {num_candidates} legacy codegen fork(s) in parallel (workers={min(num_candidates, 5)})")
         with ThreadPoolExecutor(max_workers=min(num_candidates, 5)) as pool:
             # Snapshot the parent OTel context so spans created inside each
             # fork nest under the active workflow span instead of becoming
@@ -1831,7 +1821,7 @@ def generate_candidates(
                 try:
                     all_results.append(fut.result())
                 except Exception:
-                    _log.exception("Legacy codegen fork %d failed", i)
+                    _log.exception(f"Legacy codegen fork {i} failed")
                     all_results.append({
                         "analysis": "codegen crashed",
                         "suggestions": [],

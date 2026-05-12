@@ -394,7 +394,7 @@ def create_dataset(
         )
         return created.model_dump(mode="json") if created is not None else None
     except Exception:
-        logger.exception("create_dataset failed agent_id=%s", agent_id)
+        logger.exception(f"create_dataset failed agent_id={agent_id}")
         return None
 
 
@@ -407,9 +407,7 @@ def fetch_dataset_datapoints(client: OvermindClient, dataset_id: str) -> list[di
             page = _run_async(client.datasets_datapoints_list(id=UUID(dataset_id), page=page_num))
         except Exception:
             logger.debug(
-                "fetch_dataset_datapoints: page=%d failed dataset_id=%s",
-                page_num,
-                dataset_id,
+                f"fetch_dataset_datapoints: page={page_num} failed dataset_id={dataset_id}",
                 exc_info=True,
             )
             break
@@ -439,7 +437,7 @@ def delete_dataset(client: OvermindClient, dataset_id: str) -> bool:
         _run_async(client.datasets_destroy(id=UUID(dataset_id)))
         return True
     except Exception:
-        logger.exception("delete_dataset failed dataset_id=%s", dataset_id)
+        logger.exception(f"delete_dataset failed dataset_id={dataset_id}")
         return False
 
 

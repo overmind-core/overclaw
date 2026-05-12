@@ -333,7 +333,7 @@ def main() -> None:
     from overmind.core.logging import setup_logging
 
     log_path = setup_logging()
-    logging.getLogger("overmind.init").info("Running overmind init in %s (log_file=%s)", oc_dir, log_path)
+    logging.getLogger("overmind.init").info(f"Running overmind init in {oc_dir} (log_file={log_path})")
 
     env_path = oc_dir / ".env"
     console = Console()
@@ -379,7 +379,7 @@ def main() -> None:
 
     _write_env(env_path, env)
 
-    logging.getLogger("overmind.init").info("Wrote env file %s (keys=%s)", env_path, sorted(env.keys()))
+    logging.getLogger("overmind.init").info(f"Wrote env file {env_path} (keys={sorted(env.keys())})")
 
     # Capture what was configured so it shows up in traces
     set_tag(attrs.INIT_ENV_PATH, str(env_path))

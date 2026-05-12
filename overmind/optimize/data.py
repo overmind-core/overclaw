@@ -187,7 +187,7 @@ def normalize_data_fields(
                 )
                 return _apply_field_mapping(cases, input_field, use_all_as_input, output_field)
         except Exception:
-            logger.debug("Could not load saved field mapping from %s", mapping_path)
+            logger.debug(f"Could not load saved field mapping from {mapping_path}")
 
     # ── Interactive selection ─────────────────────────────────────────────
     console.print()
@@ -246,9 +246,9 @@ def normalize_data_fields(
                 ),
                 encoding="utf-8",
             )
-            logger.debug("Saved field mapping to %s", mapping_path)
+            logger.debug(f"Saved field mapping to {mapping_path}")
         except Exception:
-            logger.debug("Could not save field mapping to %s", mapping_path)
+            logger.debug(f"Could not save field mapping to {mapping_path}")
 
     return _apply_field_mapping(cases, input_field, use_all_as_input, output_field)
 
@@ -614,17 +614,12 @@ def _llm_call(
             return response.choices[0].message.content
         except litellm.RateLimitError:
             wait = (2**attempt) + random.uniform(0, 1)
-            logger.warning(
-                "Rate limited (attempt %d/%d), waiting %.1fs",
-                attempt + 1,
-                max_retries,
-                wait,
-            )
+            logger.warning(f"Rate limited (attempt {attempt + 1}/{max_retries}), waiting {wait:.1f}s")
             time.sleep(wait)
         except litellm.Timeout:
-            logger.warning("Timeout on LLM call (attempt %d/%d)", attempt + 1, max_retries)
+            logger.warning(f"Timeout on LLM call (attempt {attempt + 1}/{max_retries})")
         except Exception:
-            logger.exception("Unexpected error on LLM call (attempt %d/%d)", attempt + 1, max_retries)
+            logger.exception(f"Unexpected error on LLM call (attempt {attempt + 1}/{max_retries})")
             if attempt == max_retries - 1:
                 raise
     return None
@@ -970,16 +965,14 @@ def _generate_batch(
 
     raw = _llm_call(model, prompt, temperature=temperature, max_tokens=16000)
     if not raw:
-        logger.warning("Batch generation returned nothing for persona %s", persona_name)
+        logger.warning(f"Batch generation returned nothing for persona {persona_name}")
         return []
 
     parsed = _safe_parse_json(raw)
     if parsed is None:
         logger.warning(
-            "Failed to parse batch JSON for persona %s (response length: %d, first 500 chars: %.500s)",
-            persona_name,
-            len(raw),
-            raw,
+            f"Failed to parse batch JSON for persona {persona_name} "
+            f"(response length: {len(raw)}, first 500 chars: {raw[:500]})"
         )
         return []
 
@@ -988,7 +981,7 @@ def _generate_batch(
     elif isinstance(parsed, list):
         cases = parsed
     else:
-        logger.warning("Unexpected batch response structure for persona %s", persona_name)
+        logger.warning(f"Unexpected batch response structure for persona {persona_name}")
         return []
 
     if not isinstance(cases, list):
@@ -1116,7 +1109,7 @@ def _apply_dedup(
             _maybe_repair_case_input(case, eval_spec)
             errors = validate_case_against_spec(case, eval_spec)
             if errors:
-                logger.debug("Discarding invalid case: %s", errors)
+                logger.debug(f"Discarding invalid case: {errors}")
                 if schema_errors_out is not None:
                     schema_errors_out.append(errors)
                 continue
@@ -1198,10 +1191,7 @@ def _retry_dropped_slots(
 
     for persona_idx in retry_slots:
         if persona_idx in skip_personas:
-            logger.debug(
-                "Skipping retry slot for persona %d (quota already met)",
-                persona_idx,
-            )
+            logger.debug(f"Skipping retry slot for persona {persona_idx} (quota already met)")
             continue
 
         persona = personas[persona_idx]
@@ -1242,21 +1232,13 @@ def _retry_dropped_slots(
             if slot_added > 0:
                 added += slot_added
                 per_persona_added[persona_idx] = per_persona_added.get(persona_idx, 0) + slot_added
-                logger.debug(
-                    "Retry succeeded for persona %d on attempt %d/%d",
-                    persona_idx,
-                    attempt + 1,
-                    max_attempts,
-                )
+                logger.debug(f"Retry succeeded for persona {persona_idx} on attempt {attempt + 1}/{max_attempts}")
                 break
             # Feed this attempt's output into the next attempt's anti-examples.
             anti_examples.extend(retry_rejected)
             logger.debug(
-                "Retry attempt %d/%d still a duplicate for persona %d (anti_examples=%d)",
-                attempt + 1,
-                max_attempts,
-                persona_idx,
-                len(anti_examples),
+                f"Retry attempt {attempt + 1}/{max_attempts} still a duplicate for persona {persona_idx} "
+                f"(anti_examples={len(anti_examples)})"
             )
     return added
 
@@ -1369,7 +1351,7 @@ def _per_persona_parallel_shards_round(
                         try:
                             merged.extend(fut.result())
                         except Exception:
-                            logger.exception("Synthetic shard failed for persona idx=%s", idx)
+                            logger.exception(f"Synthetic shard failed for persona idx={idx}")
                 pinfo["raw_cases"] = len(merged)
 
             raw_batches[idx] = merged
@@ -1578,10 +1560,8 @@ def generate_diverse_synthetic_data(
                     if len(unique_patterns) >= 3:
                         break
                 logger.warning(
-                    "Schema validation dropped %d/%d raw case(s) this round; distinct error patterns: %s",
-                    schema_drops,
-                    len(all_raw),
-                    unique_patterns,
+                    f"Schema validation dropped {schema_drops}/{len(all_raw)} raw case(s) this round; "
+                    f"distinct error patterns: {unique_patterns}"
                 )
                 # If the ENTIRE round was killed by schema rejects, that's a
                 # spec/LLM contract mismatch — shout at the user so they don't
