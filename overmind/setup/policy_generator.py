@@ -33,9 +33,9 @@ from overmind.prompts.policy_generator import (
     POLICY_IMPROVE_PROMPT,
     POLICY_REFINE_PROMPT,
 )
+from overmind.tracing import observe_safe
 from overmind.utils.display import BRAND, make_spinner_progress, overmind_prompt
 from overmind.utils.llm import llm_completion
-from overmind.utils.tracing import traced
 
 logger = logging.getLogger("overmind.setup.policy_generator")
 
@@ -150,7 +150,7 @@ def _default_policy_data() -> dict:
 # ---------------------------------------------------------------------------
 
 
-@traced(span_name="overmind_elicit_policy", type=SpanType.FUNCTION)
+@observe_safe(span_name="overmind.setup.elicit_policy", type=SpanType.FUNCTION)
 def elicit_policy(
     analysis: dict,
     model: str,
@@ -266,7 +266,7 @@ def elicit_policy(
     return md_text, policy_data
 
 
-@traced(span_name="overmind_policy_from_document", type=SpanType.FUNCTION)
+@observe_safe(span_name="overmind.setup.policy_from_document", type=SpanType.FUNCTION)
 def generate_policy_from_document(
     analysis: dict,
     document_path: str,
@@ -324,7 +324,7 @@ def generate_policy_from_document(
     return md_text, policy_data
 
 
-@traced(span_name="overmind_policy_from_code", type=SpanType.FUNCTION)
+@observe_safe(span_name="overmind.setup.policy_from_code", type=SpanType.FUNCTION)
 def generate_policy_from_code(
     analysis: dict,
     model: str,
@@ -386,7 +386,7 @@ def generate_policy_from_code(
     return md_text, policy_data
 
 
-@traced(span_name="overmind_improve_policy", type=SpanType.FUNCTION)
+@observe_safe(span_name="overmind.setup.improve_policy", type=SpanType.FUNCTION)
 def improve_existing_policy(
     analysis: dict,
     existing_policy_path: str,
@@ -458,7 +458,7 @@ def improve_existing_policy(
     return md_text, policy_data, change_summary
 
 
-@traced(span_name="overmind_refine_policy", type=SpanType.FUNCTION)
+@observe_safe(span_name="overmind.setup.refine_policy", type=SpanType.FUNCTION)
 def refine_policy(
     current_md: str,
     current_data: dict,

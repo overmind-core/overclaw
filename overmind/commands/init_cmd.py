@@ -12,6 +12,7 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -22,9 +23,11 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule
 
-from overmind import SpanType, attrs, set_tag
+from overmind import SpanType, attrs, init
 from overmind.core.constants import OVERMIND_DIR_NAME, overmind_rel
+from overmind.core.logging import setup_logging
 from overmind.core.registry import init_project_root
+from overmind.tracing import start_span
 from overmind.utils.display import BRAND, confirm_option, select_option
 from overmind.utils.display import render_logo as _render_logo
 from overmind.utils.io import read_api_key_masked
@@ -35,7 +38,6 @@ from overmind.utils.models import (
     model_name_for_env_storage,
     normalize_to_litellm_model_id,
 )
-from overmind.utils.tracing import traced
 
 # Keys we may set or clear; other keys from the state-dir .env are preserved on write.
 # OVERMIND_API_KEY is intentionally excluded — it must be set as a system/shell
@@ -65,6 +67,7 @@ KEYS_TO_COLLECT = (
     "OPENROUTER_API_KEY",
     "AWS_BEARER_TOKEN_BEDROCK",
 )
+logger = logging.getLogger("overmind.init")
 
 
 def _primary_env_from_os() -> dict[str, str]:
@@ -131,6 +134,7 @@ def _prompt_optional_api_key(
     key = read_api_key_masked(f"{label} API key")
     if key:
         env[env_key] = key
+        os.environ[env_key] = key
         console.print("  [dim]Saved as[/dim] [green]*******[/green]")
     else:
         env[env_key] = ""
@@ -322,20 +326,15 @@ def _write_env(path: Path, env: dict[str, str]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-@traced(span_name="overmind_init", type=SpanType.WORKFLOW)
+# @observe_safe(span_name="overmind.init", type=SpanType.WORKFLOW)
 def main() -> None:
-    set_tag(attrs.COMMAND, "init")
     oc_dir = init_project_root() / OVERMIND_DIR_NAME
     oc_dir.mkdir(parents=True, exist_ok=True)
 
-    import logging
-
-    from overmind.core.logging import setup_logging
-
     log_path = setup_logging()
-    logging.getLogger("overmind.init").info(f"Running overmind init in {oc_dir} (log_file={log_path})")
 
-    env_path = oc_dir / ".env"
+    logger.info("Running overmind init in %s (log_file=%s)", oc_dir, log_path)
+
     console = Console()
     console.print()
     _render_logo(console)
@@ -349,6 +348,8 @@ def main() -> None:
     )
 
     _install_skills(console, oc_dir.parent)
+
+    env_path = oc_dir / ".env"
 
     load_dotenv(env_path)
     env = _primary_env_from_os()
@@ -379,27 +380,21 @@ def main() -> None:
 
     _write_env(env_path, env)
 
-    logging.getLogger("overmind.init").info(f"Wrote env file {env_path} (keys={sorted(env.keys())})")
-
+    logger.info("Wrote env file %s (keys=%s)", env_path, sorted(env.keys()))
     # Capture what was configured so it shows up in traces
-    set_tag(attrs.INIT_ENV_PATH, str(env_path))
-    set_tag(
-        attrs.INIT_HAS_OPENAI_KEY,
-        str(bool((env.get("OPENAI_API_KEY") or "").strip())),
-    )
-    set_tag(
-        attrs.INIT_HAS_ANTHROPIC_KEY,
-        str(bool((env.get("ANTHROPIC_API_KEY") or "").strip())),
-    )
-    set_tag(
-        attrs.INIT_HAS_OVERMIND_TOKEN,
-        str(bool((os.getenv("OVERMIND_API_KEY") or "").strip())),
-    )
-    set_tag(attrs.INIT_ANALYZER_MODEL, env.get("ANALYZER_MODEL") or "")
-    set_tag(
-        attrs.INIT_HAS_SYNTHETIC_DATAGEN_MODEL,
-        str(bool((env.get("SYNTHETIC_DATAGEN_MODEL") or "").strip())),
-    )
-
+    init(service_name="overmind.cli", providers=None)
+    with start_span(
+        "overmind.init",
+        span_type=SpanType.WORKFLOW,
+        attributes={
+            attrs.INIT_ENV_PATH: str(env_path),
+            attrs.INIT_HAS_OPENAI_KEY: str(bool((env.get("OPENAI_API_KEY") or "").strip())),
+            attrs.INIT_HAS_ANTHROPIC_KEY: str(bool((env.get("ANTHROPIC_API_KEY") or "").strip())),
+            attrs.INIT_HAS_OVERMIND_TOKEN: str(bool((os.getenv("OVERMIND_API_KEY") or "").strip())),
+            attrs.INIT_ANALYZER_MODEL: env.get("ANALYZER_MODEL") or "",
+            attrs.INIT_HAS_SYNTHETIC_DATAGEN_MODEL: str(bool((env.get("SYNTHETIC_DATAGEN_MODEL") or "").strip())),
+        },
+    ):
+        ...
     console.print(f"\n  [green]Wrote[/green] {env_path}")
     console.print("  [dim]Run setup / optimize as usual; keys are read on startup.[/dim]\n")

@@ -15,12 +15,12 @@ from overmind.core.registry import get_agent_id
 from overmind.optimize.config import collect_config
 from overmind.optimize.optimizer import Optimizer
 from overmind.storage import configure_storage
-from overmind.utils.tracing import force_flush_traces, traced
+from overmind.tracing import force_flush_traces, observe_safe
 
 logger = logging.getLogger("overmind.commands.optimize")
 
 
-@traced(span_name="overmind_optimize", type=SpanType.WORKFLOW)
+@observe_safe(span_name="overmind.optimize", type=SpanType.WORKFLOW)
 def main(
     agent_name: str,
     fast: bool = False,

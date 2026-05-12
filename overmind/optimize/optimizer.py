@@ -84,6 +84,7 @@ from overmind.optimize.trace_reader import (
     parse_trace_file_per_line,
 )
 from overmind.storage import StorageNotConfiguredError, get_storage
+from overmind.tracing import force_flush_traces, observe_safe
 from overmind.utils.code import AgentBundle
 from overmind.utils.display import BRAND, confirm_option, make_spinner_progress, rel
 from overmind.utils.instrument import deinstrument_source
@@ -93,7 +94,6 @@ from overmind.utils.policy import (
     format_for_judge,
     load_policy_data,
 )
-from overmind.utils.tracing import force_flush_traces, traced
 
 
 def _is_subpath(child: Path, parent: Path) -> bool:
@@ -171,7 +171,7 @@ def _eval_spec_json_for_otlp_tag(spec: dict) -> str:
 class Optimizer:
     """Runs the full optimization pipeline for an agent."""
 
-    @traced("optimizer.init")
+    @observe_safe("optimizer.init")
     def __init__(self, config: Config):
         self.config = config
         self.console = Console()
@@ -292,7 +292,7 @@ class Optimizer:
 
         return self.config.agent_path
 
-    @traced("optimizer.instrument_agent_copy")
+    @observe_safe("optimizer.instrument_agent_copy")
     def _instrument_agent_copy(self) -> None:
         """Add ``@observe()`` instrumentation to all ``.py`` files in the agent copy.
 
@@ -325,7 +325,7 @@ class Optimizer:
     # Public entry point
     # ------------------------------------------------------------------
 
-    @traced("optimizer.run", SpanType.WORKFLOW)
+    @observe_safe("optimizer.run", SpanType.WORKFLOW)
     def run(self):
         self._logger.info(
             f"Optimizer.run starting agent={getattr(self.config, 'agent_name', '?')} "
@@ -1002,6 +1002,14 @@ class Optimizer:
                     finally:
                         self._cleanup_candidate(probe_path, best_cand)
 
+                # Per-dimension scores for this iteration — emitted both
+                # via OTEL (so the OTLP ingest can land them on the
+                # JobIteration row) and via ApiReporter (for the
+                # legacy REST path during the run).
+                dim_scores = {
+                    key: float(best_cand_eval.get(key, 0)) for _, key in self.evaluator.get_dimension_labels()
+                }
+
                 set_tag(attrs.OPTIMIZE_ACCEPTED, bool(accept))
                 set_tag(
                     attrs.OPTIMIZE_ITERATION_DECISION,
@@ -1013,6 +1021,8 @@ class Optimizer:
                     attrs.OPTIMIZE_ITERATION_IMPROVEMENT,
                     float(best_cand_score - self.best_score),
                 )
+                if dim_scores:
+                    set_tag(attrs.OPTIMIZE_ITERATION_DIMENSION_SCORES, dim_scores)
 
                 if accept:
                     improvement = best_cand_score - self.best_score
@@ -1096,9 +1106,6 @@ class Optimizer:
 
                     self._log_result(f"iter_{i:03d}", best_cand_eval, "keep", desc)
                     if self._reporter:
-                        dim_scores = {
-                            key: float(best_cand_eval.get(key, 0)) for _, key in self.evaluator.get_dimension_labels()
-                        }
                         self._reporter.on_iteration(
                             order=i,
                             avg_score=float(best_cand_eval.get("avg_total", 0)),
@@ -1117,9 +1124,6 @@ class Optimizer:
                     working_path.write_text(self.best_code)
                     self._log_result(f"iter_{i:03d}", best_cand_eval, "discard", desc)
                     if self._reporter:
-                        dim_scores = {
-                            key: float(best_cand_eval.get(key, 0)) for _, key in self.evaluator.get_dimension_labels()
-                        }
                         self._reporter.on_iteration(
                             order=i,
                             avg_score=float(best_cand_eval.get("avg_total", 0)),
@@ -1401,7 +1405,7 @@ class Optimizer:
     # identical to running the full ``run()`` end-to-end.
     # ------------------------------------------------------------------
 
-    @traced("optimizer.run_baseline_phase", SpanType.WORKFLOW)
+    @observe_safe("optimizer.run_baseline_phase", SpanType.WORKFLOW)
     def run_baseline_phase(self) -> dict:
         """Execute Phase 1 of :meth:`run` (baseline) and return a state dict.
 
@@ -1527,7 +1531,7 @@ class Optimizer:
             f"No baseline or latest items file under {self.output_dir}. Run `overmind optimize-step baseline` first."
         )
 
-    @traced("optimizer.run_diagnose_phase", SpanType.WORKFLOW)
+    @observe_safe("optimizer.run_diagnose_phase", SpanType.WORKFLOW)
     def run_diagnose_phase(
         self,
         iteration: int,
@@ -1621,7 +1625,7 @@ class Optimizer:
             })
         return out
 
-    @traced("optimizer.evaluate_worktree", SpanType.WORKFLOW)
+    @observe_safe("optimizer.evaluate_worktree", SpanType.WORKFLOW)
     def evaluate_worktree(
         self,
         worktree_entry_path: str,
@@ -1643,7 +1647,7 @@ class Optimizer:
             "case_results": Optimizer._build_case_results(c_items, ds),
         }
 
-    @traced("optimizer.commit_winner", SpanType.WORKFLOW)
+    @observe_safe("optimizer.commit_winner", SpanType.WORKFLOW)
     def commit_winner(
         self,
         winner_entry_path: str,
@@ -1677,7 +1681,7 @@ class Optimizer:
             )
         )
 
-    @traced("optimizer.render_report_only", SpanType.WORKFLOW)
+    @observe_safe("optimizer.render_report_only", SpanType.WORKFLOW)
     def render_report_only(self) -> str:
         """Render ``report.md`` from ``self.results``. Returns the report path."""
         self._setup_output_dirs()
@@ -1689,7 +1693,7 @@ class Optimizer:
     # Commit optimized sources back to original agent files
     # ------------------------------------------------------------------
 
-    @traced("optimizer.collect_commit_targets")
+    @observe_safe("optimizer.collect_commit_targets")
     def _collect_commit_targets(self) -> list[tuple[Path, str, str]]:
         """Return ``[(abs_path, original, optimized), ...]`` for files to commit.
 
@@ -1726,7 +1730,7 @@ class Optimizer:
 
         return targets
 
-    @traced("optimizer.prompt_commit")
+    @observe_safe("optimizer.prompt_commit")
     def _prompt_commit_to_original_sources(self) -> None:
         """After optimization, show diffs and offer to write them to originals.
 
@@ -1820,7 +1824,7 @@ class Optimizer:
     # Complexity penalty (prompt bloat + code growth + override detection)
     # ------------------------------------------------------------------
 
-    @traced("optimizer.compute_complexity_penalty")
+    @observe_safe("optimizer.compute_complexity_penalty")
     def _compute_complexity_penalty(
         self,
         candidate_code: str,
@@ -1903,7 +1907,7 @@ class Optimizer:
 
         return penalty
 
-    @traced("optimizer.detect_data_leakage")
+    @observe_safe("optimizer.detect_data_leakage")
     def _detect_data_leakage(self, candidate_code: str, train_set: list[dict]) -> int:
         """Count expected-output literals that appear in new code but not the baseline.
 
@@ -1982,7 +1986,7 @@ class Optimizer:
     # Dataset splitting
     # ------------------------------------------------------------------
 
-    @traced("optimizer.split_dataset")
+    @observe_safe("optimizer.split_dataset")
     @staticmethod
     def _split_dataset(dataset: list[dict], holdout_ratio: float) -> tuple[list[dict], list[dict]]:
         """Split dataset into train and holdout sets.
@@ -2005,7 +2009,7 @@ class Optimizer:
     # Holdout snapshot rollback
     # ------------------------------------------------------------------
 
-    @traced("optimizer.rollback_to_best_snapshot")
+    @observe_safe("optimizer.rollback_to_best_snapshot")
     def _rollback_to_best_snapshot(
         self,
         best_path: Path,
@@ -2102,7 +2106,7 @@ class Optimizer:
     # Dimension delta computation
     # ------------------------------------------------------------------
 
-    @traced("optimizer.compute_dimension_deltas")
+    @observe_safe("optimizer.compute_dimension_deltas")
     def _compute_dimension_deltas(self, old_eval: dict, new_eval: dict) -> dict[str, float]:
         """Per-dimension score deltas (only includes changes > 0.5)."""
         deltas: dict[str, float] = {}
@@ -2118,7 +2122,7 @@ class Optimizer:
     # Regression-aware acceptance
     # ------------------------------------------------------------------
 
-    @traced("optimizer.check_acceptance")
+    @observe_safe("optimizer.check_acceptance")
     def _check_acceptance(
         self,
         candidate_score: float,
@@ -2209,7 +2213,7 @@ class Optimizer:
     # Cross-run regression gate
     # ------------------------------------------------------------------
 
-    @traced("optimizer.check_regression_suite")
+    @observe_safe("optimizer.check_regression_suite")
     def _check_regression_suite(
         self,
         candidate: dict,
@@ -2279,7 +2283,7 @@ class Optimizer:
         runner.cleanup()
         return failures
 
-    @traced("optimizer.promote_resolved_to_regression")
+    @observe_safe("optimizer.promote_resolved_to_regression")
     def _promote_resolved_to_regression(
         self,
         resolved_clusters: list,
@@ -2308,7 +2312,7 @@ class Optimizer:
     # Multi-run evaluation
     # ------------------------------------------------------------------
 
-    @traced("optimizer.run_multi_eval")
+    @observe_safe("optimizer.run_multi_eval")
     def _run_multi_eval(
         self,
         agent_path: str,
@@ -2366,7 +2370,7 @@ class Optimizer:
     # Baseline diagnostics
     # ------------------------------------------------------------------
 
-    @traced("optimizer.print_baseline_diagnostics")
+    @observe_safe("optimizer.print_baseline_diagnostics")
     def _print_baseline_diagnostics(self, evaluation: dict, items: list[dict]):
         """Print smart diagnostics about the baseline run."""
         self.console.print()
@@ -2414,7 +2418,7 @@ class Optimizer:
     # Dataset loading
     # ------------------------------------------------------------------
 
-    @traced("optimizer.load_dataset")
+    @observe_safe("optimizer.load_dataset")
     def _load_dataset(self) -> list[dict]:
         """Load the dataset from disk.
 
@@ -2464,14 +2468,14 @@ class Optimizer:
             rel = Path(self.config.agent_path).name
         return {rel: current_code}
 
-    @traced("optimizer.build_bundle")
+    @observe_safe("optimizer.build_bundle")
     def _build_bundle(self) -> AgentBundle | None:
         """Build an ``AgentBundle`` from the current config."""
         from overmind.optimize.bundle_factory import build_agent_bundle
 
         return build_agent_bundle(self.config)
 
-    @traced("optimizer.rebuild_bundle")
+    @observe_safe("optimizer.rebuild_bundle")
     def _rebuild_bundle(self) -> None:
         """Rebuild the bundle from current ``_best_files`` state.
 
@@ -2500,7 +2504,7 @@ class Optimizer:
         self._bundle.pieces = new_pieces
         self._bundle._assign_ids()
 
-    @traced("optimizer.resolve_bundle_candidate")
+    @observe_safe("optimizer.resolve_bundle_candidate")
     def _resolve_bundle_candidate(self, bundle_updates: dict) -> dict | None:
         """Resolve bundle updates into modified files.
 
@@ -2537,7 +2541,7 @@ class Optimizer:
 
         return {"entry_code": entry_code, "files": modified}
 
-    @traced("optimizer.write_candidate_to_disk")
+    @observe_safe("optimizer.write_candidate_to_disk")
     def _write_candidate_to_disk(self, cand: dict) -> Path:
         """Write a candidate to disk for evaluation, handling both modes.
 
@@ -2571,7 +2575,7 @@ class Optimizer:
         tmp.write_text(code)
         return tmp
 
-    @traced("optimizer.cleanup_candidate")
+    @observe_safe("optimizer.cleanup_candidate")
     def _cleanup_candidate(self, tmp_path: Path, cand: dict) -> None:
         """Clean up temporary files/dirs created by ``_write_candidate_to_disk``."""
         resolved = cand.get("_resolved_files")
@@ -2602,7 +2606,7 @@ class Optimizer:
     # Agent loading & execution
     # ------------------------------------------------------------------
 
-    @traced("optimizer.build_runner")
+    @observe_safe("optimizer.build_runner")
     def _build_runner(
         self,
         agent_path: str,
@@ -2647,7 +2651,7 @@ class Optimizer:
             env_dir=original_agent_dir,
         )
 
-    @traced("optimizer.ensure_runner_env")
+    @observe_safe("optimizer.ensure_runner_env")
     def _ensure_runner_env(self) -> None:
         """Provision the runner's environment (deps install). Idempotent."""
         from overmind.optimize.runner import MissingDependenciesError
@@ -2677,7 +2681,7 @@ class Optimizer:
         spec.loader.exec_module(module)
         return module
 
-    @traced("optimizer.run_agent_on_dataset")
+    @observe_safe("optimizer.run_agent_on_dataset")
     def _run_agent_on_dataset(
         self,
         agent_path: str,
@@ -2747,7 +2751,7 @@ class Optimizer:
             return False
         return bool(getattr(self.config, "enable_shadow", True))
 
-    @traced("optimizer.run_sequential_subprocess")
+    @observe_safe("optimizer.run_sequential_subprocess")
     def _run_sequential_subprocess(
         self,
         runner: AgentRunner,
@@ -2801,7 +2805,7 @@ class Optimizer:
         set_tag(attrs.RUN_AGENT_BACKEND_USED, backends_used)
         return self._build_eval_results(outputs, cases_data, run_name, trace_path, provenance_by_idx)
 
-    @traced("optimizer.run_parallel_subprocess")
+    @observe_safe("optimizer.run_parallel_subprocess")
     def _run_parallel_subprocess(
         self,
         runner: AgentRunner,
@@ -2881,7 +2885,7 @@ class Optimizer:
         set_tag(attrs.RUN_AGENT_BACKEND_USED, backends_used)
         return self._build_eval_results(outputs, dataset, run_name, trace_path, provenance_by_idx)
 
-    @traced("optimizer.run_case_with_plan")
+    @observe_safe("optimizer.run_case_with_plan")
     def _run_case_with_plan(
         self,
         plan: BackendPlan | None,
@@ -2916,7 +2920,7 @@ class Optimizer:
         assert last_output is not None
         return last_output
 
-    @traced("optimizer.build_eval_results")
+    @observe_safe("optimizer.build_eval_results")
     def _build_eval_results(
         self,
         outputs: list[dict | None],
@@ -3107,7 +3111,7 @@ class Optimizer:
     # Validation
     # ------------------------------------------------------------------
 
-    @traced("optimizer.validate_code")
+    @observe_safe("optimizer.validate_code")
     def _validate_code(self, code: str) -> bool:
         from overmind.optimize.runner import (
             _validate_js_entrypoint,
@@ -3138,7 +3142,7 @@ class Optimizer:
     # Model backtesting
     # ------------------------------------------------------------------
 
-    @traced("optimizer.run_backtesting")
+    @observe_safe("optimizer.run_backtesting")
     def _run_backtesting(self, dataset: list[dict]):
         for model_id in self.config.backtest_models:
             with otel_span(
@@ -3200,7 +3204,7 @@ class Optimizer:
     # Logging & reporting
     # ------------------------------------------------------------------
 
-    @traced("optimizer.setup_output_dirs")
+    @observe_safe("optimizer.setup_output_dirs")
     def _setup_output_dirs(self):
         for d in (self.output_dir, self.traces_dir, self.analysis_dir):
             d.mkdir(parents=True, exist_ok=True)
@@ -3265,7 +3269,7 @@ class Optimizer:
             else:
                 self.console.print(f"    {display:>18}: {val:.1f} / {max_val:.0f}")
 
-    @traced("optimizer.generate_report")
+    @observe_safe("optimizer.generate_report")
     def _generate_report(self):
         self.console.print()
         self.console.print(Rule(style="dim"))
@@ -3358,7 +3362,7 @@ class Optimizer:
 
         self._write_report_md(baseline_score)
 
-    @traced("optimizer.write_report_md")
+    @observe_safe("optimizer.write_report_md")
     def _write_report_md(self, baseline_score: float):
         dim_labels = self.evaluator.get_dimension_labels()
 

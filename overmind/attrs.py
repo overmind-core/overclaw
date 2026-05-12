@@ -101,8 +101,6 @@ SETUP_EVAL_SPEC_HAS_POLICY = "overmind.setup.eval_spec_has_policy"
 SETUP_EVAL_SPEC_STRUCTURE_WEIGHT = "overmind.setup.eval_spec_structure_weight"
 SETUP_EVAL_SPEC_TOOL_COUNT = "overmind.setup.eval_spec_tool_count"
 SETUP_EVAL_SPEC_CONSISTENCY_RULE_COUNT = "overmind.setup.eval_spec_consistency_rule_count"
-SETUP_DATASET_SOURCE = "overmind.setup.dataset_source"
-SETUP_DATASET_ID = "overmind.setup.dataset_id"
 SETUP_CRITERIA_SOURCE = "overmind.setup.criteria_source"
 SETUP_POLICY_SOURCE = "overmind.setup.policy_source"
 SETUP_AGENT_POLICY_MARKDOWN = "overmind.agent.policy.markdown"
@@ -183,6 +181,10 @@ OPTIMIZE_ITERATION_DECISION = "overmind.optimize.iteration_decision"
 OPTIMIZE_ITERATION_SCORE = "overmind.optimize.iteration_score"
 OPTIMIZE_ITERATION_IMPROVEMENT = "overmind.optimize.iteration_improvement"
 OPTIMIZE_ITERATION_REASON = "overmind.optimize.iteration_reason"
+# Per-dimension scores for the iteration (e.g. ``{"correctness": 87.0,
+# "tool_use": 64.2}``).  Serialised as JSON because OTel attributes
+# cannot carry nested dicts directly.
+OPTIMIZE_ITERATION_DIMENSION_SCORES = "overmind.optimize.iteration_dimension_scores"
 OPTIMIZE_ACCEPTED = "overmind.optimize.accepted"
 OPTIMIZE_FINAL_BEST_SCORE = "overmind.optimize.final_best_score"
 OPTIMIZE_HOLDOUT_SCORE = "overmind.optimize.holdout_score"
@@ -316,18 +318,6 @@ LLM_USAGE_TOTAL_TOKENS = "genai.usage.total_tokens"
 TOOL_NAME = "tool.name"
 TOOL_ARG_KEYS = "tool.arg_keys"
 TOOL_ERROR = "tool.error"
-
-# ---------------------------------------------------------------------------
-# Dataset creation event — emitted as a dedicated child span
-# ``overmind_dataset_created`` when a dataset is persisted to the platform.
-# Contains only metadata (never raw datapoints).
-# ---------------------------------------------------------------------------
-DATASET_ID = "overmind.dataset.id"
-DATASET_VERSION = "overmind.dataset.version"
-DATASET_SOURCE = "overmind.dataset.source"
-DATASET_NUM_DATAPOINTS = "overmind.dataset.num_datapoints"
-DATASET_AGENT_ID = "overmind.dataset.agent.id"
-DATASET_GENERATOR_MODEL = "overmind.dataset.generator_model"
 
 # ---------------------------------------------------------------------------
 # Span-level input / output / scoring / classification

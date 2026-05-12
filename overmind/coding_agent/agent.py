@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from overmind import SpanType, attrs, set_tag
-from overmind.utils.tracing import traced
+from overmind.tracing import observe_safe
 
 from .file_tracker import FileTracker
 from .providers import LiteLLMProvider
@@ -50,7 +50,7 @@ class AgentResult:
     total_usage: dict[str, int]
 
 
-@traced(span_name="overmind_coding_agent_run", type=SpanType.FUNCTION)
+@observe_safe(span_name="overmind.coding_agent.run", type=SpanType.FUNCTION)
 def run(
     instruction: str,
     model: str,
@@ -116,7 +116,7 @@ def run(
         if not resp.tool_calls:
             steps.append(record)
             logger.debug("Coding agent finished (no tool calls)")
-            set_tag(attrs.CODING_AGENT_LOOP_STEPS, str(step_num + 1))
+            set_tag(attrs.CODING_AGENT_LOOP_STEPS, step_num + 1)
             set_tag(attrs.CODING_AGENT_EXIT_REASON, "completed")
             return AgentResult(text=resp.text, steps=steps, total_usage=total_usage)
 
@@ -172,8 +172,8 @@ def run(
 
         steps.append(record)
 
-    logger.warning(f"Coding agent hit max_steps ({max_steps})")
-    set_tag(attrs.CODING_AGENT_LOOP_STEPS, str(max_steps))
+    logger.warning("Coding agent hit max_steps (%d)", max_steps)
+    set_tag(attrs.CODING_AGENT_LOOP_STEPS, max_steps)
     set_tag(attrs.CODING_AGENT_EXIT_REASON, "max_steps_reached")
     return AgentResult(
         text="Agent reached maximum steps without completing.",

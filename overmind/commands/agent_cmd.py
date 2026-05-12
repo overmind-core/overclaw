@@ -41,8 +41,8 @@ from overmind.core.registry import (
     resolve_module_to_file,
     save_agent,
 )
+from overmind.tracing import observe_safe
 from overmind.utils.display import BRAND, confirm_option, rel, select_option
-from overmind.utils.tracing import traced
 
 
 def _other_agents_with_entrypoint(
@@ -342,9 +342,8 @@ def _auto_generate_wrapper(
 # ---------------------------------------------------------------------------
 
 
-@traced(span_name="overmind_agent_register", type=SpanType.WORKFLOW)
+@observe_safe(span_name="overmind.agent.register", type=SpanType.WORKFLOW)
 def cmd_register(name: str, entrypoint: str) -> None:
-    set_tag(attrs.COMMAND, "agent.register")
     set_tag(attrs.AGENT_NAME, name)
     set_tag(attrs.AGENT_ENTRYPOINT, entrypoint)
     console = Console()
@@ -456,6 +455,9 @@ def cmd_register(name: str, entrypoint: str) -> None:
     # ---- 4. Save to registry ----
     save_agent(name, entrypoint)
 
+    # ``file_path`` is usually a Path; stringify defensively so the
+    # span attribute carries a plain string regardless of where the
+    # caller resolved it from.
     set_tag(attrs.AGENT_FILE_PATH, str(file_path))
     set_tag(attrs.AGENT_FUNCTION_NAME, fn)
 
@@ -469,12 +471,11 @@ def cmd_register(name: str, entrypoint: str) -> None:
     _print_post_register_next_step(console, name)
 
 
-@traced(span_name="overmind_agent_list", type=SpanType.WORKFLOW)
+@observe_safe(span_name="overmind.agent.list", type=SpanType.WORKFLOW)
 def cmd_list() -> None:
-    set_tag(attrs.COMMAND, "agent.list")
     console = Console()
     registry = load_registry()
-    set_tag(attrs.AGENT_REGISTERED_COUNT, str(len(registry)))
+    set_tag(attrs.AGENT_REGISTERED_COUNT, len(registry))
 
     if not registry:
         console.print(
@@ -498,9 +499,8 @@ def cmd_list() -> None:
     console.print()
 
 
-@traced(span_name="overmind_agent_remove", type=SpanType.WORKFLOW)
+@observe_safe(span_name="overmind.agent.remove", type=SpanType.WORKFLOW)
 def cmd_remove(name: str) -> None:
-    set_tag(attrs.COMMAND, "agent.remove")
     set_tag(attrs.AGENT_NAME, name)
     console = Console()
     registry = load_registry()
@@ -536,10 +536,9 @@ def cmd_remove(name: str) -> None:
     console.print(f"\n  [bold green]\u2713[/bold green]  Agent '[bold]{name}[/bold]' removed.\n")
 
 
-@traced(span_name="overmind_agent_update", type=SpanType.WORKFLOW)
+@observe_safe(span_name="overmind.agent.update", type=SpanType.WORKFLOW)
 def cmd_update(name: str, entrypoint: str) -> None:
     set_tag(attrs.COMMAND, "agent.update")
-    set_tag(attrs.AGENT_NAME, name)
     set_tag(attrs.AGENT_NEW_ENTRYPOINT, entrypoint)
     console = Console()
     load_overmind_dotenv()
@@ -598,9 +597,8 @@ def cmd_update(name: str, entrypoint: str) -> None:
     console.print(f"\n  [dim]Old entrypoint:[/dim] {old_ep_raw}\n  [dim]New entrypoint:[/dim] {entrypoint}\n")
 
 
-@traced(span_name="overmind_agent_show", type=SpanType.WORKFLOW)
+@observe_safe(span_name="overmind.agent.show", type=SpanType.WORKFLOW)
 def cmd_show(name: str) -> None:
-    set_tag(attrs.COMMAND, "agent.show")
     set_tag(attrs.AGENT_NAME, name)
     console = Console()
     registry = load_registry()
@@ -632,9 +630,9 @@ def cmd_show(name: str) -> None:
 
     set_tag(attrs.AGENT_ENTRYPOINT, data["entrypoint"])
     set_tag(attrs.AGENT_FILE_PATH, data["file_path"])
-    set_tag(attrs.AGENT_FILE_EXISTS, str(file_exists))
-    set_tag(attrs.AGENT_SETUP_SPEC_READY, str(spec_exists))
-    set_tag(attrs.AGENT_EXPERIMENT_FILE_COUNT, str(len(exp_files)))
+    set_tag(attrs.AGENT_FILE_EXISTS, bool(file_exists))
+    set_tag(attrs.AGENT_SETUP_SPEC_READY, bool(spec_exists))
+    set_tag(attrs.AGENT_EXPERIMENT_FILE_COUNT, len(exp_files))
 
     spec_status = "[green]\u2713 ready[/green]" if spec_exists else "[yellow]not run yet[/yellow]"
     exp_status = f"[green]\u2713 {len(exp_files)} file(s)[/green]" if exp_files else "[yellow]not run yet[/yellow]"
@@ -664,7 +662,7 @@ def cmd_show(name: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-@traced(span_name="overmind_agent_validate", type=SpanType.WORKFLOW)
+@observe_safe(span_name="overmind.agent.validate", type=SpanType.WORKFLOW)
 def cmd_validate(name: str, data: str) -> None:
     """Run the agent's entrypoint against test data to verify it works."""
     import json
@@ -677,7 +675,6 @@ def cmd_validate(name: str, data: str) -> None:
 
     console = Console()
     load_overmind_dotenv()
-    set_tag(attrs.COMMAND, "agent.validate")
     set_tag(attrs.AGENT_NAME, name)
 
     registry = load_registry()

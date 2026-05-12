@@ -15,14 +15,14 @@ from rich.table import Table
 from overmind import SpanType, attrs, set_tag
 from overmind.core.logging import stage
 from overmind.prompts.questionnaire import REFINEMENT_PROMPT
+from overmind.tracing import observe_safe
 from overmind.utils.display import make_spinner_progress, overmind_prompt
 from overmind.utils.llm import llm_completion
-from overmind.utils.tracing import traced
 
 logger = logging.getLogger("overmind.setup.questionnaire")
 
 
-@traced(span_name="overmind_setup_questionnaire", type=SpanType.FUNCTION)
+@observe_safe(span_name="overmind.setup.questionnaire", type=SpanType.FUNCTION)
 def run_questionnaire(analysis: dict, model: str, console: Console) -> dict:
     """Collect domain knowledge conversationally and refine criteria via LLM.
 

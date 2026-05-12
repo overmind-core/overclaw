@@ -49,6 +49,7 @@ from overmind.core.constants import OVERMIND_DIR_NAME, overmind_rel
 from overmind.core.logging import setup_logging
 from overmind.core.paths import load_agent_dotenv, load_overmind_dotenv
 from overmind.core.registry import require_overmind_initialized
+from overmind.tracing import force_flush_traces
 
 _FMT = argparse.RawDescriptionHelpFormatter
 
@@ -472,16 +473,6 @@ def _resolve_agent_name_for_env(args: argparse.Namespace) -> str | None:
     return None
 
 
-def _flush_traces() -> None:
-    """Flush all buffered OTel spans so nothing is lost on process exit."""
-    try:
-        provider = _otel_trace.get_tracer_provider()
-        if hasattr(provider, "force_flush"):
-            provider.force_flush(timeout_millis=10_000)
-    except Exception:  # noqa: S110
-        pass
-
-
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -506,7 +497,6 @@ def main() -> None:
     # a real OTLP endpoint.
     if args.command == "optimize-step" and not os.getenv("OVERMIND_API_KEY"):
         os.environ["OVERMIND_API_KEY"] = "skill-local-no-export"
-    overmind.init(service_name="overmind.cli", providers=None)
 
     # Wire up logging as early as possible so every module that gets
     # imported next (commands, optimizer, coding agent, …) can emit debug
@@ -520,6 +510,9 @@ def main() -> None:
         )
 
     try:
+        if args.command != "init":
+            overmind.init(service_name="overmind.cli", providers=None)
+
         if args.command == "init":
             _init()
 
@@ -572,7 +565,10 @@ def main() -> None:
         print("\nAborted.", file=sys.stderr)
         raise SystemExit(130) from None
     finally:
-        _flush_traces()
+        # CLI exits the process right after this; give the BatchSpanProcessor
+        # a generous window so the workflow span and any in-flight LLM /
+        # tool child spans land on the backend before teardown.
+        force_flush_traces(timeout_millis=10_000)
 
 
 if __name__ == "__main__":

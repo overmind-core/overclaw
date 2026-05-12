@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from overmind import SpanType, attrs, set_tag
-from overmind.utils.tracing import traced
+from overmind.tracing import observe_safe
 
 logger = logging.getLogger("overmind.coding_agent")
 
@@ -29,7 +29,7 @@ class CodingAgentResult:
     usage: dict[str, int] = field(default_factory=dict)
 
 
-@traced(span_name="overmind_apply_code_changes", type=SpanType.FUNCTION)
+@observe_safe(span_name="overmind.coding_agent.apply_code_changes", type=SpanType.FUNCTION)
 def apply_code_changes(
     agent_files: dict[str, str],
     instruction: str,
@@ -99,19 +99,13 @@ def apply_code_changes(
                     file_updates[rel] = full.read_text(encoding="utf-8")
 
         set_tag(attrs.CODING_AGENT_MODEL, model)
-        set_tag(attrs.CODING_AGENT_INPUT_FILE_COUNT, str(len(agent_files)))
-        set_tag(attrs.CODING_AGENT_MODIFIED_FILE_COUNT, str(len(file_updates)))
-        set_tag(attrs.CODING_AGENT_STEPS_TAKEN, str(len(result.steps)))
-        set_tag(attrs.CODING_AGENT_MAX_STEPS, str(max_steps))
+        set_tag(attrs.CODING_AGENT_INPUT_FILE_COUNT, len(agent_files))
+        set_tag(attrs.CODING_AGENT_MODIFIED_FILE_COUNT, len(file_updates))
+        set_tag(attrs.CODING_AGENT_STEPS_TAKEN, len(result.steps))
+        set_tag(attrs.CODING_AGENT_MAX_STEPS, max_steps)
         if result.total_usage:
-            set_tag(
-                attrs.CODING_AGENT_TOKENS_IN,
-                str(result.total_usage.get("input", 0)),
-            )
-            set_tag(
-                attrs.CODING_AGENT_TOKENS_OUT,
-                str(result.total_usage.get("output", 0)),
-            )
+            set_tag(attrs.CODING_AGENT_TOKENS_IN, int(result.total_usage.get("input", 0)))
+            set_tag(attrs.CODING_AGENT_TOKENS_OUT, int(result.total_usage.get("output", 0)))
 
         return CodingAgentResult(
             file_updates=file_updates,

@@ -4,12 +4,12 @@ import json
 from pathlib import Path
 
 from overmind import SpanType
-from overmind.utils.tracing import traced
+from overmind.tracing import observe_safe
 
 IMPORTANCE_MULTIPLIERS = {"critical": 3, "important": 2, "minor": 1}
 
 
-@traced(span_name="overmind_generate_spec", type=SpanType.FUNCTION)
+@observe_safe(span_name="overmind.setup.generate_spec", type=SpanType.FUNCTION)
 def generate_spec_from_proposal(analysis: dict, policy_data: dict | None = None) -> dict:
     """Build an eval spec directly from the LLM's proposed criteria.
 

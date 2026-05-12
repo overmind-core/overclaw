@@ -43,9 +43,9 @@ from overmind.prompts.data import (
     PERSONAS_GENERATION_PROMPT,
     SYNTHETIC_DATA_LEGACY_PROMPT,
 )
+from overmind.tracing import force_flush_traces, observe_safe, start_child_span
 from overmind.utils.display import BRAND, make_spinner_progress
 from overmind.utils.llm import llm_completion
-from overmind.utils.tracing import force_flush_traces, start_child_span, traced
 
 logger = logging.getLogger(__name__)
 
@@ -677,7 +677,7 @@ def _is_near_duplicate(
 # ---------------------------------------------------------------------------
 
 
-@traced(span_name="overmind_generate_synthetic_data", type=SpanType.FUNCTION)
+@observe_safe(span_name="overmind.setup.generate_synthetic_data", type=SpanType.FUNCTION)
 def generate_synthetic_data(
     agent_description: str,
     model: str,
@@ -742,8 +742,8 @@ def generate_synthetic_data(
         if isinstance(cases, list) and len(cases) > 0:
             set_tag(attrs.DATAGEN_MODE, "legacy")
             set_tag(attrs.DATAGEN_MODEL, model)
-            set_tag(attrs.DATAGEN_REQUESTED_SAMPLES, str(num_samples))
-            set_tag(attrs.DATAGEN_GENERATED_COUNT, str(len(cases)))
+            set_tag(attrs.DATAGEN_REQUESTED_SAMPLES, int(num_samples))
+            set_tag(attrs.DATAGEN_GENERATED_COUNT, len(cases))
             return cases
 
     raise ValueError(
@@ -756,7 +756,7 @@ def generate_synthetic_data(
 # ===================================================================
 
 
-@traced(span_name="overmind_generate_redteam_personas", type=SpanType.FUNCTION)
+@observe_safe(span_name="overmind.setup.generate_redteam_personas", type=SpanType.FUNCTION)
 def _generate_personas(
     agent_description: str,
     agent_code: str | None,
@@ -794,14 +794,14 @@ def _generate_personas(
     parsed = _safe_parse_json(raw)
     if isinstance(parsed, dict) and "personas" in parsed:
         personas = parsed["personas"]
-        set_tag(attrs.DATAGEN_PERSONA_COUNT, str(len(personas)))
+        set_tag(attrs.DATAGEN_PERSONA_COUNT, len(personas))
         set_tag(attrs.DATAGEN_PERSONA_SOURCE, "llm")
         if isinstance(personas, list) and len(personas) > 0:
             return personas
 
     logger.warning("Could not parse personas from LLM; falling back to defaults")
     fallback = _default_personas(num_personas)
-    set_tag(attrs.DATAGEN_PERSONA_COUNT, str(len(fallback)))
+    set_tag(attrs.DATAGEN_PERSONA_COUNT, len(fallback))
     set_tag(attrs.DATAGEN_PERSONA_SOURCE, "fallback")
     return fallback
 
@@ -1202,10 +1202,10 @@ def _retry_dropped_slots(
         for attempt in range(max_attempts):
             directive = _retry_variation_directive(persona, anti_examples, attempt + 1)
             with start_child_span("overmind_datagen_retry", span_type=SpanType.FUNCTION):
-                set_tag(attrs.DATAGEN_PERSONA_IDX, str(persona_idx))
-                set_tag(attrs.DATAGEN_RETRY_ATTEMPT, str(attempt + 1))
-                set_tag(attrs.DATAGEN_RETRY_MAX_ATTEMPTS, str(max_attempts))
-                set_tag(attrs.DATAGEN_ANTI_EXAMPLES, str(len(anti_examples)))
+                set_tag(attrs.DATAGEN_PERSONA_IDX, int(persona_idx))
+                set_tag(attrs.DATAGEN_RETRY_ATTEMPT, attempt + 1)
+                set_tag(attrs.DATAGEN_RETRY_MAX_ATTEMPTS, int(max_attempts))
+                set_tag(attrs.DATAGEN_ANTI_EXAMPLES, len(anti_examples))
                 batch = _generate_batch(
                     persona=persona,
                     agent_description=agent_description,
@@ -1327,11 +1327,11 @@ def _per_persona_parallel_shards_round(
                     directives=[d.splitlines()[0] if d else "(none)" for d in shard_directives],
                 ) as pinfo,
             ):
-                set_tag(attrs.DATAGEN_ROUND, str(round_num))
-                set_tag(attrs.DATAGEN_PERSONA_IDX, str(idx))
+                set_tag(attrs.DATAGEN_ROUND, int(round_num))
+                set_tag(attrs.DATAGEN_PERSONA_IDX, int(idx))
                 set_tag(attrs.DATAGEN_PERSONA_NAME, str(pname))
                 set_tag(attrs.DATAGEN_PERSONA_INTENT, str(persona.get("intent", "?")))
-                set_tag(attrs.DATAGEN_PERSONA_SHARDS, str(len(sizes)))
+                set_tag(attrs.DATAGEN_PERSONA_SHARDS, len(sizes))
                 with ThreadPoolExecutor(max_workers=len(sizes)) as executor:
                     # Propagate the OTel/contextvars context so spans
                     # emitted inside each shard (e.g. overmind_llm_completion)
@@ -1366,7 +1366,7 @@ def _per_persona_parallel_shards_round(
 # ---------------------------------------------------------------------------
 
 
-@traced(span_name="overmind_generate_diverse_data", type=SpanType.WORKFLOW)
+@observe_safe(span_name="overmind.setup.generate_diverse_data", type=SpanType.WORKFLOW)
 def generate_diverse_synthetic_data(
     agent_description: str,
     model: str,
@@ -1499,9 +1499,9 @@ def generate_diverse_synthetic_data(
                 per_persona=dict(per_persona_added),
             ) as phase2,
         ):
-            set_tag(attrs.DATAGEN_ROUND, str(round_num))
-            set_tag(attrs.DATAGEN_TARGET, str(num_samples))
-            set_tag(attrs.DATAGEN_HAVE_BEFORE, str(len(new_cases)))
+            set_tag(attrs.DATAGEN_ROUND, int(round_num))
+            set_tag(attrs.DATAGEN_TARGET, int(num_samples))
+            set_tag(attrs.DATAGEN_HAVE_BEFORE, len(new_cases))
             raw_batches = _per_persona_parallel_shards_round(
                 round_num=round_num,
                 personas=personas,
@@ -1650,13 +1650,13 @@ def generate_diverse_synthetic_data(
 
     set_tag(attrs.DATAGEN_MODE, "diverse_persona_pipeline")
     set_tag(attrs.DATAGEN_MODEL, model)
-    set_tag(attrs.DATAGEN_REQUESTED_SAMPLES, str(num_samples))
-    set_tag(attrs.DATAGEN_GENERATED_COUNT, str(len(new_cases)))
-    set_tag(attrs.DATAGEN_ROUNDS, str(round_num))
-    set_tag(attrs.DATAGEN_ELAPSED_SECONDS, f"{elapsed:.1f}")
-    set_tag(attrs.DATAGEN_EXISTING_CASES, str(len(existing_cases)))
+    set_tag(attrs.DATAGEN_REQUESTED_SAMPLES, int(num_samples))
+    set_tag(attrs.DATAGEN_GENERATED_COUNT, len(new_cases))
+    set_tag(attrs.DATAGEN_ROUNDS, int(round_num))
+    set_tag(attrs.DATAGEN_ELAPSED_SECONDS, round(elapsed, 1))
+    set_tag(attrs.DATAGEN_EXISTING_CASES, len(existing_cases))
     if coverage_gaps:
-        set_tag(attrs.DATAGEN_COVERAGE_GAP_COUNT, str(len(coverage_gaps)))
+        set_tag(attrs.DATAGEN_COVERAGE_GAP_COUNT, len(coverage_gaps))
 
     # Phase 3: coverage report
     with stage(
