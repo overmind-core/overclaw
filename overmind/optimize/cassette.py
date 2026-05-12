@@ -119,7 +119,7 @@ class Cassette:
         try:
             text = self.path.read_text(encoding="utf-8")
         except OSError as exc:
-            logger.warning("Cassette read failed: %s", exc)
+            logger.warning(f"Cassette read failed: {exc}")
             return
 
         for line in text.splitlines():
@@ -130,7 +130,7 @@ class Cassette:
                 raw = json.loads(line)
                 entry = CassetteEntry(**raw)
             except (json.JSONDecodeError, TypeError) as exc:
-                logger.debug("Skipping malformed cassette line: %s", exc)
+                logger.debug(f"Skipping malformed cassette line: {exc}")
                 continue
             self._entries[entry.key] = entry
 
@@ -148,7 +148,7 @@ class Cassette:
             with self.path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(asdict(entry), default=repr) + "\n")
         except OSError as exc:
-            logger.warning("Cassette write failed: %s", exc)
+            logger.warning(f"Cassette write failed: {exc}")
 
     # ------------------------------------------------------------------
     # Core API

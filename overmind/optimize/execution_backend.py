@@ -204,11 +204,7 @@ class SubprocessBackend:
             timed_out="timed out" in (ro.error or "").lower(),
             error=ro.error,
         )
-        logger.info(
-            "SubprocessBackend: run failed mode=%s summary=%s",
-            diag.mode.value,
-            diag.summary,
-        )
+        logger.info(f"SubprocessBackend: run failed mode={diag.mode.value} summary={diag.summary}")
         return BackendOutput(
             run_output=ro,
             backend=self.name,
@@ -224,7 +220,7 @@ class SubprocessBackend:
         try:
             self._runner.cleanup()
         except Exception as exc:
-            logger.debug("SubprocessBackend cleanup: %s", exc)
+            logger.debug(f"SubprocessBackend cleanup: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -310,11 +306,7 @@ class ShadowBackend:
                 timed_out="timed out" in (ro.error or "").lower(),
                 error=ro.error,
             )
-            logger.info(
-                "ShadowBackend: run failed mode=%s summary=%s",
-                diag.mode.value,
-                diag.summary,
-            )
+            logger.info(f"ShadowBackend: run failed mode={diag.mode.value} summary={diag.summary}")
             return BackendOutput(
                 run_output=ro,
                 backend=self.name,
@@ -342,7 +334,7 @@ class ShadowBackend:
         try:
             self._runner.cleanup()
         except Exception as exc:
-            logger.debug("ShadowBackend cleanup: %s", exc)
+            logger.debug(f"ShadowBackend cleanup: {exc}")
 
 
 # ---------------------------------------------------------------------------

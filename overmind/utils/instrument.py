@@ -272,9 +272,9 @@ def instrument_directory(directory: str) -> int:
     Files that are already instrumented (per :func:`is_instrumented`) are
     skipped.  Returns the number of files modified.
     """
-    from pathlib import Path as _Path
+    from pathlib import Path
 
-    root = _Path(directory)
+    root = Path(directory)
     count = 0
     for py_file in root.rglob("*.py"):
         try:

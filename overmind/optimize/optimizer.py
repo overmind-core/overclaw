@@ -328,11 +328,9 @@ class Optimizer:
     @traced("optimizer.run", SpanType.WORKFLOW)
     def run(self):
         self._logger.info(
-            "Optimizer.run starting agent=%s iterations=%d parallel=%s max_workers=%s",
-            getattr(self.config, "agent_name", "?"),
-            self.config.iterations,
-            getattr(self.config, "parallel", False),
-            getattr(self.config, "max_workers", None),
+            f"Optimizer.run starting agent={getattr(self.config, 'agent_name', '?')} "
+            f"iterations={self.config.iterations} parallel={getattr(self.config, 'parallel', False)} "
+            f"max_workers={getattr(self.config, 'max_workers', None)}"
         )
         set_tag(attrs.OPTIMIZE_AGENT_NAME, getattr(self.config, "agent_name", "") or "")
         set_tag(attrs.AGENT_NAME, getattr(self.config, "agent_name", "") or "")
@@ -352,7 +350,7 @@ class Optimizer:
         )
         self._setup_output_dirs()
         dataset = self._load_dataset()
-        self._logger.info("Loaded dataset with %d cases", len(dataset))
+        self._logger.info(f"Loaded dataset with {len(dataset)} cases")
 
         # Split into train (optimizer sees) and holdout (final generalization check)
         holdout_ratio = getattr(self.config, "holdout_ratio", 0.2)
@@ -360,12 +358,7 @@ class Optimizer:
         set_tag(attrs.OPTIMIZE_DATASET_TOTAL, len(dataset))
         set_tag(attrs.OPTIMIZE_DATASET_TRAIN, len(train_set))
         set_tag(attrs.OPTIMIZE_DATASET_HOLDOUT, len(holdout_set))
-        self._logger.info(
-            "Dataset split: train=%d holdout=%d ratio=%.2f",
-            len(train_set),
-            len(holdout_set),
-            holdout_ratio,
-        )
+        self._logger.info(f"Dataset split: train={len(train_set)} holdout={len(holdout_set)} ratio={holdout_ratio:.2f}")
 
         self.console.print()
         self.console.print(Rule(f"[bold {BRAND}]Overmind Agent Optimizer[/bold {BRAND}]", style=BRAND))
@@ -420,14 +413,7 @@ class Optimizer:
             n_opt = self._bundle.optimizable_file_count()
             n_ro = max(0, n_files - n_opt)
             cap = getattr(self.config, "max_total_chars", 60_000)
-            _opt_logger.info(
-                "bundle: files=%d chars=%d/%d optimizable=%d read_only=%d",
-                n_files,
-                total_chars,
-                cap,
-                n_opt,
-                n_ro,
-            )
+            _opt_logger.info(f"bundle: files={n_files} chars={total_chars}/{cap} optimizable={n_opt} read_only={n_ro}")
             if self._bundle.is_multi_file():
                 self.console.print(
                     f"  [dim]Bundle:[/dim] {n_files} file(s) resolved, {n_opt} optimizable, "
@@ -554,11 +540,8 @@ class Optimizer:
                 },
             ):
                 self._logger.info(
-                    "STAGE BEGIN optimizer.iteration iter=%d/%d best_score=%.4f stall_count=%d",
-                    i,
-                    self.config.iterations,
-                    self.best_score,
-                    self.stall_count,
+                    f"STAGE BEGIN optimizer.iteration iter={i}/{self.config.iterations} "
+                    f"best_score={self.best_score:.4f} stall_count={self.stall_count}"
                 )
                 self.console.print()
                 self.console.print(
@@ -645,7 +628,7 @@ class Optimizer:
                             focus_weights=_focus_weights,
                         )
                     except Exception as exc:
-                        self._logger.exception("Iteration %d analyzer error", i)
+                        self._logger.exception(f"Iteration {i} analyzer error")
                         progress.update(task, description=f"  [red]Analyzer error: {exc}")
                         self._log_result(
                             f"iter_{i:03d}",
@@ -657,7 +640,7 @@ class Optimizer:
                         continue
 
                     progress.update(task, completed=True)
-                    self._logger.info("Iteration %d generated %d candidate(s)", i, len(candidates))
+                    self._logger.info(f"Iteration {i} generated {len(candidates)} candidate(s)")
                     set_tag(attrs.OPTIMIZE_N_CANDIDATES_GENERATED, len(candidates))
 
                 # Show diagnosis if available (full text; wrap inside panel)
@@ -845,11 +828,7 @@ class Optimizer:
                         try:
                             runs_per = getattr(self.config, "runs_per_eval", 1)
                             self._logger.debug(
-                                "Iter %d candidate %d: evaluating (runs_per=%d, path=%s)",
-                                i,
-                                orig_idx,
-                                runs_per,
-                                tmp_path,
+                                f"Iter {i} candidate {orig_idx}: evaluating (runs_per={runs_per}, path={tmp_path})"
                             )
                             set_tag(attrs.OPTIMIZE_RUNS_PER_EVAL, int(runs_per))
                             if runs_per > 1:
@@ -866,11 +845,7 @@ class Optimizer:
                                     f"iter_{i:03d}_c{orig_idx}",
                                 )
                         except Exception:
-                            self._logger.exception(
-                                "Iter %d candidate %d crashed during evaluation",
-                                i,
-                                orig_idx,
-                            )
+                            self._logger.exception(f"Iter {i} candidate {orig_idx} crashed during evaluation")
                             c_eval = None
                             c_items = None
                         finally:
@@ -1172,22 +1147,15 @@ class Optimizer:
                 )
 
                 self._logger.info(
-                    "STAGE END   optimizer.iteration iter=%d/%d best_score=%.4f stall_count=%d best_cand_score=%.4f",
-                    i,
-                    self.config.iterations,
-                    self.best_score,
-                    self.stall_count,
-                    float(best_cand_eval.get("avg_total", 0)) if best_cand_eval else 0.0,
+                    f"STAGE END   optimizer.iteration iter={i}/{self.config.iterations} "
+                    f"best_score={self.best_score:.4f} stall_count={self.stall_count} "
+                    f"best_cand_score={(float(best_cand_eval.get('avg_total', 0)) if best_cand_eval else 0.0):.4f}"
                 )
 
                 # Early stopping
                 patience = getattr(self.config, "early_stopping_patience", 3)
                 if patience > 0 and self.stall_count >= patience:
-                    self._logger.info(
-                        "Early stopping triggered stall_count=%d patience=%d",
-                        self.stall_count,
-                        patience,
-                    )
+                    self._logger.info(f"Early stopping triggered stall_count={self.stall_count} patience={patience}")
                     self.console.print(
                         f"\n  [yellow]Early stopping: {self.stall_count} consecutive "
                         f"iterations without improvement "
@@ -2743,20 +2711,12 @@ class Optimizer:
 
         if self.config.parallel:
             self._logger.debug(
-                "Running agent in parallel: run=%s cases=%d workers=%s trace=%s backends=%d",
-                run_name,
-                len(dataset),
-                self.config.max_workers,
-                trace_path,
-                len(plan),
+                f"Running agent in parallel: run={run_name} cases={len(dataset)} "
+                f"workers={self.config.max_workers} trace={trace_path} backends={len(plan)}"
             )
             return self._run_parallel_subprocess(runner, dataset, run_name, trace_path, plan)
         self._logger.debug(
-            "Running agent sequentially: run=%s cases=%d trace=%s backends=%d",
-            run_name,
-            len(dataset),
-            trace_path,
-            len(plan),
+            f"Running agent sequentially: run={run_name} cases={len(dataset)} trace={trace_path} backends={len(plan)}"
         )
         return self._run_sequential_subprocess(runner, dataset, run_name, trace_path, plan)
 
@@ -2814,7 +2774,7 @@ class Optimizer:
             task = progress.add_task("  Running agent…", total=len(dataset))
 
             for idx, case in enumerate(dataset):
-                self._logger.debug("[%s] Sequential case %d/%d", run_name, idx + 1, len(dataset))
+                self._logger.debug(f"[{run_name}] Sequential case {idx + 1}/{len(dataset)}")
                 backend_output = self._run_case_with_plan(plan, case["input"], trace_path, idx, run_name)
                 run_output = backend_output.run_output
                 backends_used[backend_output.backend] = backends_used.get(backend_output.backend, 0) + 1
@@ -2823,12 +2783,8 @@ class Optimizer:
                     success_count += 1
                 else:
                     self._logger.warning(
-                        "[%s] Sequential case %d failed backend=%s rc=%s err=%s",
-                        run_name,
-                        idx,
-                        backend_output.backend,
-                        run_output.returncode,
-                        (run_output.error or "")[:300],
+                        f"[{run_name}] Sequential case {idx} failed backend={backend_output.backend} "
+                        f"rc={run_output.returncode} err={(run_output.error or '')[:300]}"
                     )
                     outputs.append({"error": run_output.error})
                     fail_count += 1
@@ -2862,27 +2818,19 @@ class Optimizer:
         counters_lock = threading.Lock()
 
         def _run_one(case: dict, idx: int) -> tuple[int, dict | None, list[dict], str, bool]:
-            self._logger.debug("[%s] Dispatching case %d on worker thread", run_name, idx)
+            self._logger.debug(f"[{run_name}] Dispatching case {idx} on worker thread")
             backend_output = self._run_case_with_plan(plan, case["input"], trace_path, idx, run_name)
             run_output = backend_output.run_output
             prov = [t.to_dict() for t in backend_output.provenance]
             if run_output.success:
                 self._logger.debug(
-                    "[%s] Case %d succeeded backend=%s (stderr_bytes=%d, prov=%d)",
-                    run_name,
-                    idx,
-                    backend_output.backend,
-                    len(run_output.stderr or ""),
-                    len(prov),
+                    f"[{run_name}] Case {idx} succeeded backend={backend_output.backend} "
+                    f"(stderr_bytes={len(run_output.stderr or '')}, prov={len(prov)})"
                 )
                 return idx, run_output.data, prov, backend_output.backend, True
             self._logger.warning(
-                "[%s] Case %d failed backend=%s rc=%s err=%s",
-                run_name,
-                idx,
-                backend_output.backend,
-                run_output.returncode,
-                (run_output.error or "")[:300],
+                f"[{run_name}] Case {idx} failed backend={backend_output.backend} "
+                f"rc={run_output.returncode} err={(run_output.error or '')[:300]}"
             )
             return idx, {"error": run_output.error}, prov, backend_output.backend, False
 
@@ -2960,10 +2908,7 @@ class Optimizer:
             if out.success:
                 if i > 0:
                     self._logger.info(
-                        "[%s] Case %d recovered via backend=%s after subprocess failure.",
-                        run_name,
-                        idx,
-                        backend.name,
+                        f"[{run_name}] Case {idx} recovered via backend={backend.name} after subprocess failure."
                     )
                 return out
             if not should_try_next(out.diagnosis):

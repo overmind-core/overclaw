@@ -456,11 +456,8 @@ class SpecEvaluator:
             if judge_fail_count > 0:
                 fail_pct = judge_fail_count / len(needs_judge) * 100
                 logger.warning(
-                    "LLM judge failed on %d/%d cases (%.0f%%). Fallback score %.1f used for failed cases.",
-                    judge_fail_count,
-                    len(needs_judge),
-                    fail_pct,
-                    _JUDGE_FALLBACK_SCORE,
+                    f"LLM judge failed on {judge_fail_count}/{len(needs_judge)} cases ({fail_pct:.0f}%). "
+                    f"Fallback score {_JUDGE_FALLBACK_SCORE:.1f} used for failed cases."
                 )
 
         keys = [k for k in all_scores[0] if k != "total" and not k.startswith("_")]
@@ -837,17 +834,15 @@ class SpecEvaluator:
                 score = self._parse_judge_scores(content)
                 if score != _JUDGE_FALLBACK_SCORE:
                     return score
-                logger.debug("Judge parse returned fallback on attempt %d", attempt + 1)
+                logger.debug(f"Judge parse returned fallback on attempt {attempt + 1}")
             except Exception as exc:
                 last_exc = exc
                 if attempt < _JUDGE_MAX_RETRIES - 1:
                     time.sleep(_JUDGE_RETRY_BACKOFF**attempt)
 
         logger.warning(
-            "LLM judge failed after %d attempts%s — using fallback %.1f",
-            _JUDGE_MAX_RETRIES,
-            f": {last_exc}" if last_exc else "",
-            _JUDGE_FALLBACK_SCORE,
+            f"LLM judge failed after {_JUDGE_MAX_RETRIES} attempts"
+            f"{f': {last_exc}' if last_exc else ''} — using fallback {_JUDGE_FALLBACK_SCORE:.1f}"
         )
         return _JUDGE_FALLBACK_SCORE
 
@@ -905,11 +900,7 @@ class SpecEvaluator:
                     time.sleep(_JUDGE_RETRY_BACKOFF**attempt)
 
         if last_exc:
-            logger.warning(
-                "Batch judge failed after %d attempts: %s",
-                _JUDGE_MAX_RETRIES,
-                last_exc,
-            )
+            logger.warning(f"Batch judge failed after {_JUDGE_MAX_RETRIES} attempts: {last_exc}")
         return fallback
 
     def _parse_judge_scores(self, content: str) -> float:

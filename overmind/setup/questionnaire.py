@@ -30,11 +30,7 @@ def run_questionnaire(analysis: dict, model: str, console: Console) -> dict:
     """
     output_schema = analysis.get("output_schema", {})
     field_names = ", ".join(f.replace("_", " ") for f in output_schema)
-    logger.info(
-        "run_questionnaire starting model=%s fields=%s",
-        model,
-        list(output_schema.keys()),
-    )
+    logger.info(f"run_questionnaire starting model={model} fields={list(output_schema.keys())}")
 
     console.print("\n  [dim]Tell me about your expectations so I can build better evaluation criteria.[/dim]\n")
 
@@ -107,7 +103,7 @@ def run_questionnaire(analysis: dict, model: str, console: Console) -> dict:
                 raise ValueError("No JSON found in LLM response")
             info["parsed_ok"] = True
         except (json.JSONDecodeError, ValueError) as exc:
-            logger.warning("Refined-criteria JSON parse failed: %s", exc)
+            logger.warning(f"Refined-criteria JSON parse failed: {exc}")
             console.print(f"\n  [yellow]Could not parse refined criteria ({exc}). Using original proposal.[/yellow]")
             refined_criteria = original_criteria
             info["parsed_ok"] = False

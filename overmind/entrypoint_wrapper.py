@@ -167,16 +167,16 @@ def _render_sys_path_bootstrap(agent_relpath: Path) -> str:
     parts = agent_relpath.parts if agent_relpath != Path(".") else ()
     path_parts = [repr(p) for p in parts] or ["'.'"]
     join_args = ", ".join([
-        "_overmind_os.path.dirname(_overmind_os.path.abspath(__file__))",
+        "os.path.dirname(os.path.abspath(__file__))",
         *path_parts,
     ])
     return (
         f"{_SYS_PATH_BOOTSTRAP_BEGIN}\n"
-        "import os as _overmind_os\n"
-        "import sys as _overmind_sys\n"
-        f"_OVERMIND_AGENT_DIR = _overmind_os.path.normpath(_overmind_os.path.join({join_args}))\n"
-        "if _OVERMIND_AGENT_DIR not in _overmind_sys.path:\n"
-        "    _overmind_sys.path.insert(0, _OVERMIND_AGENT_DIR)\n"
+        "import os\n"
+        "import sys\n"
+        f"_OVERMIND_AGENT_DIR = os.path.normpath(os.path.join({join_args}))\n"
+        "if _OVERMIND_AGENT_DIR not in sys.path:\n"
+        "    sys.path.insert(0, _OVERMIND_AGENT_DIR)\n"
         f"{_SYS_PATH_BOOTSTRAP_END}\n\n"
     )
 
@@ -426,7 +426,7 @@ def generate_entrypoint_wrapper(
         code_context=code_context,
     )
 
-    logger.info("Using coding agent (%s) to generate entrypoint wrapper …", model)
+    logger.info(f"Using coding agent ({model}) to generate entrypoint wrapper …")
 
     try:
         run_coding_agent(
@@ -436,11 +436,11 @@ def generate_entrypoint_wrapper(
             max_steps=15,
         )
     except Exception as exc:
-        logger.warning("Wrapper generation failed: %s", exc)
+        logger.warning(f"Wrapper generation failed: {exc}")
         return None
 
     if not wp.is_file():
-        logger.warning("Coding agent ran but wrapper file not found at %s", wp)
+        logger.warning(f"Coding agent ran but wrapper file not found at {wp}")
         return None
 
     content = wp.read_text(encoding="utf-8")
@@ -457,5 +457,5 @@ def generate_entrypoint_wrapper(
     agent_relpath = _instrumented_agent_dir_relpath(agent_dir, agent_name)
     _prepend_sys_path_bootstrap(wp, agent_relpath)
 
-    logger.info("Entrypoint wrapper generated at %s", wp)
+    logger.info(f"Entrypoint wrapper generated at {wp}")
     return wp

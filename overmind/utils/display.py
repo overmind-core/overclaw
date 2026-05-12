@@ -172,12 +172,7 @@ def select_option(
     if console and title:
         console.print(f"\n  [dim]{title}[/dim]")
 
-    logger.debug(
-        "select_option presented title=%r options=%r default_index=%d",
-        title,
-        options,
-        default_index,
-    )
+    logger.debug(f"select_option presented title={title!r} options={options!r} default_index={default_index}")
     menu = TerminalMenu(
         options,
         cursor_index=default_index,
@@ -188,7 +183,7 @@ def select_option(
     idx = menu.show()
 
     if idx is None:
-        logger.info("select_option cancelled title=%r", title)
+        logger.info(f"select_option cancelled title={title!r}")
         raise SystemExit(0)
     log_prompt(
         title or "(select)",
@@ -213,7 +208,7 @@ def confirm_option(
     if console:
         console.print(f"\n  [dim]{prompt}[/dim]")
 
-    logger.debug("confirm_option presented prompt=%r default=%s", prompt, default)
+    logger.debug(f"confirm_option presented prompt={prompt!r} default={default}")
     choices = ["Yes", "No"]
     menu = TerminalMenu(
         choices,
@@ -225,7 +220,7 @@ def confirm_option(
     idx = menu.show()
 
     if idx is None:
-        logger.info("confirm_option cancelled prompt=%r", prompt)
+        logger.info(f"confirm_option cancelled prompt={prompt!r}")
         raise SystemExit(0)
     log_prompt(
         prompt,

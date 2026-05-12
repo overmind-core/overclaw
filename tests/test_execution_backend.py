@@ -127,12 +127,12 @@ class TestShadowBackend:
         # The backend names files prov-00001.jsonl, prov-00002.jsonl, …
         (prov_dir).mkdir(parents=True, exist_ok=True)
         sidecar = prov_dir / "prov-00001.jsonl"
-        import json as _json
+        import json
 
         sidecar.write_text(
-            _json.dumps({"name": "llm:gpt-4o", "source": "llm_real", "reason": "r"})
+            json.dumps({"name": "llm:gpt-4o", "source": "llm_real", "reason": "r"})
             + "\n"
-            + _json.dumps({"name": "browser", "source": "simulated", "reason": "b"})
+            + json.dumps({"name": "browser", "source": "simulated", "reason": "b"})
             + "\n",
             encoding="utf-8",
         )
@@ -250,9 +250,7 @@ class TestShouldTryNext:
 
 class TestBackendOutput:
     def test_properties_forward_to_run_output(self):
-        ro = RunOutput(
-            success=True, data={"ok": 1}, error="", stdout="", stderr="", returncode=0
-        )
+        ro = RunOutput(success=True, data={"ok": 1}, error="", stdout="", stderr="", returncode=0)
         bo = BackendOutput(
             run_output=ro,
             backend="subprocess",

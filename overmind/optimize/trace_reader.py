@@ -123,13 +123,13 @@ def parse_trace_file_per_line(path: str | Path) -> list[ParsedTrace]:
     """
     path = Path(path)
     if not path.exists():
-        logger.warning("Trace file not found: %s", path)
+        logger.warning(f"Trace file not found: {path}")
         return []
 
     try:
         text = path.read_text(encoding="utf-8").strip()
     except Exception as exc:
-        logger.warning("Could not read trace file %s: %s", path, exc)
+        logger.warning(f"Could not read trace file {path}: {exc}")
         return []
 
     if not text:

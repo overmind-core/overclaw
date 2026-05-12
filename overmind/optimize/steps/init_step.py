@@ -161,11 +161,8 @@ def run_init(
     state.save()
 
     logger.info(
-        "optimize-step init: agent=%s state=%s iterations=%d candidates=%d",
-        agent_name,
-        state_file,
-        cfg.iterations,
-        cfg.candidates_per_iteration,
+        f"optimize-step init: agent={agent_name} state={state_file} "
+        f"iterations={cfg.iterations} candidates={cfg.candidates_per_iteration}"
     )
 
     return {

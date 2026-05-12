@@ -6,6 +6,8 @@ dist/
 wheels/
 *.egg-info
 
+_MACOSX/
+
 # Virtual environments
 .venv
 worktrees/

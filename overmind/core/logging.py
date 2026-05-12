@@ -105,22 +105,16 @@ def stage(
     log = logger or logging.getLogger(_LOGGER_NAME)
     info: dict[str, Any] = dict(context)
     started = time.monotonic()
-    log.info("stage.start name=%s context=%s", name, context)
+    log.info(f"stage.start name={name} context={context}")
     try:
         yield info
     except Exception as exc:
         elapsed = round((time.monotonic() - started) * 1000, 1)
-        log.error(
-            "stage.error name=%s elapsed_ms=%s error=%s info=%s",
-            name,
-            elapsed,
-            f"{type(exc).__name__}: {exc}",
-            info,
-        )
+        log.error(f"stage.error name={name} elapsed_ms={elapsed} error={type(exc).__name__}: {exc} info={info}")
         raise
     else:
         elapsed = round((time.monotonic() - started) * 1000, 1)
-        log.info("stage.end name=%s elapsed_ms=%s info=%s", name, elapsed, info)
+        log.info(f"stage.end name={name} elapsed_ms={elapsed} info={info}")
 
 
 def log_prompt(
@@ -133,10 +127,4 @@ def log_prompt(
 ) -> None:
     """Record that the user responded to an interactive prompt."""
     log = logger or logging.getLogger(_LOGGER_NAME)
-    log.info(
-        "prompt kind=%s title=%r default=%r value=%r",
-        kind,
-        title,
-        default,
-        value,
-    )
+    log.info(f"prompt kind={kind} title={title!r} default={default!r} value={value!r}")

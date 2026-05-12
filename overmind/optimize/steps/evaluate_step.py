@@ -56,7 +56,7 @@ def run_evaluate(
     try:
         result = optimizer.evaluate_worktree(str(entry_path), run_name)
     except Exception as exc:
-        logger.exception("evaluate %s crashed", run_name)
+        logger.exception(f"evaluate {run_name} crashed")
         return {
             "status": "error",
             "error": type(exc).__name__,
