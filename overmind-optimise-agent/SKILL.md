@@ -2,13 +2,15 @@
 name: overmind-optimise-agent
 description: "Drive the full host-agent controlled overmind optimize loop for a registered Overmind agent. Use when the user wants to optimise or optimize an agent, run iterative improvement, fan out multiple candidate edits in parallel worktrees, evaluate candidates with overmind optimize-step, accept the best improvement, stop early on stalls, and render an optimization report."
 metadata:
-  version: "2.3"
+  version: "2.4"
   product: "Overmind"
 ---
 
 # Optimise an Overmind Agent
 
-Use this skill to drive the `overmind optimize-step` JSON CLI from a host coding agent such as Cursor, Codex, Claude Code, or another code-editing agent. Overmind owns state, baseline evaluation, diagnosis, worktree materialisation, candidate evaluation, acceptance gates, and report rendering. The host coding agent owns loop control, parallel candidate fan-out, per-candidate code edits, and early stopping.
+Use this skill to drive the `overmind optimize-step` JSON CLI from a host coding agent such as Cursor, Codex, Claude Code, or another code-editing agent. Overmind owns state, baseline evaluation, diagnosis, worktree materialisation, candidate evaluation, acceptance gates, and report rendering. The host coding agent owns loop control, **multi-agent fan-out** (several subagents across iterations and candidates), parallel candidate fan-out, per-candidate code edits, and early stopping.
+
+**Audience:** Fan-out, worktree editing, and `optimize-step` orchestration below are instructions for **you, the coding agent executing this skill** — not steps you assign to the human user unless the host truly cannot spawn subagents or run background work (then say so explicitly).
 
 This skill optimizes the agent files selected by the existing Overmind eval spec and optimizer scope. It should not add extra setup restrictions that prevent `overmind optimize-step` from running.
 
@@ -24,6 +26,7 @@ This skill optimizes the agent files selected by the existing Overmind eval spec
 - **Evaluation owns truth**: Do not manually choose a winner. Evaluate all candidates through `overmind optimize-step evaluate`, then accept through `overmind optimize-step accept`.
 - **Investigate zero baselines**: A baseline score of 0 may indicate a broken entrypoint, invalid dataset, unscorable eval spec, provider failure, or genuine total task failure. Investigate before running candidate optimization.
 - **Use subagents when useful**: Use parallel sub-coding-agents for candidate edits when the host supports them. Also use focused investigation subagents when baseline failures, confusing score reports, or large codebase context would benefit from isolated analysis.
+- **Multi-agent iteration fan-out (default when the host supports it)**: Do not drive the entire multi-iteration optimize loop alone in one bloated session. Spin out **several coding subagents** (for example 2–4) across the run: after `diagnose` for iteration `i`, delegate **each candidate worktree’s editing** to its own subagent (see **Spawn candidate coding agents**). Prefer a **fresh subagent** (or round-robin across a small pool) for each iteration’s edit leg so prior-iteration transcripts do not accumulate in one context. **One** coordinator must still run `overmind optimize-step` **in order** on the same `STATE_PATH` — iterations are sequential in the state file; parallelism is on **candidate branches** and on **which subagent** owns the editing leg. If the host cannot spawn subagents, state that you are falling back to single-agent sequential mode.
 - **Surface analyzer failures**: If diagnosis returns a warning because analyzer generation failed, stop and report the warning. Do not silently proceed with manual placeholder edits.
 - **Mandatory configuration branch (no silent defaults)**: Before `overmind optimize-step init`, the user must explicitly choose **Set optimization parameters** or **Run with defaults** — unless they already stated that exact choice in the **same message** that invoked this skill, in which case **echo the choice once** (“Using run-with-defaults from your message”) and continue. Never invent the branch from context alone.
 - **Entrypoint cold-start**: Overmind evaluates agents in isolated processes. The host should ensure the registered entrypoint performs expensive construction once per interpreter process and keeps per-call work limited to mapping inputs, invoking the agent, and normalizing outputs. Do not rely on increasing smoke-test case counts to fix baseline cold-start; smoke tests filter candidates after a non-zero baseline exists.
@@ -268,7 +271,18 @@ Proceed to optimization only if the zero baseline is classified as genuine perfo
 
 ### Iterate
 
-For each iteration from 1 through the configured iteration count, run diagnosis, spawn candidate edits, evaluate all candidates, accept or reject the best candidate, and check early stopping.
+Optimization **iterations** share one `STATE_PATH` and must stay **strictly ordered**: for each index `i`, complete `diagnose` → edit all candidates for `i` → `evaluate` → `accept` before starting `i+1`. **Never** run `diagnose` or `accept` for two different iteration indices concurrently against the same state file.
+
+For each iteration from 1 through the configured iteration count, run diagnosis, spawn candidate edits, evaluate all candidates, accept or reject the best candidate, and check early stopping — using **you** (and subagents you spawn) as the implementers, not the human user.
+
+**Multi-agent pattern (default when the host supports it):**
+
+1. **Coordinator** (you or a lead subagent you designate) runs `optimize-step diagnose` for iteration `i` and records candidate descriptors.
+2. Spawn **one subagent per candidate worktree** (up to `candidates_per_iteration`) so edits run in parallel — **required** when the host exposes parallel tasks or background agents.
+3. Coordinator runs `evaluate` and `accept` for that iteration (or, if the host allows safe parallel shells only, delegate **per-candidate** `evaluate` to subagents, then coordinator assembles `candidate_results.json` and runs `accept` once).
+4. Optionally **rotate** which subagent receives the next iteration’s edit workload so context stays fresh.
+
+If the user wants maximum parallelism, increase **candidate** subagent count first. Use **parallel iteration coordinators** only for **separate** optimization runs (separate `STATE_PATH` or separate agents), never two iteration indices on the same state file.
 
 ### Diagnose and materialise candidate worktrees
 
@@ -282,17 +296,17 @@ Inspect each candidate prompt and plan enough to understand the intended edit. I
 
 ### Spawn candidate coding agents
 
-Detect the host environment once at skill start. Prefer a parallel task/subagent mechanism when the host provides one. Otherwise use the host’s CLI in background processes. If no parallel mechanism exists, perform candidates sequentially inside their own worktrees.
+Detect the host environment once at skill start. **Prefer spinning out multiple coding subagents** — at minimum **one subagent per candidate worktree** for the current iteration, up to `candidates_per_iteration`, whenever the host exposes parallel tasks, background agents, or a Task tool. Otherwise use the host’s CLI in background processes. If no parallel mechanism exists, perform candidates sequentially inside their own worktrees and **tell the user** that multi-agent fan-out was unavailable on this host.
 
 Use subagents whenever they improve reliability or parallelism:
 
-- **Candidate subagents**: Spawn one sub-coding-agent per candidate worktree when the host supports background tasks.
+- **Candidate subagents**: When the host supports parallel work, treat **one sub-coding-agent per candidate worktree** as the default (not optional). Each subagent edits only its assigned worktree.
 - **Investigation subagents**: Spawn a focused codebase/debugging subagent for zero baselines, confusing evaluator failures, or analyzer warnings that require artifact inspection.
 - **Review subagents**: Spawn a review subagent when candidate patches are large or touch shared behavior before evaluation.
 
 Do not spawn subagents that edit the same worktree concurrently. Each editing subagent must have exactly one candidate worktree.
 
-For each candidate, instruct the coding agent to:
+For each candidate, instruct that subagent to:
 
 - Work only inside the candidate worktree.
 - Read `PROMPT.md` and `plan.json`.
