@@ -26,6 +26,8 @@ from overmind.openapi_client.models.dataset import Dataset
 from overmind.openapi_client.models.dataset_list import DatasetList
 from overmind.openapi_client.models.dataset_request import DatasetRequest
 from overmind.openapi_client.models.eval_spec_response import EvalSpecResponse
+from overmind.openapi_client.models.feedback_create import FeedbackCreate
+from overmind.openapi_client.models.feedback_create_request import FeedbackCreateRequest
 from overmind.openapi_client.models.job import Job
 from overmind.openapi_client.models.job_iteration import JobIteration
 from overmind.openapi_client.models.job_iteration_request import JobIterationRequest
@@ -42,8 +44,7 @@ from overmind.openapi_client.models.paginated_job_iteration_list import Paginate
 from overmind.openapi_client.models.paginated_job_list_list import PaginatedJobListList
 from overmind.openapi_client.models.paginated_project_list import PaginatedProjectList
 from overmind.openapi_client.models.paginated_project_member_list import PaginatedProjectMemberList
-from overmind.openapi_client.models.paginated_span_list import PaginatedSpanList
-from overmind.openapi_client.models.paginated_trace_list_list import PaginatedTraceListList
+from overmind.openapi_client.models.paginated_root_span_list_list import PaginatedRootSpanListList
 from overmind.openapi_client.models.patched_agent_request import PatchedAgentRequest
 from overmind.openapi_client.models.patched_job_iteration_request import PatchedJobIterationRequest
 from overmind.openapi_client.models.patched_job_request import PatchedJobRequest
@@ -53,14 +54,14 @@ from overmind.openapi_client.models.project_member import ProjectMember
 from overmind.openapi_client.models.project_membership_create_request import ProjectMembershipCreateRequest
 from overmind.openapi_client.models.project_request import ProjectRequest
 from overmind.openapi_client.models.register_request import RegisterRequest
+from overmind.openapi_client.models.root_span_list import RootSpanList
 from overmind.openapi_client.models.source_enum import SourceEnum
 from overmind.openapi_client.models.span import Span
-from overmind.openapi_client.models.span_type_enum import SpanTypeEnum
 from overmind.openapi_client.models.token_obtain_pair import TokenObtainPair
 from overmind.openapi_client.models.token_obtain_pair_request import TokenObtainPairRequest
 from overmind.openapi_client.models.token_refresh import TokenRefresh
 from overmind.openapi_client.models.token_refresh_request import TokenRefreshRequest
-from overmind.openapi_client.models.trace import Trace
-from overmind.openapi_client.models.trace_list import TraceList
+from overmind.openapi_client.models.trace_detail import TraceDetail
+from overmind.openapi_client.models.traces_services_list200_response import TracesServicesList200Response
 from overmind.openapi_client.models.user_me import UserMe
 

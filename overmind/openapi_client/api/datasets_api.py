@@ -283,9 +283,10 @@ class DatasetsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -551,8 +552,8 @@ class DatasetsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -562,9 +563,10 @@ class DatasetsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -589,16 +591,11 @@ class DatasetsApi:
     @validate_call
     async def datasets_datapoints_list(
         self,
-        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
-        agent: Optional[UUID] = None,
-        generator_model: Optional[StrictStr] = None,
+        dataset_id: Annotated[str, Field(strict=True)],
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
-        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production")] = None,
-        version: Optional[StrictInt] = None,
-        version_max: Optional[StrictInt] = None,
-        version_min: Optional[StrictInt] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -614,28 +611,18 @@ class DatasetsApi:
     ) -> PaginatedDatapointList:
         """List datapoints for a dataset
 
-        CRUD for versioned datasets.  Datapoints are never exposed directly — they can only be read via ``GET /api/datasets/{id}/datapoints/`` or created as part of ``POST /api/datasets/``. To mutate data, POST a new dataset version.
+        Viewset for listing datapoints of a given dataset. Only supports listing datapoints for a dataset specified by 'dataset_id'.
 
-        :param id: A UUID string identifying this dataset. (required)
-        :type id: UUID
-        :param agent:
-        :type agent: UUID
-        :param generator_model:
-        :type generator_model: str
+        :param dataset_id: (required)
+        :type dataset_id: str
         :param ordering: Which field to use when ordering the results.
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
-        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production
-        :type source: str
-        :param version:
-        :type version: int
-        :param version_max:
-        :type version_max: int
-        :param version_min:
-        :type version_min: int
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -659,16 +646,11 @@ class DatasetsApi:
         """ # noqa: E501
 
         _param = self._datasets_datapoints_list_serialize(
-            id=id,
-            agent=agent,
-            generator_model=generator_model,
+            dataset_id=dataset_id,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
-            source=source,
-            version=version,
-            version_max=version_max,
-            version_min=version_min,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -692,16 +674,11 @@ class DatasetsApi:
     @validate_call
     async def datasets_datapoints_list_with_http_info(
         self,
-        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
-        agent: Optional[UUID] = None,
-        generator_model: Optional[StrictStr] = None,
+        dataset_id: Annotated[str, Field(strict=True)],
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
-        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production")] = None,
-        version: Optional[StrictInt] = None,
-        version_max: Optional[StrictInt] = None,
-        version_min: Optional[StrictInt] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -717,28 +694,18 @@ class DatasetsApi:
     ) -> ApiResponse[PaginatedDatapointList]:
         """List datapoints for a dataset
 
-        CRUD for versioned datasets.  Datapoints are never exposed directly — they can only be read via ``GET /api/datasets/{id}/datapoints/`` or created as part of ``POST /api/datasets/``. To mutate data, POST a new dataset version.
+        Viewset for listing datapoints of a given dataset. Only supports listing datapoints for a dataset specified by 'dataset_id'.
 
-        :param id: A UUID string identifying this dataset. (required)
-        :type id: UUID
-        :param agent:
-        :type agent: UUID
-        :param generator_model:
-        :type generator_model: str
+        :param dataset_id: (required)
+        :type dataset_id: str
         :param ordering: Which field to use when ordering the results.
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
-        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production
-        :type source: str
-        :param version:
-        :type version: int
-        :param version_max:
-        :type version_max: int
-        :param version_min:
-        :type version_min: int
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -762,16 +729,11 @@ class DatasetsApi:
         """ # noqa: E501
 
         _param = self._datasets_datapoints_list_serialize(
-            id=id,
-            agent=agent,
-            generator_model=generator_model,
+            dataset_id=dataset_id,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
-            source=source,
-            version=version,
-            version_max=version_max,
-            version_min=version_min,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -795,16 +757,11 @@ class DatasetsApi:
     @validate_call
     async def datasets_datapoints_list_without_preload_content(
         self,
-        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
-        agent: Optional[UUID] = None,
-        generator_model: Optional[StrictStr] = None,
+        dataset_id: Annotated[str, Field(strict=True)],
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
-        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production")] = None,
-        version: Optional[StrictInt] = None,
-        version_max: Optional[StrictInt] = None,
-        version_min: Optional[StrictInt] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -820,28 +777,18 @@ class DatasetsApi:
     ) -> RESTResponseType:
         """List datapoints for a dataset
 
-        CRUD for versioned datasets.  Datapoints are never exposed directly — they can only be read via ``GET /api/datasets/{id}/datapoints/`` or created as part of ``POST /api/datasets/``. To mutate data, POST a new dataset version.
+        Viewset for listing datapoints of a given dataset. Only supports listing datapoints for a dataset specified by 'dataset_id'.
 
-        :param id: A UUID string identifying this dataset. (required)
-        :type id: UUID
-        :param agent:
-        :type agent: UUID
-        :param generator_model:
-        :type generator_model: str
+        :param dataset_id: (required)
+        :type dataset_id: str
         :param ordering: Which field to use when ordering the results.
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
-        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production
-        :type source: str
-        :param version:
-        :type version: int
-        :param version_max:
-        :type version_max: int
-        :param version_min:
-        :type version_min: int
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -865,16 +812,11 @@ class DatasetsApi:
         """ # noqa: E501
 
         _param = self._datasets_datapoints_list_serialize(
-            id=id,
-            agent=agent,
-            generator_model=generator_model,
+            dataset_id=dataset_id,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
-            source=source,
-            version=version,
-            version_max=version_max,
-            version_min=version_min,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -893,16 +835,11 @@ class DatasetsApi:
 
     def _datasets_datapoints_list_serialize(
         self,
-        id,
-        agent,
-        generator_model,
+        dataset_id,
         ordering,
         page,
+        page_size,
         search,
-        source,
-        version,
-        version_max,
-        version_min,
         _request_auth,
         _content_type,
         _headers,
@@ -924,45 +861,25 @@ class DatasetsApi:
         _body_params: Optional[bytes] = None
 
         # process the path parameters
-        if id is not None:
-            _path_params['id'] = id
+        if dataset_id is not None:
+            _path_params['dataset_id'] = dataset_id
         # process the query parameters
-        if agent is not None:
-
-            _query_params.append(('agent', agent))
-
-        if generator_model is not None:
-
-            _query_params.append(('generator_model', generator_model))
-
         if ordering is not None:
-
+            
             _query_params.append(('ordering', ordering))
-
+            
         if page is not None:
-
+            
             _query_params.append(('page', page))
-
+            
+        if page_size is not None:
+            
+            _query_params.append(('page_size', page_size))
+            
         if search is not None:
-
+            
             _query_params.append(('search', search))
-
-        if source is not None:
-
-            _query_params.append(('source', source))
-
-        if version is not None:
-
-            _query_params.append(('version', version))
-
-        if version_max is not None:
-
-            _query_params.append(('version_max', version_max))
-
-        if version_min is not None:
-
-            _query_params.append(('version_min', version_min))
-
+            
         # process the header parameters
         # process the form parameters
         # process the body parameter
@@ -979,15 +896,16 @@ class DatasetsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
         return self.api_client.param_serialize(
             method='GET',
-            resource_path='/api/datasets/{id}/datapoints/',
+            resource_path='/api/datasets/{dataset_id}/datapoints/',
             path_params=_path_params,
             query_params=_query_params,
             header_params=_header_params,
@@ -1236,9 +1154,10 @@ class DatasetsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1267,6 +1186,7 @@ class DatasetsApi:
         generator_model: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production")] = None,
         version: Optional[StrictInt] = None,
@@ -1297,6 +1217,8 @@ class DatasetsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
         :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production
@@ -1334,6 +1256,7 @@ class DatasetsApi:
             generator_model=generator_model,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
             source=source,
             version=version,
@@ -1366,6 +1289,7 @@ class DatasetsApi:
         generator_model: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production")] = None,
         version: Optional[StrictInt] = None,
@@ -1396,6 +1320,8 @@ class DatasetsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
         :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production
@@ -1433,6 +1359,7 @@ class DatasetsApi:
             generator_model=generator_model,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
             source=source,
             version=version,
@@ -1465,6 +1392,7 @@ class DatasetsApi:
         generator_model: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production")] = None,
         version: Optional[StrictInt] = None,
@@ -1495,6 +1423,8 @@ class DatasetsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
         :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production
@@ -1532,6 +1462,7 @@ class DatasetsApi:
             generator_model=generator_model,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
             source=source,
             version=version,
@@ -1559,6 +1490,7 @@ class DatasetsApi:
         generator_model,
         ordering,
         page,
+        page_size,
         search,
         source,
         version,
@@ -1587,41 +1519,45 @@ class DatasetsApi:
         # process the path parameters
         # process the query parameters
         if agent is not None:
-
+            
             _query_params.append(('agent', agent))
-
+            
         if generator_model is not None:
-
+            
             _query_params.append(('generator_model', generator_model))
-
+            
         if ordering is not None:
-
+            
             _query_params.append(('ordering', ordering))
-
+            
         if page is not None:
-
+            
             _query_params.append(('page', page))
-
+            
+        if page_size is not None:
+            
+            _query_params.append(('page_size', page_size))
+            
         if search is not None:
-
+            
             _query_params.append(('search', search))
-
+            
         if source is not None:
-
+            
             _query_params.append(('source', source))
-
+            
         if version is not None:
-
+            
             _query_params.append(('version', version))
-
+            
         if version_max is not None:
-
+            
             _query_params.append(('version_max', version_max))
-
+            
         if version_min is not None:
-
+            
             _query_params.append(('version_min', version_min))
-
+            
         # process the header parameters
         # process the form parameters
         # process the body parameter
@@ -1638,9 +1574,10 @@ class DatasetsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1902,9 +1839,10 @@ class DatasetsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 

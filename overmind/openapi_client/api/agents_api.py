@@ -285,8 +285,8 @@ class AgentsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -296,9 +296,10 @@ class AgentsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -550,9 +551,10 @@ class AgentsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -811,9 +813,10 @@ class AgentsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -842,6 +845,7 @@ class AgentsApi:
         name: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         project: Optional[UUID] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         slug: Optional[StrictStr] = None,
@@ -870,6 +874,8 @@ class AgentsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param project:
         :type project: UUID
         :param search: A search term.
@@ -905,6 +911,7 @@ class AgentsApi:
             name=name,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             project=project,
             search=search,
             slug=slug,
@@ -936,6 +943,7 @@ class AgentsApi:
         name: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         project: Optional[UUID] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         slug: Optional[StrictStr] = None,
@@ -964,6 +972,8 @@ class AgentsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param project:
         :type project: UUID
         :param search: A search term.
@@ -999,6 +1009,7 @@ class AgentsApi:
             name=name,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             project=project,
             search=search,
             slug=slug,
@@ -1030,6 +1041,7 @@ class AgentsApi:
         name: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         project: Optional[UUID] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         slug: Optional[StrictStr] = None,
@@ -1058,6 +1070,8 @@ class AgentsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param project:
         :type project: UUID
         :param search: A search term.
@@ -1093,6 +1107,7 @@ class AgentsApi:
             name=name,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             project=project,
             search=search,
             slug=slug,
@@ -1119,6 +1134,7 @@ class AgentsApi:
         name,
         ordering,
         page,
+        page_size,
         project,
         search,
         slug,
@@ -1146,37 +1162,41 @@ class AgentsApi:
         # process the path parameters
         # process the query parameters
         if model is not None:
-
+            
             _query_params.append(('model', model))
-
+            
         if name is not None:
-
+            
             _query_params.append(('name', name))
-
+            
         if ordering is not None:
-
+            
             _query_params.append(('ordering', ordering))
-
+            
         if page is not None:
-
+            
             _query_params.append(('page', page))
-
+            
+        if page_size is not None:
+            
+            _query_params.append(('page_size', page_size))
+            
         if project is not None:
-
+            
             _query_params.append(('project', project))
-
+            
         if search is not None:
-
+            
             _query_params.append(('search', search))
-
+            
         if slug is not None:
-
+            
             _query_params.append(('slug', slug))
-
+            
         if status is not None:
-
+            
             _query_params.append(('status', status))
-
+            
         # process the header parameters
         # process the form parameters
         # process the body parameter
@@ -1193,9 +1213,10 @@ class AgentsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1473,8 +1494,8 @@ class AgentsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -1484,9 +1505,10 @@ class AgentsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1745,9 +1767,10 @@ class AgentsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -2025,8 +2048,8 @@ class AgentsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -2036,9 +2059,10 @@ class AgentsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 

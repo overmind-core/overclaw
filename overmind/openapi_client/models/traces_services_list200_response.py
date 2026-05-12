@@ -17,28 +17,20 @@ import pprint
 import re  # noqa: F401
 import json
 
-from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr
-from typing import Any, ClassVar, Dict, List, Optional, Union
-from typing_extensions import Annotated
-from uuid import UUID
-from overmind.openapi_client.models.job_iteration_status_enum import JobIterationStatusEnum
+from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
+from typing import Any, ClassVar, Dict, List, Optional
 from typing import Optional, Set
 from typing_extensions import Self
 
-class JobIterationRequest(BaseModel):
+class TracesServicesList200Response(BaseModel):
     """
-    JobIterationRequest
+    TracesServicesList200Response
     """ # noqa: E501
-    iteration_name: Annotated[str, Field(min_length=1, strict=True, max_length=64)]
-    order: Optional[Annotated[int, Field(le=9223372036854775807, strict=True, ge=-9223372036854775808)]] = None
-    avg_score: Optional[Union[StrictFloat, StrictInt]] = None
-    status: Optional[JobIterationStatusEnum] = None
-    description: Optional[StrictStr] = None
-    dimension_scores: Optional[Any] = None
-    candidates: Optional[Any] = None
-    agent_code: Optional[StrictStr] = None
-    job: UUID
-    __properties: ClassVar[List[str]] = ["iteration_name", "order", "avg_score", "status", "description", "dimension_scores", "candidates", "agent_code", "job"]
+    count: StrictInt
+    next: Optional[StrictStr] = None
+    previous: Optional[StrictStr] = None
+    results: List[StrictStr]
+    __properties: ClassVar[List[str]] = ["count", "next", "previous", "results"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -58,7 +50,7 @@ class JobIterationRequest(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Optional[Self]:
-        """Create an instance of JobIterationRequest from a JSON string"""
+        """Create an instance of TracesServicesList200Response from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -79,21 +71,21 @@ class JobIterationRequest(BaseModel):
             exclude=excluded_fields,
             exclude_none=True,
         )
-        # set to None if dimension_scores (nullable) is None
+        # set to None if next (nullable) is None
         # and model_fields_set contains the field
-        if self.dimension_scores is None and "dimension_scores" in self.model_fields_set:
-            _dict['dimension_scores'] = None
+        if self.next is None and "next" in self.model_fields_set:
+            _dict['next'] = None
 
-        # set to None if candidates (nullable) is None
+        # set to None if previous (nullable) is None
         # and model_fields_set contains the field
-        if self.candidates is None and "candidates" in self.model_fields_set:
-            _dict['candidates'] = None
+        if self.previous is None and "previous" in self.model_fields_set:
+            _dict['previous'] = None
 
         return _dict
 
     @classmethod
     def from_dict(cls, obj: Optional[Dict[str, Any]]) -> Optional[Self]:
-        """Create an instance of JobIterationRequest from a dict"""
+        """Create an instance of TracesServicesList200Response from a dict"""
         if obj is None:
             return None
 
@@ -101,15 +93,10 @@ class JobIterationRequest(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "iteration_name": obj.get("iteration_name"),
-            "order": obj.get("order"),
-            "avg_score": obj.get("avg_score"),
-            "status": obj.get("status"),
-            "description": obj.get("description"),
-            "dimension_scores": obj.get("dimension_scores"),
-            "candidates": obj.get("candidates"),
-            "agent_code": obj.get("agent_code"),
-            "job": obj.get("job")
+            "count": obj.get("count"),
+            "next": obj.get("next"),
+            "previous": obj.get("previous"),
+            "results": obj.get("results")
         })
         return _obj
 

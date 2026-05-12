@@ -293,8 +293,8 @@ class AuthApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -304,9 +304,10 @@ class AuthApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -561,9 +562,10 @@ class AuthApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -590,6 +592,7 @@ class AuthApi:
         self,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         _request_timeout: Union[
             None,
@@ -612,6 +615,8 @@ class AuthApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
         :param _request_timeout: timeout setting for this request. If one
@@ -639,6 +644,7 @@ class AuthApi:
         _param = self._auth_api_keys_list_serialize(
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
             _request_auth=_request_auth,
             _content_type=_content_type,
@@ -665,6 +671,7 @@ class AuthApi:
         self,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         _request_timeout: Union[
             None,
@@ -687,6 +694,8 @@ class AuthApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
         :param _request_timeout: timeout setting for this request. If one
@@ -714,6 +723,7 @@ class AuthApi:
         _param = self._auth_api_keys_list_serialize(
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
             _request_auth=_request_auth,
             _content_type=_content_type,
@@ -740,6 +750,7 @@ class AuthApi:
         self,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         _request_timeout: Union[
             None,
@@ -762,6 +773,8 @@ class AuthApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
         :param _request_timeout: timeout setting for this request. If one
@@ -789,6 +802,7 @@ class AuthApi:
         _param = self._auth_api_keys_list_serialize(
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
             _request_auth=_request_auth,
             _content_type=_content_type,
@@ -810,6 +824,7 @@ class AuthApi:
         self,
         ordering,
         page,
+        page_size,
         search,
         _request_auth,
         _content_type,
@@ -834,17 +849,21 @@ class AuthApi:
         # process the path parameters
         # process the query parameters
         if ordering is not None:
-
+            
             _query_params.append(('ordering', ordering))
-
+            
         if page is not None:
-
+            
             _query_params.append(('page', page))
-
+            
+        if page_size is not None:
+            
+            _query_params.append(('page_size', page_size))
+            
         if search is not None:
-
+            
             _query_params.append(('search', search))
-
+            
         # process the header parameters
         # process the form parameters
         # process the body parameter
@@ -861,9 +880,10 @@ class AuthApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1110,9 +1130,10 @@ class AuthApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1378,8 +1399,8 @@ class AuthApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -1389,9 +1410,10 @@ class AuthApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1657,8 +1679,8 @@ class AuthApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -1668,7 +1690,7 @@ class AuthApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'ApiKeyAuth',
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1934,8 +1956,8 @@ class AuthApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -1945,7 +1967,7 @@ class AuthApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'ApiKeyAuth',
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 

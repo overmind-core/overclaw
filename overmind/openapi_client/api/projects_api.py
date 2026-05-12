@@ -287,8 +287,8 @@ class ProjectsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -298,9 +298,10 @@ class ProjectsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -552,9 +553,10 @@ class ProjectsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -582,6 +584,7 @@ class ProjectsApi:
         name: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         slug: Optional[StrictStr] = None,
         _request_timeout: Union[
@@ -606,6 +609,8 @@ class ProjectsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
         :param slug:
@@ -636,6 +641,7 @@ class ProjectsApi:
             name=name,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
             slug=slug,
             _request_auth=_request_auth,
@@ -664,6 +670,7 @@ class ProjectsApi:
         name: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         slug: Optional[StrictStr] = None,
         _request_timeout: Union[
@@ -688,6 +695,8 @@ class ProjectsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
         :param slug:
@@ -718,6 +727,7 @@ class ProjectsApi:
             name=name,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
             slug=slug,
             _request_auth=_request_auth,
@@ -746,6 +756,7 @@ class ProjectsApi:
         name: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         slug: Optional[StrictStr] = None,
         _request_timeout: Union[
@@ -770,6 +781,8 @@ class ProjectsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
         :param slug:
@@ -800,6 +813,7 @@ class ProjectsApi:
             name=name,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
             slug=slug,
             _request_auth=_request_auth,
@@ -823,6 +837,7 @@ class ProjectsApi:
         name,
         ordering,
         page,
+        page_size,
         search,
         slug,
         _request_auth,
@@ -848,25 +863,29 @@ class ProjectsApi:
         # process the path parameters
         # process the query parameters
         if name is not None:
-
+            
             _query_params.append(('name', name))
-
+            
         if ordering is not None:
-
+            
             _query_params.append(('ordering', ordering))
-
+            
         if page is not None:
-
+            
             _query_params.append(('page', page))
-
+            
+        if page_size is not None:
+            
+            _query_params.append(('page_size', page_size))
+            
         if search is not None:
-
+            
             _query_params.append(('search', search))
-
+            
         if slug is not None:
-
+            
             _query_params.append(('slug', slug))
-
+            
         # process the header parameters
         # process the form parameters
         # process the body parameter
@@ -883,9 +902,10 @@ class ProjectsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -911,7 +931,7 @@ class ProjectsApi:
     async def projects_memberships_create(
         self,
         project_id: Annotated[str, Field(strict=True)],
-        project_membership_create_request: Optional[ProjectMembershipCreateRequest] = None,
+        project_membership_create_request: ProjectMembershipCreateRequest,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -931,7 +951,7 @@ class ProjectsApi:
 
         :param project_id: (required)
         :type project_id: str
-        :param project_membership_create_request:
+        :param project_membership_create_request: (required)
         :type project_membership_create_request: ProjectMembershipCreateRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -982,7 +1002,7 @@ class ProjectsApi:
     async def projects_memberships_create_with_http_info(
         self,
         project_id: Annotated[str, Field(strict=True)],
-        project_membership_create_request: Optional[ProjectMembershipCreateRequest] = None,
+        project_membership_create_request: ProjectMembershipCreateRequest,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -1002,7 +1022,7 @@ class ProjectsApi:
 
         :param project_id: (required)
         :type project_id: str
-        :param project_membership_create_request:
+        :param project_membership_create_request: (required)
         :type project_membership_create_request: ProjectMembershipCreateRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -1053,7 +1073,7 @@ class ProjectsApi:
     async def projects_memberships_create_without_preload_content(
         self,
         project_id: Annotated[str, Field(strict=True)],
-        project_membership_create_request: Optional[ProjectMembershipCreateRequest] = None,
+        project_membership_create_request: ProjectMembershipCreateRequest,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -1073,7 +1093,7 @@ class ProjectsApi:
 
         :param project_id: (required)
         :type project_id: str
-        :param project_membership_create_request:
+        :param project_membership_create_request: (required)
         :type project_membership_create_request: ProjectMembershipCreateRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -1166,8 +1186,8 @@ class ProjectsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -1177,9 +1197,10 @@ class ProjectsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1449,9 +1470,10 @@ class ProjectsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1479,6 +1501,7 @@ class ProjectsApi:
         project_id: Annotated[str, Field(strict=True)],
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         _request_timeout: Union[
             None,
@@ -1503,6 +1526,8 @@ class ProjectsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
         :param _request_timeout: timeout setting for this request. If one
@@ -1531,6 +1556,7 @@ class ProjectsApi:
             project_id=project_id,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
             _request_auth=_request_auth,
             _content_type=_content_type,
@@ -1558,6 +1584,7 @@ class ProjectsApi:
         project_id: Annotated[str, Field(strict=True)],
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         _request_timeout: Union[
             None,
@@ -1582,6 +1609,8 @@ class ProjectsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
         :param _request_timeout: timeout setting for this request. If one
@@ -1610,6 +1639,7 @@ class ProjectsApi:
             project_id=project_id,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
             _request_auth=_request_auth,
             _content_type=_content_type,
@@ -1637,6 +1667,7 @@ class ProjectsApi:
         project_id: Annotated[str, Field(strict=True)],
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
         _request_timeout: Union[
             None,
@@ -1661,6 +1692,8 @@ class ProjectsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param search: A search term.
         :type search: str
         :param _request_timeout: timeout setting for this request. If one
@@ -1689,6 +1722,7 @@ class ProjectsApi:
             project_id=project_id,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             search=search,
             _request_auth=_request_auth,
             _content_type=_content_type,
@@ -1711,6 +1745,7 @@ class ProjectsApi:
         project_id,
         ordering,
         page,
+        page_size,
         search,
         _request_auth,
         _content_type,
@@ -1737,17 +1772,21 @@ class ProjectsApi:
             _path_params['project_id'] = project_id
         # process the query parameters
         if ordering is not None:
-
+            
             _query_params.append(('ordering', ordering))
-
+            
         if page is not None:
-
+            
             _query_params.append(('page', page))
-
+            
+        if page_size is not None:
+            
+            _query_params.append(('page_size', page_size))
+            
         if search is not None:
-
+            
             _query_params.append(('search', search))
-
+            
         # process the header parameters
         # process the form parameters
         # process the body parameter
@@ -1764,9 +1803,10 @@ class ProjectsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -2044,8 +2084,8 @@ class ProjectsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -2055,9 +2095,10 @@ class ProjectsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -2316,9 +2357,10 @@ class ProjectsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -2596,8 +2638,8 @@ class ProjectsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -2607,9 +2649,10 @@ class ProjectsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 

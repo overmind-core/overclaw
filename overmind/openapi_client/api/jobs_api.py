@@ -285,8 +285,8 @@ class JobsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -296,9 +296,10 @@ class JobsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -550,9 +551,10 @@ class JobsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -585,6 +587,7 @@ class JobsApi:
         job_type: Annotated[Optional[StrictStr], Field(description="* `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting")] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         project: Optional[UUID] = None,
         prompt_slug: Optional[StrictStr] = None,
         score_max: Optional[Union[StrictFloat, StrictInt]] = None,
@@ -623,6 +626,8 @@ class JobsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param project:
         :type project: UUID
         :param prompt_slug:
@@ -666,6 +671,7 @@ class JobsApi:
             job_type=job_type,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             project=project,
             prompt_slug=prompt_slug,
             score_max=score_max,
@@ -703,6 +709,7 @@ class JobsApi:
         job_type: Annotated[Optional[StrictStr], Field(description="* `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting")] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         project: Optional[UUID] = None,
         prompt_slug: Optional[StrictStr] = None,
         score_max: Optional[Union[StrictFloat, StrictInt]] = None,
@@ -741,6 +748,8 @@ class JobsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param project:
         :type project: UUID
         :param prompt_slug:
@@ -784,6 +793,7 @@ class JobsApi:
             job_type=job_type,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             project=project,
             prompt_slug=prompt_slug,
             score_max=score_max,
@@ -821,6 +831,7 @@ class JobsApi:
         job_type: Annotated[Optional[StrictStr], Field(description="* `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting")] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
         project: Optional[UUID] = None,
         prompt_slug: Optional[StrictStr] = None,
         score_max: Optional[Union[StrictFloat, StrictInt]] = None,
@@ -859,6 +870,8 @@ class JobsApi:
         :type ordering: str
         :param page: A page number within the paginated result set.
         :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
         :param project:
         :type project: UUID
         :param prompt_slug:
@@ -902,6 +915,7 @@ class JobsApi:
             job_type=job_type,
             ordering=ordering,
             page=page,
+            page_size=page_size,
             project=project,
             prompt_slug=prompt_slug,
             score_max=score_max,
@@ -934,6 +948,7 @@ class JobsApi:
         job_type,
         ordering,
         page,
+        page_size,
         project,
         prompt_slug,
         score_max,
@@ -963,13 +978,13 @@ class JobsApi:
         # process the path parameters
         # process the query parameters
         if agent is not None:
-
+            
             _query_params.append(('agent', agent))
-
+            
         if analyzer_model is not None:
-
+            
             _query_params.append(('analyzer_model', analyzer_model))
-
+            
         if created_after is not None:
             if isinstance(created_after, datetime):
                 _query_params.append(
@@ -982,7 +997,7 @@ class JobsApi:
                 )
             else:
                 _query_params.append(('created_after', created_after))
-
+            
         if created_before is not None:
             if isinstance(created_before, datetime):
                 _query_params.append(
@@ -995,47 +1010,51 @@ class JobsApi:
                 )
             else:
                 _query_params.append(('created_before', created_before))
-
+            
         if data_source is not None:
-
+            
             _query_params.append(('data_source', data_source))
-
+            
         if job_type is not None:
-
+            
             _query_params.append(('job_type', job_type))
-
+            
         if ordering is not None:
-
+            
             _query_params.append(('ordering', ordering))
-
+            
         if page is not None:
-
+            
             _query_params.append(('page', page))
-
+            
+        if page_size is not None:
+            
+            _query_params.append(('page_size', page_size))
+            
         if project is not None:
-
+            
             _query_params.append(('project', project))
-
+            
         if prompt_slug is not None:
-
+            
             _query_params.append(('prompt_slug', prompt_slug))
-
+            
         if score_max is not None:
-
+            
             _query_params.append(('score_max', score_max))
-
+            
         if score_min is not None:
-
+            
             _query_params.append(('score_min', score_min))
-
+            
         if search is not None:
-
+            
             _query_params.append(('search', search))
-
+            
         if status is not None:
-
+            
             _query_params.append(('status', status))
-
+            
         # process the header parameters
         # process the form parameters
         # process the body parameter
@@ -1052,9 +1071,10 @@ class JobsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1332,8 +1352,8 @@ class JobsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -1343,9 +1363,10 @@ class JobsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1604,9 +1625,10 @@ class JobsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 
@@ -1884,8 +1906,8 @@ class JobsApi:
             _default_content_type = (
                 self.api_client.select_header_content_type(
                     [
-                        'application/json',
-                        'application/x-www-form-urlencoded',
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
                         'multipart/form-data'
                     ]
                 )
@@ -1895,9 +1917,10 @@ class JobsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
-            'cookieAuth',
-            'jwtAuth',
-            'ApiKeyAuth',
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
             'BearerAuth'
         ]
 

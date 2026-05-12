@@ -114,6 +114,7 @@ AuthSettings = TypedDict(
     {
         "ApiKeyAuth": APIKeyAuthSetting,
         "BearerAuth": BearerFormatAuthSetting,
+        "ClerkBearerAuth": BearerFormatAuthSetting,
         "cookieAuth": APIKeyAuthSetting,
         "jwtAuth": BearerFormatAuthSetting,
     },
@@ -525,6 +526,14 @@ conf = overmind.openapi_client.Configuration(
             }
         if self.access_token is not None:
             auth['BearerAuth'] = {
+                'type': 'bearer',
+                'in': 'header',
+                'format': 'JWT',
+                'key': 'Authorization',
+                'value': 'Bearer ' + self.access_token
+            }
+        if self.access_token is not None:
+            auth['ClerkBearerAuth'] = {
                 'type': 'bearer',
                 'in': 'header',
                 'format': 'JWT',

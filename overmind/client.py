@@ -37,7 +37,6 @@ from overmind.openapi_client.api.datasets_api import DatasetsApi
 from overmind.openapi_client.api.job_iterations_api import JobIterationsApi
 from overmind.openapi_client.api.jobs_api import JobsApi
 from overmind.openapi_client.api.projects_api import ProjectsApi
-from overmind.openapi_client.api.spans_api import SpansApi
 from overmind.openapi_client.api.traces_api import TracesApi
 from overmind.openapi_client.models.agent_request import AgentRequest
 from overmind.openapi_client.models.datapoint_request import DatapointRequest
@@ -152,7 +151,6 @@ class OvermindClient(
     JobIterationsApi,
     JobsApi,
     ProjectsApi,
-    SpansApi,
     TracesApi,
 ): ...
 
@@ -685,4 +683,34 @@ class ApiReporter:
             status=JobStatusEnum.FAILED,
             report_markdown=f"Run failed: {reason}",
             logs=list(self._logs),
+        )
+
+    async def get_agent(self, agent_slug):
+        agents = await self._client.agents_list(slug=agent_slug)
+        if not agents.results:
+            raise ValueError(f"Agent {agent_slug} not found")
+        return agents.results[0]
+
+    async def create_dataset(self, agent_slug, **kwargs):
+        agent = await self.get_agent(agent_slug)
+
+        self._client.datasets_create(
+            dataset_request=DatasetRequest(
+                name="test",
+                agent=agent.id,
+                source=SourceEnum.SYNTHETIC,
+                generator_model="test",
+                policy_hash="test",
+                metadata={},
+                datapoints=[
+                    DatapointRequest(
+                        order=0,
+                        input={"x": 1},
+                        expected_output={"y": 2},
+                        persona="test",
+                        tags=[],
+                    ),
+                ],
+                make_active=True,
+            )
         )

@@ -19,18 +19,18 @@ import json
 
 from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
 from typing import Any, ClassVar, Dict, List, Optional
-from overmind.openapi_client.models.trace_list import TraceList
+from overmind.openapi_client.models.root_span_list import RootSpanList
 from typing import Optional, Set
 from typing_extensions import Self
 
-class PaginatedTraceListList(BaseModel):
+class PaginatedRootSpanListList(BaseModel):
     """
-    PaginatedTraceListList
+    PaginatedRootSpanListList
     """ # noqa: E501
     count: StrictInt
     next: Optional[StrictStr] = None
     previous: Optional[StrictStr] = None
-    results: List[TraceList]
+    results: List[RootSpanList]
     __properties: ClassVar[List[str]] = ["count", "next", "previous", "results"]
 
     model_config = ConfigDict(
@@ -51,7 +51,7 @@ class PaginatedTraceListList(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Optional[Self]:
-        """Create an instance of PaginatedTraceListList from a JSON string"""
+        """Create an instance of PaginatedRootSpanListList from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -93,7 +93,7 @@ class PaginatedTraceListList(BaseModel):
 
     @classmethod
     def from_dict(cls, obj: Optional[Dict[str, Any]]) -> Optional[Self]:
-        """Create an instance of PaginatedTraceListList from a dict"""
+        """Create an instance of PaginatedRootSpanListList from a dict"""
         if obj is None:
             return None
 
@@ -104,7 +104,7 @@ class PaginatedTraceListList(BaseModel):
             "count": obj.get("count"),
             "next": obj.get("next"),
             "previous": obj.get("previous"),
-            "results": [TraceList.from_dict(_item) for _item in obj["results"]] if obj.get("results") is not None else None
+            "results": [RootSpanList.from_dict(_item) for _item in obj["results"]] if obj.get("results") is not None else None
         })
         return _obj
 
