@@ -2,7 +2,7 @@
 name: overmind-register-agent
 description: "Create or register an Overmind-compatible agent entrypoint: deterministic CLI checks and env gates, with the coding agent doing harness synthesis, stub JSON, and file IO. Use when the user wants Overmind to run and evaluate an agent, register an agent, configure providers, or fix failed registration."
 metadata:
-  version: "2.4"
+  version: "2.5"
   product: "Overmind"
 ---
 
@@ -14,6 +14,22 @@ Use this skill to create a separate entrypoint file that Overmind can call to ru
 
 **Setup coverage (no silent skips):** Every topic in **Inputs** must be **resolved once per run** — either via `AskQuestion` / chat, or via a **one-line explicit confirmation** when the user already answered in the same conversation before this skill run (quote their choice, ask “still correct?”). Never proceed without resolving each topic.
 
+## When to use this skill
+
+- The agent is missing from `.overmind/agents.toml`, registration failed, or the Overmind harness / instrumentation must be created or refreshed.
+- `.overmind/.env` or provider keys need bootstrapping before `overmind agent register` or other authenticated Overmind CLI steps.
+- The user asked to register an agent, add an Overmind-compatible entrypoint, or fix import / “agent not found” errors at registration time.
+
+## When not to use this skill
+
+- Only `eval_spec.json` / `dataset.json` / policy need work — use `/overmind-generate-spec-and-dataset`.
+- Only the optimization loop is needed — use `/overmind-optimise-agent` (requires existing spec + dataset).
+- The harness is wrongly listed in optimizer scope — use `/overmind-generate-spec-and-dataset` repair mode; re-running register alone does not fix eval scope.
+
+## Example (abbreviated)
+
+User: *“Register `examples/hotel/agent.py` as `hotel-agent`.”* You confirm dataset path (or none), run two-step provider/model, bootstrap `.overmind/.env`, mandatory keys pause → `configured`, write a thin harness beside the agent, `overmind agent register "hotel-agent" "examples.hotel.overmind_entrypoint:run"`, refresh instrumentation, validate with dataset or stub JSON. Final message lists entrypoint path, registered name, and next step (`/overmind-generate-spec-and-dataset`).
+
 ## Operating principles
 
 - **Mandatory topic coverage**: Cover every item in **Inputs** in order (entrypoint choice, agent path, name, dataset presence, analyzer provider, model, agent LLM provider, **mandatory keys pause**, credentials verified). Do not infer away a user choice; use in-thread short-circuit only as above.
@@ -23,7 +39,7 @@ Use this skill to create a separate entrypoint file that Overmind can call to ru
 - **Separate entrypoint file**: Always create or maintain a distinct entrypoint file for Overmind-agent interaction. Do not register the native agent implementation file directly.
 - **Interaction harness, not agent logic**: The entrypoint file should be a thin interaction harness that imports and invokes the native agent, maps dataset inputs into the agent’s native call, and normalizes outputs for evaluation. It must not contain optimizable behavior.
 - **Cold-start aware harness:** Overmind runs evaluations in isolated processes. When wiring the native agent, avoid rebuilding the full orchestrator stack, clients, or tool registries on every harness call; pay fixed construction cost once per interpreter process and reset only per-conversation state each call. This is harness plumbing, not new business logic.
-- **Entrypoint is fixed and invisible to optimization**: The entrypoint file exists only to let Overmind invoke the agent. It must never be treated as agent logic to optimize.
+- **Entrypoint is fixed and invisible to optimization**: The entrypoint file exists only to let Overmind invoke the agent. It must never be treated as agent logic to optimize. If a **legacy** `eval_spec.json` still lists the harness in `optimizable_paths`, `/overmind-optimise-agent` may treat that as existing project configuration — after such a run, fix scope with `/overmind-generate-spec-and-dataset` (repair mode) so the harness stays excluded.
 - **Snapshot safety**: The entrypoint file and every local file it imports must live under the project root and be included in the instrumented snapshot. Do not import local files from outside the project root.
 - **Re-instrument on entrypoint changes**: If the entrypoint file changes after registration, refresh the instrumented copy even when the agent name and callable string are unchanged.
 - **Minimal edits**: Only modify Overmind registration artifacts, the separate entrypoint file, and the agent-specific environment placeholder file.
@@ -32,7 +48,7 @@ Use this skill to create a separate entrypoint file that Overmind can call to ru
 
 ## Inputs
 
-**Execution order:** For anything that touches `.overmind/.env`, follow **Workflow** (analyzer provider → model → **command block 4** bootstrap → **mandatory keys pause** → **command block 5** verify → `configured`) **before** `overmind agent register`. You may still collect other answers (entrypoint choice, paths) earlier in the thread, but do not register until the env sequence has completed.
+**Execution order:** For anything that touches `.overmind/.env` **secrets used by the CLI**, follow **Workflow** (analyzer provider → model → **command block 4** bootstrap → **mandatory keys pause** → **command block 5** verify → `configured`) **before** `overmind agent register`. You may collect answers and draft the harness earlier per **Recommended timing** under **Workflow**; do not register until the env sequence has completed.
 
 The coding agent infers technical facts from the repo; the user still **confirms** intent for each bullet below (or confirms prior message).
 
@@ -152,6 +168,8 @@ Use these command blocks to keep registration deterministic. Do not rely on inte
        `        if k.strip() == name:`
        `            return key_ok(v)`
        `    return False`
+       `def configured(name, env_path):`
+       `    return key_ok(os.getenv(name, "")) or configured_in_file(name, env_path)`
        `env_path = pathlib.Path(".overmind/.env")`
        `selected_provider = "<analyzer-provider-choice>"`
        `selected_model = "<analyzer-model-choice>"`
@@ -165,8 +183,8 @@ Use these command blocks to keep registration deterministic. Do not rely on inte
        `    required_nonsecret.append("ANALYZER_MODEL")`
        `if selected_provider == "openai-compatible":`
        `    required_nonsecret.append("OPENAI_BASE_URL")`
-       `missing = [k for k in required if not (os.getenv(k) or configured_in_file(k, env_path))]`
-       `missing += [k for k in required_nonsecret if not (os.getenv(k) or configured_in_file(k, env_path))]`
+       `missing = [k for k in required if not configured(k, env_path)]`
+       `missing += [k for k in required_nonsecret if not configured(k, env_path)]`
        `print("configured" if not missing else "missing:" + ",".join(missing))`
        `PY`
    - Do not register until this prints `configured`. If `missing:...`, return the user to the mandatory pause step — never ask them to paste values in chat.
@@ -230,6 +248,8 @@ Confirm the working directory is the project root. It should contain `.overmind/
 
 After this project-root step passes, `.overmind/.env` is first **materialized with placeholders** in **command block 4** (after provider/model choices), then the **mandatory keys pause** runs before any registration.
 
+**Recommended timing:** After you know the agent name, entrypoint intent, and analyzer provider/model, you **may** complete **Build codebase context** through **Create the separate Overmind entrypoint file** (and static import/signature checks that **do not** call `overmind agent …` or invoke the agent’s LLM) **before** command block 4, so the user is not blocked on API keys while you are still reading the repo. You **must not** run `overmind agent register`, `overmind agent validate` against a live agent, or any other step that requires real Overmind or provider credentials until **command block 5** prints `configured`.
+
 ### Init analyzer provider and model (AskQuestion, two steps)
 
 Before registration, run **two** multiple-choice steps unless the user already chose provider+model in the **same conversation** — then quote their answers and ask “Still use these?” once.
@@ -241,12 +261,14 @@ Persist the chosen model in `.overmind/.env` as `ANALYZER_MODEL=<chosen-model>` 
 
 ### Bootstrap `.overmind/.env` and mandatory keys pause (strict)
 
-Order is fixed:
+Order is fixed for anything that touches **real** secrets or the Overmind API:
 
 1. Run **command block 4** (bootstrap) so `.overmind/.env` exists and contains `OVERMIND_API_KEY=<set-me>`, the chosen `ANALYZER_MODEL` (or placeholder if not yet chosen), and provider placeholder lines matching the selected analyzer provider.
-2. **Immediately** run the **Mandatory keys pause** from **Inputs** (the strict `AskQuestion` with *Fill in your Overmind API key and your analyzer model provider key(s)…* and **Yes — continue**). Do not interleave other work before the user has clicked **Yes — continue** at least once.
+2. **Immediately** run the **Mandatory keys pause** from **Inputs** (the strict `AskQuestion` with *Fill in your Overmind API key and your analyzer model provider key(s)…* and **Yes — continue**). Do not interleave **registration** or **authenticated Overmind CLI** work before the user has clicked **Yes — continue** at least once. (Harness drafting that needs no credentials may already be done; see **Recommended timing** above.)
 3. Run **command block 5** (verify). Loop pause + verify until the script prints `configured`.
-4. Only then continue with entrypoint harness work and later `overmind agent register`.
+4. Only then run `overmind agent register` and any instrumentation refresh that requires a working install.
+
+If harness files were not written earlier, complete **Create the separate Overmind entrypoint file** now, before or with registration per **Workflow** below.
 
 ### Choose the entrypoint path
 
@@ -464,6 +486,16 @@ Before responding, verify:
 - If a dataset file was used: it was read and field names reconciled before the entrypoint was written; signature and return keys match the locked schema.
 - If no dataset file: the user explicitly approved the codebase-derived schema before the entrypoint was written.
 - `overmind agent validate --data` was run successfully (user dataset path **or** generated stub path).
+
+## Repair existing registration
+
+When the user says the agent is already registered but something is wrong:
+
+1. Read `.overmind/agents.toml` and the stored entrypoint string; import the module and confirm the callable exists (command block 10 style).
+2. If the entrypoint path is wrong or the harness was refactored, update the separate entrypoint file or ask the user before changing the registered string.
+3. Run **command block 7** (instrumentation refresh) whenever the entrypoint file or its local imports changed.
+4. Re-run **command block 5** if the failure sounds like missing or placeholder keys.
+5. If the problem is eval spec, dataset, or optimizer scope — not registration — hand off to `/overmind-generate-spec-and-dataset` or `/overmind-optimise-agent` as appropriate.
 
 ## User-facing summary
 

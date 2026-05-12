@@ -2,7 +2,7 @@
 name: overmind-generate-spec-and-dataset
 description: "Generate the policy, eval spec, and evaluation dataset for an Overmind agent in one pass. Use when the user wants to author or rebuild eval criteria for an agent, fix a broken eval spec (wrong input_schema, missing output fields, bad weights), produce or augment a dataset, or prepare everything needed before running `overmind optimize`. Combines policy elicitation, spec construction, and dataset generation so the artifacts always agree on the same input/output schema."
 metadata:
-  version: "1.2"
+  version: "1.3"
   product: "Overmind"
 ---
 
@@ -19,10 +19,25 @@ This skill replaces the two earlier ones (`overmind-generate-policy-and-eval` an
 
 After this skill finishes, run `/overmind-optimise-agent` or `overmind optimize <agent>` to start optimization.
 
+## When to use this skill
+
+- After `/overmind-register-agent`, to create or rebuild `policies.md`, `eval_spec.json`, and `dataset.json` so schemas agree.
+- When the eval spec is broken (weights, `input_schema`, output types, scope) or the dataset does not match the entrypoint.
+- When preparing for optimization and setup artifacts are missing or stale.
+
+## When not to use this skill
+
+- The agent is not registered or the Overmind harness does not exist — use `/overmind-register-agent` first.
+- The user only wants the CLI optimization loop and artifacts already exist and validate — use `/overmind-optimise-agent` (do not use optimize alone to “fix” registration).
+
+## Example (abbreviated)
+
+User: *“Generate eval spec + dataset for `hotel-agent`.”* You resolve the registered entrypoint, lock I/O keys from AST + low-confidence paths where needed, write preview `eval_spec` / policy, get save approval, write `dataset` to `_preview_dataset.json`, ask replace/append/backup for any existing `dataset.json`, smoke-check, then point to `/overmind-optimise-agent`.
+
 ## Operating principles
 
 - **Codebase is the source of truth**: every input field, output key, and tool comes from the registered Overmind entrypoint and the modules it imports. Do not invent fields.
-- **Entrypoint contract is fixed**: the registered Overmind entrypoint is a fixed harness — never put it in `optimizable_paths`; always include it in `exclude_paths` or `fixed_elements`.
+- **Entrypoint contract is fixed**: The registered Overmind entrypoint harness must stay **out of** `optimizable_paths` and treated as fixed interaction glue — same default as `/overmind-register-agent`. **`/overmind-optimise-agent` compatibility:** If an **existing** eval spec already includes the harness path (legacy misconfiguration), optimization may still touch it only when Overmind’s scope and candidate prompts allow; after such a run, **repair** the spec here so the harness returns to `exclude_paths` / `fixed_elements`.
 - **Evaluator-compatible types only**: output `type` must be one of `text`, `enum`, `number`, `boolean`. Never `string`, `object`, `array`, `dict`, `list`, `json`.
 - **Top-level scoring only**: nested dicts and list outputs are normalized in the entrypoint into top-level fields before reaching the evaluator.
 - **Schema agreement is mandatory**: every dataset row's `input` keys must equal the eval spec's `input_schema` keys; every `expected_output` key must appear in `output_fields`.
@@ -55,8 +70,8 @@ Spec + Dataset Progress:
 - [ ] Step 5: Write preview files + summary; optional full paste; save vs edit AskQuestion
 - [ ] Step 6: Save policy.md + eval_spec.json
 - [ ] Step 7: Decide on seed data (ask before generating)
-- [ ] Step 8: Generate dataset; enforce schema agreement
-- [ ] Step 9: Save dataset.json (ask before overwriting)
+- [ ] Step 8: Generate dataset to **preview** file; enforce schema agreement
+- [ ] Step 9: Promote preview → `dataset.json` (replace / append / backup — ask before touching an existing `dataset.json`)
 - [ ] Step 10: Smoke check, summarize, and recommend optimization
 ```
 
@@ -72,7 +87,7 @@ If the agent is not registered, stop and recommend `/overmind-register-agent`.
 
 If the signature exposes a single dict-like payload, pydantic model, dataclass, typed dict, or other structured input object, decompose it only when there is concrete evidence from type definitions, seed data, fixtures, tests, examples, serializers, or user confirmation. Otherwise keep the real entrypoint parameter and mark the schema as low-confidence rather than inventing fields.
 
-**Output keys** — union the keys across every `return {...}` literal in the function body. Mark a key `optional: true` if it appears in some but not all returns. For `-> str` return types or non-dict returns, set the single output to `result` of type `text`.
+**Output keys** — union the keys across every `return {...}` literal in the function body. Mark a key `optional: true` if it appears in some but not all returns. For `-> str` return types or non-dict returns, set the single output to `result` of type `text`. If outputs are built via `model_dump()`, serializers, helper functions, or variables (no literal dict in the entrypoint body), treat output-key inference as **low confidence**: inspect those code paths, serializers, and tests, or ask the user to confirm keys — do not invent fields.
 
 **Tools** — scan for `@tool`, `Tool(`, `FunctionTool(`, `tools=[...]`, OpenAI/Anthropic tool dicts in the entrypoint and modules it imports. Record name, description, parameter schema.
 
@@ -91,7 +106,7 @@ Tools:        search_company, lookup_revenue
 Sibling pkgs: prompts, tools
 ```
 
-For each sibling package, ask via `AskQuestion`: *Optimizable / Context only / Exclude*. Never silently exclude a sibling package.
+For **sibling packages**, prefer **one** structured question listing every package with options *Optimizable / Context only / Exclude* (table or multi-part `AskQuestion`) instead of one question per package when there are several; only split per-package if the user asks to refine one row.
 
 ### Step 3 — Generate the policy
 
@@ -264,11 +279,13 @@ Before generation, create a compact coverage plan:
 - Edge cases to include.
 - Seed coverage gaps.
 
-Use this model-selection priority:
+Use this model-selection priority (**never** silently default to `openai/gpt-4o` or any vendor model in code):
 
-1. `SYNTHETIC_DATAGEN_MODEL` from the project environment if configured.
-2. A provider implied by available non-secret environment variable names.
-3. A user-selected model when no provider is clear.
+1. `SYNTHETIC_DATAGEN_MODEL` in the process environment or `.overmind/.env` — value must be a **non-empty** LiteLLM model id after trim.
+2. If unset, stop dataset generation and obtain a model id from the user (`AskQuestion` or chat), then export it for the runner process or append `SYNTHETIC_DATAGEN_MODEL=<id>` to `.overmind/.env` without clobbering unrelated keys.
+3. Do **not** infer a model from “which API key exists” alone; that hides misconfiguration.
+
+The runner below must call `generate_diverse_synthetic_data` only with a model string that came from step 1 or 2. If still unset, `raise SystemExit("SYNTHETIC_DATAGEN_MODEL is not set — set it or pass a user-chosen LiteLLM model id before running.")`.
 
 Write `_datagen_runner.py` in the **project root**:
 
@@ -289,7 +306,11 @@ console      = Console()
 AGENT_NAME   = "<name>"
 NUM_SAMPLES  = <N>
 NUM_PERSONAS = <R>
-MODEL        = os.getenv("SYNTHETIC_DATAGEN_MODEL", "openai/gpt-4o")
+MODEL        = os.getenv("SYNTHETIC_DATAGEN_MODEL", "").strip()
+if not MODEL:
+    raise SystemExit(
+        "SYNTHETIC_DATAGEN_MODEL is not set — set it in .overmind/.env, export it for this process, or pass a user-chosen LiteLLM model id before running."
+    )
 
 CANONICAL_INPUT_KEYS  = frozenset(<exact param names>)
 CANONICAL_OUTPUT_KEYS = frozenset(<exact output keys>)        # or None for plain-text
@@ -329,10 +350,10 @@ cases, dropped = enforce_schema(cases, CANONICAL_INPUT_KEYS, CANONICAL_OUTPUT_KE
 if len(dropped) > 0.2 * (len(cases) + len(dropped)):
     raise SystemExit(f"More than 20% of cases dropped — regenerate with stricter prompts. dropped={dropped[:5]}")
 
-out_path = Path(f".overmind/agents/{AGENT_NAME}/setup_spec/dataset.json")
-out_path.parent.mkdir(parents=True, exist_ok=True)
-out_path.write_text(json.dumps(cases, indent=2))
-print(f"Saved {len(cases)} cases to {out_path}; dropped {len(dropped)}")
+preview = Path(f".overmind/agents/{AGENT_NAME}/setup_spec/_preview_dataset.json")
+preview.parent.mkdir(parents=True, exist_ok=True)
+preview.write_text(json.dumps(cases, indent=2))
+print(f"Preview: {len(cases)} cases -> {preview}; dropped {len(dropped)}")
 ```
 
 Run from the project root, then delete the runner file:
@@ -344,15 +365,22 @@ rm _datagen_runner.py
 
 If `generate_diverse_synthetic_data` import fails, install overmind (`pip install overmind` / `uv add overmind`) and re-run. Direct `litellm` fallback is acceptable only when overmind is genuinely unavailable.
 
-### Step 9 — Save the dataset
+### Step 9 — Promote preview to `dataset.json`
 
-If `dataset.json` already exists, ask:
+The canonical dataset path is `.overmind/agents/<name>/setup_spec/dataset.json`. Step 8 must **only** write `_preview_dataset.json` until this step decides fate.
+
+- If **`dataset.json` does not exist**: rename or copy `_preview_dataset.json` → `dataset.json` (then remove the preview file).
+- If **`dataset.json` already exists**, ask once:
 
 > "A dataset already exists. *Replace* / *Append* / *Save backup, then replace*"
 
-For *Append*, merge the new cases after the existing ones, then re-run the schema enforcement on the combined list.
+  - *Replace*: move aside or delete the old file, then promote the preview to `dataset.json`, then delete `_preview_dataset.json`.
+  - *Append*: load existing `dataset.json`, merge new cases after the existing ones, re-run the schema enforcement on the combined list, write the result to `dataset.json`, then delete `_preview_dataset.json`.
+  - *Save backup, then replace*: copy current `dataset.json` to `dataset.backup.json` (or timestamped), then same as *Replace*.
 
-After saving, run a light smoke check against up to three cases. Call the entrypoint exactly once per case and store the result before inspecting it. For async entrypoints, run through the host language's async event loop.
+If the user aborts, delete `_preview_dataset.json` only after they confirm they do not need the preview; leave `dataset.json` unchanged.
+
+After the final `dataset.json` is in place, run a light smoke check against up to three cases. Call the entrypoint exactly once per case and store the result before inspecting it. For async entrypoints, run through the host language's async event loop.
 
 A smoke-check pass means the entrypoint returns a non-null result without raising an exception. Do not require semantic correctness during this smoke check; semantic scoring belongs to optimization.
 
@@ -393,6 +421,7 @@ The diff must be concrete, showing current and proposed values rather than vague
 - **Agent not in registry**: Register the agent first.
 - **Overmind imports fail**: Activate the project virtual environment or use the project package manager from the project root.
 - **Overmind data generator not importable**: Activate the project virtual environment, install Overmind, or use the direct LLM fallback.
+- **`SYNTHETIC_DATAGEN_MODEL` unset**: The datagen runner exits without a default vendor model. Set `SYNTHETIC_DATAGEN_MODEL` in `.overmind/.env` (or export for the process) or obtain a LiteLLM id from the user before running `_datagen_runner.py`.
 - **Model auth error**: Ask the user to configure the relevant provider key in the project or agent environment file.
 - **Input schema collapsed to one object**: Decompose using typed dicts, pydantic models, dataclasses, seed data, examples, or user-confirmed fields.
 - **Output fields missing**: Union dictionary keys across all normalized return branches.
