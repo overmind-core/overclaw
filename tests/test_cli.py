@@ -209,6 +209,7 @@ class TestMainDispatch:
     def _stub_cli_side_effects(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("overmind.cli.require_overmind_initialized", lambda: None)
         monkeypatch.setattr("overmind.cli.load_overmind_dotenv", lambda: None)
+        monkeypatch.setattr("overmind.cli.load_agent_dotenv", lambda _name: None)
         monkeypatch.setattr("overmind.cli.setup_logging", lambda: "/dev/null")
         os.environ["OVERMIND_API_KEY"] = "test"
 
