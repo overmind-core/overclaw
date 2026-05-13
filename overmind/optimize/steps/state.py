@@ -72,8 +72,24 @@ class SkillRunState:
     failed_attempts: list[dict] = field(default_factory=list)
     successful_changes: list[dict] = field(default_factory=list)
 
-    # ---- ApiReporter ----
+    # Stable identifier for the optimize ``Job`` row this run belongs to.
+    # Generated once at ``init`` and stamped on every subsequent step's
+    # OTel span as ``overmind.job.id`` as a secondary coalescing key
+    # (the primary one is the shared trace_id below).
     job_id: str = ""
+
+    # W3C traceparent for the optimize workflow root span emitted by
+    # ``init``.  Every subsequent ``overmind optimize-step`` CLI
+    # invocation picks this up from ``skill_state.json`` and exports
+    # ``TRACEPARENT`` into the environment before ``overmind.init()`` —
+    # the SDK's :func:`_attach_remote_parent_if_present` then makes
+    # every span created in that process a child of the root, so all
+    # steps land on a single distributed trace (one trace_id, one Job
+    # in the UI) without relying on ``overmind.job.id`` post-hoc
+    # coalescing.
+    #
+    # Format: ``00-<32 hex trace_id>-<16 hex root_span_id>-01``.
+    traceparent: str = ""
 
     # ------------------------------------------------------------------
     # IO

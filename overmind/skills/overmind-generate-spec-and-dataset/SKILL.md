@@ -13,6 +13,8 @@ ordered pass so the input/output schemas always agree:
 
 This skill replaces the two earlier ones (`overmind-generate-policy-and-eval` and `overmind-generate-dataset`). Doing both in one pass eliminates the most common failure mode of the old flow: a dataset that was generated against one input/output shape and an eval spec that scores a different shape.
 
+> always export the environment variables OVERMIND_API_KEY and OVERMIND_API_URL if present in the `.env`
+
 After this skill finishes, run `/overmind-optimise-agent` or `overmind optimize <agent>` to start optimization.
 
 ## When to use this skill

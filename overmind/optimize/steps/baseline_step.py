@@ -52,6 +52,9 @@ def run_baseline(state: SkillRunState) -> dict[str, Any]:
     set_tag(attrs.OPTIMIZE_DATASET_TRAIN, state.train_size)
     set_tag(attrs.OPTIMIZE_DATASET_HOLDOUT, state.holdout_size)
     set_tag(attrs.OPTIMIZE_PHASE, "baseline_complete")
+    set_tag(attrs.OPTIMIZE_STEP, "baseline")
+    if state.job_id:
+        set_tag(attrs.JOB_ID, state.job_id)
 
     return {
         "status": "ok",

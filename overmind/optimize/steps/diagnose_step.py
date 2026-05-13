@@ -20,8 +20,10 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from overmind import SpanType, attrs, set_tag
 from overmind.optimize.optimizer import Optimizer
 from overmind.optimize.steps.state import SkillRunState
+from overmind.tracing import force_flush_traces, observe_safe
 
 logger = logging.getLogger("overmind.optimize.steps.diagnose")
 
@@ -160,7 +162,13 @@ def _write_worktree(
     return worktree
 
 
+@observe_safe(span_name="overmind.optimize.diagnose", type=SpanType.FUNCTION)
 def run_diagnose(state: SkillRunState, *, iteration: int) -> dict[str, Any]:
+    set_tag(attrs.OPTIMIZE_ITERATION, iteration)
+    set_tag(attrs.OPTIMIZE_PHASE, "diagnose")
+    set_tag(attrs.OPTIMIZE_STEP, "diagnose")
+    if state.job_id:
+        set_tag(attrs.JOB_ID, state.job_id)
     cfg = state.to_config()
     optimizer = Optimizer(cfg)
 
@@ -233,6 +241,13 @@ def run_diagnose(state: SkillRunState, *, iteration: int) -> dict[str, Any]:
     state.phase = f"diagnose_complete_iter_{iteration}"
     state.iteration = iteration
     state.save()
+
+    set_tag(attrs.OPTIMIZE_N_CANDIDATES_GENERATED, len(worktrees))
+    set_tag(
+        attrs.CANDIDATES_METHODS,
+        [str(c.get("method") or "unknown") for c in worktrees],
+    )
+    force_flush_traces(timeout_millis=1500)
 
     requested = int(getattr(cfg, "candidates_per_iteration", len(worktrees)) or len(worktrees))
     all_failed = bool(worktrees) and all((c.get("method") or "").startswith("failed") for c in worktrees)

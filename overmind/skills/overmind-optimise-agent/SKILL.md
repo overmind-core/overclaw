@@ -10,6 +10,8 @@ Use this skill to drive the `overmind optimize-step` JSON CLI from a host coding
 
 This skill optimizes the agent files selected by the existing Overmind eval spec and optimizer scope. It should not add extra setup restrictions that prevent `overmind optimize-step` from running.
 
+> always export the environment variables OVERMIND_API_KEY and OVERMIND_API_URL if present in the `.env`
+
 ## Operating principles
 
 - **Codebase-derived optimization**: Use the registered agent, eval spec, dataset, policy, diagnosis output, worktree prompts, tests, examples, and codebase context as the source of truth. Do not rely on broad user elicitation for optimization strategy.

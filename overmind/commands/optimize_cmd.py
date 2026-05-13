@@ -9,7 +9,6 @@ Usage:
 import logging
 
 from overmind import SpanType, attrs, set_tag
-from overmind.client import flush_pending_api_updates
 from overmind.core.paths import load_agent_dotenv
 from overmind.core.registry import get_agent_id
 from overmind.optimize.config import collect_config
@@ -102,26 +101,22 @@ def main(
     logger.info(f"optimize: run complete agent={agent_name}")
 
 
-def _finalize_failed_job(optimizer: Optimizer, *, reason: str) -> None:
-    """Mark the optimize Job as FAILED on the API and flush partial progress.
+def _finalize_failed_job(_: Optimizer, *, reason: str) -> None:
+    """Flush in-flight OTel spans after the optimize loop aborts.
 
-    Called when the optimize loop is interrupted (Ctrl-C) or aborts with an
-    exception. Whatever iterations / experiments have run up until that
-    point are already streamed to the backend via :class:`ApiReporter` and
-    OTLP spans; this final hook just (a) flips the Job status to ``failed``
-    so the UI stops showing it as ``running`` and (b) blocks long enough for
-    in-flight HTTP / OTLP traffic to drain so partial state is durable.
+    Called when the optimize loop is interrupted (Ctrl-C) or aborts
+    with an exception.  Stamps ``overmind.optimize.run_status = failed``
+    + ``overmind.error.message`` on the active span so OTLP flips
+    ``Job.status`` to ``failed`` and sweeps any iteration still in
+    ``RUNNING`` to ``DISCARD``, then blocks long enough for the
+    BatchSpanProcessor to drain pending exports.
     """
-    reporter = getattr(optimizer, "_reporter", None)
-    if reporter is not None:
-        try:
-            reporter.on_failed(reason=reason)
-        except Exception:
-            logger.exception("optimize: reporter.on_failed raised; continuing teardown")
     try:
-        flush_pending_api_updates(timeout=10.0)
+        set_tag(attrs.OPTIMIZE_RUN_STATUS, "failed")
+        if reason:
+            set_tag(attrs.ERROR_MESSAGE, reason[:1000])
     except Exception:
-        logger.exception("optimize: flush_pending_api_updates raised; continuing teardown")
+        logger.debug("optimize: failed to stamp terminal status", exc_info=True)
     try:
         force_flush_traces(timeout_millis=10_000)
     except Exception:

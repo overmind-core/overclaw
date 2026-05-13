@@ -7,12 +7,15 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from overmind import SpanType, attrs, set_tag
 from overmind.optimize.optimizer import Optimizer
 from overmind.optimize.steps.state import SkillRunState
+from overmind.tracing import force_flush_traces, observe_safe
 
 logger = logging.getLogger("overmind.optimize.steps.evaluate")
 
 
+@observe_safe(span_name="overmind.optimize.evaluate", type=SpanType.WORKFLOW)
 def run_evaluate(
     state: SkillRunState,
     *,
@@ -20,6 +23,12 @@ def run_evaluate(
     candidate_id: str,
     candidate_dir: str,
 ) -> dict[str, Any]:
+    set_tag(attrs.OPTIMIZE_ITERATION, int(iteration))
+    set_tag(attrs.OPTIMIZE_CANDIDATE_METHOD, candidate_id)
+    set_tag(attrs.OPTIMIZE_PHASE, "evaluate_candidate")
+    set_tag(attrs.OPTIMIZE_STEP, "evaluate")
+    if state.job_id:
+        set_tag(attrs.JOB_ID, state.job_id)
     cfg = state.to_config()
     optimizer = Optimizer(cfg)
 
@@ -68,6 +77,11 @@ def run_evaluate(
     score_path = worktree / "score.json"
     score_path.write_text(json.dumps(result, indent=2, default=str))
 
+    avg_total = float(result["avg_total"])
+    set_tag(attrs.OPTIMIZE_CANDIDATE_SCORE, avg_total)
+    set_tag(attrs.OPTIMIZE_CANDIDATE_METHOD, str(candidate_id))
+    force_flush_traces(timeout_millis=1500)
+
     return {
         "status": "ok",
         "step": "evaluate",
@@ -76,5 +90,5 @@ def run_evaluate(
         "candidate_dir": str(worktree),
         "entry_path": str(entry_path),
         "score_path": str(score_path),
-        "avg_total": float(result["avg_total"]),
+        "avg_total": avg_total,
     }

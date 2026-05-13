@@ -15,8 +15,10 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from overmind import SpanType, attrs, set_tag
 from overmind.optimize.optimizer import Optimizer
 from overmind.optimize.steps.state import SkillRunState
+from overmind.tracing import observe_safe
 
 logger = logging.getLogger("overmind.optimize.steps.accept")
 
@@ -75,6 +77,9 @@ def run_accept(
 ) -> dict[str, Any]:
     set_tag(attrs.OPTIMIZE_ITERATION, iteration)
     set_tag(attrs.OPTIMIZE_PHASE, "accept")
+    set_tag(attrs.OPTIMIZE_STEP, "accept")
+    if state.job_id:
+        set_tag(attrs.JOB_ID, state.job_id)
     candidates = _load_candidate_results(candidate_results_path)
     if not candidates:
         state.bump_stall()
@@ -205,6 +210,82 @@ def run_accept(
         state.save()
 
     _prune_git_worktrees([c["candidate_dir"] for c in candidates if c.get("candidate_dir")])
+
+    # ---- Stamp iteration outcome on the active OTel span so the OTLP
+    # ingest can build the matching ``JobIteration`` row.  Mirrors the
+    # tags the legacy CLI loop sets on its ``optimizer.iteration`` span
+    # (decision / score / dimension_scores / suggestions / agent_code /
+    # per-candidate analytics).
+    iter_decision = "keep" if decision == "accept" else "discard"
+    set_tag(attrs.OPTIMIZE_ITERATION_DECISION, iter_decision)
+    set_tag(attrs.OPTIMIZE_ITERATION_SCORE, float(winner["avg_total"]))
+    set_tag(attrs.OPTIMIZE_ITERATION_IMPROVEMENT, float(delta))
+    set_tag(
+        attrs.OPTIMIZE_ITERATION_REASON,
+        f"{'Improved' if decision == 'accept' else 'No improvement'} ({delta:+.2f})",
+    )
+    set_tag(attrs.OPTIMIZE_STALL_COUNT, state.stall_count)
+    set_tag(attrs.OPTIMIZE_ACCEPTED, bool(decision == "accept"))
+
+    # Winner code → ``JobIteration.agent_code``.
+    winner_entry = winner.get("entry_path")
+    if winner_entry and Path(winner_entry).is_file():
+        try:
+            set_tag(attrs.OPTIMIZE_ITERATION_AGENT_CODE, Path(winner_entry).read_text())
+        except Exception:
+            logger.debug("accept: failed to read winner entry file", exc_info=True)
+
+    # Per-dimension scores from the winning candidate's evaluation
+    # payload.  ``evaluate_worktree`` writes the full evaluator output
+    # into ``score.json`` → ``winner["evaluation"]``.
+    eval_payload = winner.get("evaluation") or {}
+    dim_scores = {k: float(v) for k, v in eval_payload.items() if k != "avg_total" and isinstance(v, (int, float))}
+    if dim_scores:
+        set_tag(attrs.OPTIMIZE_ITERATION_DIMENSION_SCORES, dim_scores)
+
+    # Suggestions: re-read plan.json for the winning candidate (the
+    # diagnose step persisted them so we can surface them now).
+    suggestions: list[str] = []
+    plan_path = Path(winner.get("candidate_dir", "")) / "plan.json"
+    if plan_path.is_file():
+        try:
+            plan_data = json.loads(plan_path.read_text())
+            suggestions = [str(s) for s in (plan_data.get("suggestions") or [])]
+        except Exception:
+            logger.debug("accept: failed to read winner plan.json", exc_info=True)
+    if suggestions:
+        set_tag(attrs.OPTIMIZE_ITERATION_SUGGESTIONS, suggestions)
+
+    # Emit one short-lived ``optimizer.evaluate_candidate``-shaped span
+    # per scored candidate so OTLP's ``_build_candidate_entry`` can
+    # construct the ``c0 / c1 / c2`` candidate badges on the
+    # JobIteration row.  Lives entirely inside the accept span (we open
+    # and close each one synchronously) so they all carry the same
+    # ``overmind.job.id`` via context propagation.
+    from overmind import start_span as _otel_span  # local import: avoid heavy import on cold step
+
+    for cand in scored:
+        with _otel_span(
+            "optimizer.evaluate_candidate",
+            attributes={
+                attrs.OPTIMIZE_ITERATION: int(iteration),
+                attrs.OPTIMIZE_CANDIDATE_METHOD: str(cand["candidate_id"]),
+                attrs.OPTIMIZE_CANDIDATE_SCORE: float(cand["avg_total"]),
+                attrs.OPTIMIZE_CANDIDATE_ADJUSTED_SCORE: float(cand["avg_total"]),
+            },
+        ):
+            pass
+
+    if early_stop:
+        # Early stopping ends the run on the accept step itself —
+        # signal terminal state so OTLP flips ``Job.status`` to
+        # ``completed``.
+        set_tag(attrs.OPTIMIZE_RUN_STATUS, "completed")
+        set_tag(attrs.OPTIMIZE_FINAL_BEST_SCORE, float(state.best_score))
+        set_tag(
+            attrs.OPTIMIZE_REPORT_IMPROVEMENT,
+            float(state.best_score - (state.baseline_score or state.best_score)),
+        )
 
     return {
         "status": "ok",

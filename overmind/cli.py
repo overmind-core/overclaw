@@ -498,6 +498,41 @@ def main() -> None:
     if args.command == "optimize-step" and not os.getenv("OVERMIND_API_KEY"):
         os.environ["OVERMIND_API_KEY"] = "skill-local-no-export"
 
+    # Distributed tracing across optimize-step CLI invocations: read the
+    # W3C traceparent persisted by ``optimize-step init`` and export it
+    # into the environment BEFORE ``overmind.init()`` runs.  The SDK's
+    # :func:`_attach_remote_parent_if_present` picks it up so every span
+    # this step emits becomes a child of the workflow root span emitted
+    # at init time — single trace_id, single Job row in the UI, regardless
+    # of how many separate shells the host coding agent spawns to drive
+    # the loop.  ``init`` skips this (it owns root span creation), and
+    # any pre-set ``TRACEPARENT`` from an enclosing tracer wins over the
+    # state-file value.
+    if (
+        args.command == "optimize-step"
+        and getattr(args, "step", None) != "init"
+        and not os.getenv("TRACEPARENT")
+        and not os.getenv("OTEL_TRACEPARENT")
+    ):
+        state_path = getattr(args, "state", None)
+        if isinstance(state_path, str) and state_path:
+            try:
+                import json as _json
+                from pathlib import Path as _Path
+
+                _state = _json.loads(_Path(state_path).read_text())
+                _tp = _state.get("traceparent")
+                if isinstance(_tp, str) and _tp:
+                    os.environ["TRACEPARENT"] = _tp
+            except Exception:
+                # Bad / missing state file falls through to legacy
+                # ``overmind.job.id``-based coalescing in OTLP ingest.
+                logging.getLogger("overmind.cli").debug(
+                    "optimize-step: could not read traceparent from %s",
+                    state_path,
+                    exc_info=True,
+                )
+
     # Wire up logging as early as possible so every module that gets
     # imported next (commands, optimizer, coding agent, …) can emit debug
     # traces from its module-level loggers.  ``overmind init`` configures
