@@ -43,6 +43,7 @@ from uuid import UUID
 
 import tomlkit
 
+from overmind.core.constants import DEFAULT_BASE_URL
 from overmind.openapi_client import ApiClient, Configuration
 from overmind.openapi_client.api.agents_api import AgentsApi
 from overmind.openapi_client.api.auth_api import AuthApi
@@ -239,11 +240,18 @@ class OvermindClient(
 
 
 def get_client() -> OvermindClient | None:
-    """Return a configured client if ``OVERMIND_API_URL`` and ``OVERMIND_API_KEY`` are set."""
-    base_url = os.getenv("OVERMIND_API_URL", "").strip().rstrip("/")
+    """Return a configured client if ``OVERMIND_API_KEY`` is set.
+
+    ``OVERMIND_API_URL`` is optional: when unset, it falls back to
+    :data:`overmind.core.constants.DEFAULT_BASE_URL` (the Overmind Cloud
+    endpoint), mirroring the behaviour of :mod:`overmind.tracing`.
+    Self-hosted deployments override the default by setting
+    ``OVERMIND_API_URL`` explicitly.
+    """
+    base_url = (os.getenv("OVERMIND_API_URL", "").strip() or DEFAULT_BASE_URL).rstrip("/")
     token = os.getenv("OVERMIND_API_KEY", "").strip()
-    if not base_url or not token:
-        logger.debug(f"get_client: API not configured (base_url_set={bool(base_url)} token_set={bool(token)})")
+    if not token:
+        logger.debug("get_client: API not configured (OVERMIND_API_KEY not set)")
         return None
     cfg = Configuration(host=base_url, api_key=token)
     cfg.access_token = token
@@ -253,8 +261,13 @@ def get_client() -> OvermindClient | None:
 
 
 def is_configured() -> bool:
-    """Return True if both ``OVERMIND_API_URL`` and ``OVERMIND_API_KEY`` are set."""
-    return bool(os.getenv("OVERMIND_API_URL", "").strip() and os.getenv("OVERMIND_API_KEY", "").strip())
+    """Return True if ``OVERMIND_API_KEY`` is set.
+
+    ``OVERMIND_API_URL`` is optional — :func:`get_client` falls back to the
+    Overmind Cloud default when it is unset — so the control-plane client is
+    considered configured as soon as a bearer token is present.
+    """
+    return bool(os.getenv("OVERMIND_API_KEY", "").strip())
 
 
 def get_project_id() -> str | None:

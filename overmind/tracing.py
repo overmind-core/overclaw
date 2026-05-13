@@ -45,6 +45,7 @@ from opentelemetry.trace import Status, StatusCode
 from rich.console import Console
 
 from overmind import attrs
+from overmind.core.constants import DEFAULT_BASE_URL
 from overmind.utils.io import read_api_key_masked
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,9 @@ console = Console()
 # utility functions
 # ---------------------------------------------------------------------------
 
-DEFAULT_BASE_URL = "https://api.overmindlab.ai"
+# ``DEFAULT_BASE_URL`` is re-exported above from ``overmind.core.constants`` so
+# external imports (``from overmind.tracing import DEFAULT_BASE_URL``) continue
+# to resolve. Edit the canonical value in ``overmind/core/constants.py``.
 
 
 def get_api_settings(
