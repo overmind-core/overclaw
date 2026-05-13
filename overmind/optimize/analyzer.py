@@ -39,8 +39,8 @@ from overmind.prompts.analyzer import (
     MULTI_FILE_AWARENESS_SECTION,
     SINGLE_PASS_PROMPT,
 )
+from overmind.tracing import observe_safe
 from overmind.utils.llm import llm_completion
-from overmind.utils.tracing import traced
 
 if TYPE_CHECKING:
     from overmind.optimize.failure_registry import FailureRegistry
@@ -1355,7 +1355,7 @@ def format_component_weights(weights: dict[str, float]) -> str:
 # ---------------------------------------------------------------------------
 
 
-@traced(span_name="overmind_generate_candidates", type=SpanType.FUNCTION)
+@observe_safe(span_name="overmind.optimize.generate_candidates", type=SpanType.FUNCTION)
 def generate_candidates(
     agent_code: str,
     case_results: list[dict],
@@ -1834,11 +1834,13 @@ def generate_candidates(
 
     valid_count = sum(1 for r in all_results if r.get("updated_code") or r.get("bundle_updates"))
     methods = [r.get("method", "unknown") for r in all_results]
-    set_tag(attrs.CANDIDATES_REQUESTED, str(num_candidates))
-    set_tag(attrs.CANDIDATES_PRODUCED, str(valid_count))
-    set_tag(attrs.CANDIDATES_METHODS, json.dumps(methods))
-    set_tag(attrs.CANDIDATES_HAS_DIAGNOSIS, str(diag is not None))
-    set_tag(attrs.CANDIDATES_USE_BUNDLE, str(use_bundle))
+    set_tag(attrs.CANDIDATES_REQUESTED, int(num_candidates))
+    set_tag(attrs.CANDIDATES_PRODUCED, valid_count)
+    # ``methods`` is a list of strings — ``set_tag`` passes it through
+    # natively; no need to pre-encode as JSON here.
+    set_tag(attrs.CANDIDATES_METHODS, methods)
+    set_tag(attrs.CANDIDATES_HAS_DIAGNOSIS, diag is not None)
+    set_tag(attrs.CANDIDATES_USE_BUNDLE, bool(use_bundle))
     if diag:
         # Note: root_cause text intentionally not tagged — it can echo agent
         # code / policy snippets which we don't want to ship to the trace UI.

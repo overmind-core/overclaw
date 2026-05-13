@@ -146,7 +146,12 @@ class TestSaveDataset:
     def test_saves(self, overmind_tmp_project: Path):
         console = MagicMock()
         cases = [{"input": {"x": 1}, "expected_output": {"y": 2}}]
-        path = _save_dataset(cases, "dsagent", console)
+        mock_client = MagicMock()
+        mock_client.get_agent.return_value = MagicMock(id="agent-id")
+        with patch(
+            "overmind.commands.setup_cmd.get_client", return_value=mock_client
+        ):
+            path = _save_dataset(cases, "dsagent", console)
         assert Path(path).exists()
         loaded = json.loads(Path(path).read_text())
         assert len(loaded) == 1

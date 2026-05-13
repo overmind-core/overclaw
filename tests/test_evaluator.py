@@ -957,7 +957,7 @@ class TestLlmJudge:
 # ---------------------------------------------------------------------------
 
 
-@patch("overmind.utils.tracing.start_child_span")
+@patch("overmind.tracing.start_child_span")
 class TestSpecGenerator:
     def test_auto_judge_weight_with_text_fields(self, _mock_span):
         from overmind.setup.spec_generator import generate_spec_from_proposal

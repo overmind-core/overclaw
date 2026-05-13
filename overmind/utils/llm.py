@@ -9,7 +9,7 @@ from typing import Any
 import litellm
 
 from overmind import SpanType, attrs, set_tag
-from overmind.utils.tracing import start_child_span
+from overmind.tracing import start_child_span
 
 logger = logging.getLogger("overmind.llm")
 
@@ -123,13 +123,17 @@ def llm_completion(
     # Wrap each LLM call in its own child span so it flushes to the backend
     # as soon as the call returns — long-running parent spans don't stall
     # progress visibility in the trace UI.
+    # Wrap each LLM call in its own child span so it flushes to the backend
+    # as soon as the call returns — long-running parent spans don't stall
+    # progress visibility in the trace UI.  The span type is stamped by
+    # :func:`start_child_span` via ``SpanType.LLM``; we don't write a bare
+    # ``"type"`` attribute alongside it.
     with start_child_span("overmind_llm_completion", span_type=SpanType.LLM):
         set_tag(attrs.LLM_MODEL, model)
-        set_tag("type", "llm_call")
         set_tag(attrs.LLM_PROVIDER, provider)
-        set_tag(attrs.LLM_REQUEST_MESSAGE_COUNT, str(num_msgs))
-        set_tag(attrs.LLM_REQUEST_MESSAGE_CHARS, str(total_chars))
-        set_tag(attrs.LLM_REQUEST_TOOL_COUNT, str(num_tools))
+        set_tag(attrs.LLM_REQUEST_MESSAGE_COUNT, num_msgs)
+        set_tag(attrs.LLM_REQUEST_MESSAGE_CHARS, total_chars)
+        set_tag(attrs.LLM_REQUEST_TOOL_COUNT, num_tools)
         if kwarg_keys:
             set_tag(attrs.LLM_REQUEST_KWARGS, kwarg_keys)
 
@@ -143,7 +147,7 @@ def llm_completion(
             )
         except Exception as exc:
             elapsed = time.monotonic() - t0
-            set_tag(attrs.LLM_ELAPSED_SECONDS, f"{elapsed:.3f}")
+            set_tag(attrs.LLM_ELAPSED_SECONDS, round(elapsed, 3))
             set_tag(attrs.LLM_ERROR, type(exc).__name__)
             logger.exception(
                 f"llm_completion FAIL  model={model} provider={provider} "
@@ -154,10 +158,10 @@ def llm_completion(
         elapsed = time.monotonic() - t0
         pt, ct, tt = _usage_tuple(response)
         preview = _response_preview(response)
-        set_tag(attrs.LLM_ELAPSED_SECONDS, f"{elapsed:.3f}")
-        set_tag(attrs.LLM_USAGE_PROMPT_TOKENS, str(pt))
-        set_tag(attrs.LLM_USAGE_COMPLETION_TOKENS, str(ct))
-        set_tag(attrs.LLM_USAGE_TOTAL_TOKENS, str(tt))
+        set_tag(attrs.LLM_ELAPSED_SECONDS, round(elapsed, 3))
+        set_tag(attrs.LLM_USAGE_PROMPT_TOKENS, pt)
+        set_tag(attrs.LLM_USAGE_COMPLETION_TOKENS, ct)
+        set_tag(attrs.LLM_USAGE_TOTAL_TOKENS, tt)
         logger.info(
             f"llm_completion OK    model={model} provider={provider} elapsed={elapsed:.2f}s "
             f"tokens_in={pt} tokens_out={ct} total={tt} preview={preview!r}"

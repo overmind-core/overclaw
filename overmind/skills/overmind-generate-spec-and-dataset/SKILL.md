@@ -13,6 +13,8 @@ ordered pass so the input/output schemas always agree:
 
 This skill replaces the two earlier ones (`overmind-generate-policy-and-eval` and `overmind-generate-dataset`). Doing both in one pass eliminates the most common failure mode of the old flow: a dataset that was generated against one input/output shape and an eval spec that scores a different shape.
 
+> always export the environment variables OVERMIND_API_KEY and OVERMIND_API_URL if present in the `.env`
+
 After this skill finishes, run `/overmind-optimise-agent` or `overmind optimize <agent>` to start optimization.
 
 ## When to use this skill
@@ -44,6 +46,7 @@ User: *“Generate eval spec + dataset for `hotel-agent`.”* You resolve the re
 - **Preview files over giant chat pastes**: Prefer writing preview artifacts to disk and summarizing in chat (deterministic paths, IDE-openable). Full paste is optional when the user requests it.
 - **No silent dropping**: never silently drop input fields, output fields, sibling packages, seed cases, or existing artifact logic. Preserve, repair, or explicitly report every dropped item.
 - **Smoke testing here is non-blocking but owned by this skill**: this skill may run light invocation/schema smoke checks against up to three dataset cases. Do not run full semantic evaluation here. If a smoke check reaches external APIs and fails due to credentials, auth, network, or provider configuration, classify it as an environment issue and keep structurally valid artifacts.
+- **Backend sync is mandatory (no silent skips)**: every artifact this skill writes — `eval_spec.json`, `policies.md`, and `dataset.json` — must also be pushed to the Overmind backend via `overmind.storage.get_storage()` (`save_spec` / `save_policy` / `save_dataset`) in the same step that writes the local file. The optimize loop (`/overmind-optimise-agent`) and the UI both read from the backend record, so a local-only artifact is **not** considered "saved". If `OVERMIND_API_URL` / `OVERMIND_API_KEY` / `OVERMIND_PROJECT_ID` are not configured, stop and tell the user to configure them in `.overmind/.env` before continuing — do not write the local files only and claim success.
 
 ## Workflow
 
@@ -64,11 +67,11 @@ Spec + Dataset Progress:
 - [ ] Step 3: Generate policy from code, existing doc, or targeted elicitation
 - [ ] Step 4: Build eval_spec deterministically (in memory)
 - [ ] Step 5: Write preview files + summary; optional full paste; save vs edit AskQuestion
-- [ ] Step 6: Save policy.md + eval_spec.json
+- [ ] Step 6: Save policy.md + eval_spec.json **and push spec + policy to the Overmind backend**
 - [ ] Step 7: Decide on seed data (ask before generating)
 - [ ] Step 8: Generate dataset to **preview** file; enforce schema agreement
-- [ ] Step 9: Promote preview → `dataset.json` (replace / append / backup — ask before touching an existing `dataset.json`)
-- [ ] Step 10: Smoke check, summarize, and recommend optimization
+- [ ] Step 9: Promote preview → `dataset.json` (replace / append / backup) **and push dataset to the Overmind backend (`make_active=True`)**
+- [ ] Step 10: Smoke check, summarize, confirm backend sync, and recommend optimization
 ```
 
 ### Step 1 — Resolve the agent
@@ -229,20 +232,50 @@ After building `policies.md` content and `eval_spec` dict in memory (Steps 3–4
 
 1. **`AskQuestion`**: **Save and continue** | **Edit policy** | **Edit eval spec** | **Edit both**. On edits, revise in memory, **overwrite the two preview files**, refresh the summary, ask again. **Do not** write `policies.md` or `eval_spec.json` until the user picks **Save and continue**.
 
-### Step 6 — Save policy and spec
+### Step 6 — Save policy and spec (local + backend)
 
-Write canonical `policies.md` and `eval_spec.json`, then **delete** `_preview_policies.md` and `_preview_eval_spec.json` if they exist (unless the user asked to keep them).
+Write canonical `policies.md` and `eval_spec.json`, **then immediately push them to the Overmind backend** via `overmind.storage.get_storage()`, then delete the preview files (unless the user asked to keep them).
+
+`save_spec` upserts the `Agent` record (creating it if needed and capturing the assigned UUID into `storage.agent_id` — persist this for Step 9 and for `/overmind-optimise-agent`). `save_policy` patches `policy_markdown` and `policy_data` on the same agent. Both calls are mandatory; treat an exception as a hard failure (report it to the user, do not pretend the artifacts are saved).
 
 ```python
+import json
+from pathlib import Path
+
+import overmind
+from overmind.core.paths import load_overmind_dotenv
+from overmind.storage import configure_storage, get_storage, StorageNotConfiguredError
+
+load_overmind_dotenv()
+overmind.init()
+
 base = Path(".overmind/agents") / agent_name / "setup_spec"
 base.mkdir(parents=True, exist_ok=True)
 (base / "policies.md").write_text(policy_md.rstrip() + "\n")
 (base / "eval_spec.json").write_text(json.dumps(spec, indent=2))
+
+configure_storage(agent_path=spec["agent_path"], agent_name=agent_name)
+try:
+    storage = get_storage()
+except StorageNotConfiguredError as exc:
+    raise SystemExit(
+        f"Overmind backend not configured ({exc}). Set OVERMIND_API_URL / "
+        "OVERMIND_API_KEY / OVERMIND_PROJECT_ID in .overmind/.env, then re-run "
+        "this step. Local files are written but not synced."
+    )
+
+storage.save_spec(spec)
+storage.save_policy(policy_md, spec.get("policy"))
+agent_id = storage.get_agent_id()
+print(f"Backend sync ok — agent_id={agent_id}")
+
 for name in ("_preview_policies.md", "_preview_eval_spec.json"):
     p = base / name
     if p.is_file():
         p.unlink()
 ```
+
+Record the returned `agent_id` (e.g. write it into `.overmind/agents/<agent-name>/.overmind_agent_id` or pass it through your in-memory state) so Step 9 can reuse the same backend record for the dataset upload.
 
 ### Step 7 — Decide on seed data
 
@@ -364,7 +397,7 @@ rm _datagen_runner.py
 
 If `generate_diverse_synthetic_data` import fails, install overmind (`pip install overmind` / `uv add overmind`) and re-run. Direct `litellm` fallback is acceptable only when overmind is genuinely unavailable.
 
-### Step 9 — Promote preview to `dataset.json`
+### Step 9 — Promote preview to `dataset.json` (local + backend)
 
 The canonical dataset path is `.overmind/agents/<name>/setup_spec/dataset.json`. Step 8 must **only** write `_preview_dataset.json` until this step decides fate.
 
@@ -378,6 +411,51 @@ The canonical dataset path is `.overmind/agents/<name>/setup_spec/dataset.json`.
 - *Save backup, then replace*: copy current `dataset.json` to `dataset.backup.json` (or timestamped), then same as *Replace*.
 
 If the user aborts, delete `_preview_dataset.json` only after they confirm they do not need the preview; leave `dataset.json` unchanged.
+
+**Push the final list to the Overmind backend** as soon as `dataset.json` is settled (i.e. on every Replace / Append / fresh promote — *not* on user-aborted runs that leave `dataset.json` unchanged). Use the same `agent_id` captured in Step 6 so the dataset attaches to the right `Agent` record, and set `make_active=True` so the optimize loop picks it up:
+
+```python
+import json
+from pathlib import Path
+
+import overmind
+from overmind.core.paths import load_overmind_dotenv
+from overmind.storage import configure_storage, get_storage
+
+load_overmind_dotenv()
+overmind.init()
+
+ds_path = Path(".overmind/agents") / agent_name / "setup_spec" / "dataset.json"
+datapoints = json.loads(ds_path.read_text())
+
+configure_storage(
+    agent_path=spec["agent_path"],
+    agent_name=agent_name,
+    agent_id=agent_id_from_step_6,  # required so dataset attaches to the same Agent row
+)
+storage = get_storage()
+
+meta = storage.save_dataset(
+    datapoints,
+    source="synthetic" if not seed_path_from_step_0 else "mixed",
+    generator_model=os.environ.get("SYNTHETIC_DATAGEN_MODEL", ""),
+    metadata={
+        "num_cases": len(datapoints),
+        "num_personas": NUM_PERSONAS,
+        "seed_path": seed_path_from_step_0 or None,
+    },
+    make_active=True,
+)
+if not meta:
+    raise SystemExit(
+        "Dataset upload to Overmind backend failed. Check OVERMIND_API_URL / "
+        "OVERMIND_API_KEY / OVERMIND_PROJECT_ID and re-run this step. "
+        "Local dataset.json is fine; the backend record is missing."
+    )
+print(f"Backend sync ok — dataset_id={meta['id']} version={meta['version']} cases={meta['num_datapoints']}")
+```
+
+A failed `save_dataset` (returns `None`) is a hard failure: the optimize loop will not see the new cases. Stop, report the error, and ask the user to fix the API configuration before continuing.
 
 After the final `dataset.json` is in place, run a light smoke check against up to three cases. Call the entrypoint exactly once per case and store the result before inspecting it. For async entrypoints, run through the host language's async event loop.
 
@@ -401,6 +479,7 @@ Tell the user:
 - Smoke-check status and failure classification, if any.
 - Scope summary, including confirmation that every sibling package was classified.
 - Confirmation that the entrypoint file is excluded from optimization scope.
+- **Backend sync status**: the resolved `agent_id`, `dataset_id`, `dataset_version`, and that `policy_markdown` was patched onto the Agent record. If any push failed, surface the failure here — do not bury it.
 - **Next step**: run `/overmind-optimise-agent` or `overmind optimize <agent>`.
 
 ## Repair mode
@@ -433,6 +512,8 @@ The diff must be concrete, showing current and proposed values rather than vague
 - **Many generated cases dropped**: Tighten the schema prompt, reduce batch size, generate per persona, or add seed data.
 - **Smoke check unexpected keyword error**: The dataset input field names do not match the Overmind entrypoint signature; repair the dataset schema or repair the separate entrypoint file.
 - **Smoke check API/auth failure**: The artifacts may still be structurally valid; configure credentials before optimization.
+- **Backend sync failure (`StorageNotConfiguredError`)**: `OVERMIND_API_URL` / `OVERMIND_API_KEY` are missing from `.overmind/.env` and the process environment. Set both (plus `OVERMIND_PROJECT_ID` if creating a new agent record), then re-run Step 6 / Step 9.
+- **`save_dataset` returns `None`**: Backend rejected the upload. Inspect the surfaced error (most often the agent record was never created in Step 6, or the project token does not own the project). Re-run Step 6 first, then retry Step 9.
 
 ## What this skill must NOT do
 
@@ -443,3 +524,4 @@ The diff must be concrete, showing current and proposed values rather than vague
 - Never use `string` as an output type.
 - Never put the registered entrypoint in `optimizable_paths`.
 - Never run full semantic evaluation. Only run light smoke checks for invocation/schema compatibility, and classify external API/provider failures as environment issues.
+- Never finish the skill with the local files written but the backend record missing. Backend sync (`save_spec` + `save_policy` + `save_dataset`) is part of "saved", not an optional follow-up.

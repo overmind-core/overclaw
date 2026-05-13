@@ -24,8 +24,8 @@ from overmind.optimize.data import (
     validate_case_against_spec,
 )
 from overmind.prompts.data_analyzer import DATA_QUALITY_ANALYSIS_PROMPT
+from overmind.tracing import observe_safe
 from overmind.utils.display import BRAND, make_spinner_progress
-from overmind.utils.tracing import traced
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-@traced(span_name="overmind_validate_seed_data", type=SpanType.FUNCTION)
+@observe_safe(span_name="overmind.setup.validate_seed_data", type=SpanType.FUNCTION)
 def validate_seed_data(
     cases: list[dict],
     eval_spec: dict,
@@ -62,9 +62,9 @@ def validate_seed_data(
         "issues": issues,
     }
 
-    set_tag(attrs.SEED_VALIDATION_TOTAL_CASES, str(len(cases)))
-    set_tag(attrs.SEED_VALIDATION_VALID_COUNT, str(valid))
-    set_tag(attrs.SEED_VALIDATION_INVALID_COUNT, str(len(issues)))
+    set_tag(attrs.SEED_VALIDATION_TOTAL_CASES, len(cases))
+    set_tag(attrs.SEED_VALIDATION_VALID_COUNT, valid)
+    set_tag(attrs.SEED_VALIDATION_INVALID_COUNT, len(issues))
 
     if not issues:
         console.print(f"  [bold {BRAND}]✓[/bold {BRAND}]  [dim]Validated {len(cases)} cases — all valid[/dim]")
@@ -85,7 +85,7 @@ def validate_seed_data(
 # ---------------------------------------------------------------------------
 
 
-@traced(span_name="overmind_analyze_seed_coverage", type=SpanType.FUNCTION)
+@observe_safe(span_name="overmind.setup.analyze_seed_coverage", type=SpanType.FUNCTION)
 def analyze_seed_coverage(
     cases: list[dict],
     eval_spec: dict,
@@ -133,19 +133,22 @@ def analyze_seed_coverage(
         logger.warning("Could not parse coverage analysis response")
         return _fallback_analysis(cases, eval_spec)
 
+    # ``overall_quality_score`` is expected to be a number on the
+    # 0-10 scale; coerce defensively because the LLM occasionally
+    # returns a string and we'd rather keep the column numeric.
     set_tag(
         attrs.SEED_COVERAGE_QUALITY_SCORE,
-        str(parsed.get("overall_quality_score", "?")),
+        parsed.get("overall_quality_score", 0),
     )
-    set_tag(attrs.SEED_COVERAGE_CASE_COUNT, str(parsed.get("case_count", len(cases))))
+    set_tag(attrs.SEED_COVERAGE_CASE_COUNT, int(parsed.get("case_count", len(cases))))
     gaps = parsed.get("coverage_gaps", [])
-    set_tag(attrs.SEED_COVERAGE_GAP_COUNT, str(len(gaps)))
+    set_tag(attrs.SEED_COVERAGE_GAP_COUNT, len(gaps))
     uncovered_rules = parsed.get("uncovered_policy_rules", [])
     if uncovered_rules:
-        set_tag(attrs.SEED_COVERAGE_UNCOVERED_RULE_COUNT, str(len(uncovered_rules)))
+        set_tag(attrs.SEED_COVERAGE_UNCOVERED_RULE_COUNT, len(uncovered_rules))
     set_tag(
         attrs.SEED_COVERAGE_SUGGESTED_ADDITIONAL_CASES,
-        str(parsed.get("suggested_additional_cases", 0)),
+        int(parsed.get("suggested_additional_cases", 0)),
     )
     _display_analysis(parsed, console)
     return parsed

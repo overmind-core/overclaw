@@ -49,6 +49,7 @@ from overmind.core.constants import OVERMIND_DIR_NAME, overmind_rel
 from overmind.core.logging import setup_logging
 from overmind.core.paths import load_agent_dotenv, load_overmind_dotenv
 from overmind.core.registry import require_overmind_initialized
+from overmind.tracing import force_flush_traces
 
 _FMT = argparse.RawDescriptionHelpFormatter
 
@@ -472,16 +473,6 @@ def _resolve_agent_name_for_env(args: argparse.Namespace) -> str | None:
     return None
 
 
-def _flush_traces() -> None:
-    """Flush all buffered OTel spans so nothing is lost on process exit."""
-    try:
-        provider = _otel_trace.get_tracer_provider()
-        if hasattr(provider, "force_flush"):
-            provider.force_flush(timeout_millis=10_000)
-    except Exception:  # noqa: S110
-        pass
-
-
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -506,7 +497,41 @@ def main() -> None:
     # a real OTLP endpoint.
     if args.command == "optimize-step" and not os.getenv("OVERMIND_API_KEY"):
         os.environ["OVERMIND_API_KEY"] = "skill-local-no-export"
-    overmind.init(service_name="overmind.cli", providers=None)
+
+    # Distributed tracing across optimize-step CLI invocations: read the
+    # W3C traceparent persisted by ``optimize-step init`` and export it
+    # into the environment BEFORE ``overmind.init()`` runs.  The SDK's
+    # :func:`_attach_remote_parent_if_present` picks it up so every span
+    # this step emits becomes a child of the workflow root span emitted
+    # at init time — single trace_id, single Job row in the UI, regardless
+    # of how many separate shells the host coding agent spawns to drive
+    # the loop.  ``init`` skips this (it owns root span creation), and
+    # any pre-set ``TRACEPARENT`` from an enclosing tracer wins over the
+    # state-file value.
+    if (
+        args.command == "optimize-step"
+        and getattr(args, "step", None) != "init"
+        and not os.getenv("TRACEPARENT")
+        and not os.getenv("OTEL_TRACEPARENT")
+    ):
+        state_path = getattr(args, "state", None)
+        if isinstance(state_path, str) and state_path:
+            try:
+                import json as _json
+                from pathlib import Path as _Path
+
+                _state = _json.loads(_Path(state_path).read_text())
+                _tp = _state.get("traceparent")
+                if isinstance(_tp, str) and _tp:
+                    os.environ["TRACEPARENT"] = _tp
+            except Exception:
+                # Bad / missing state file falls through to legacy
+                # ``overmind.job.id``-based coalescing in OTLP ingest.
+                logging.getLogger("overmind.cli").debug(
+                    "optimize-step: could not read traceparent from %s",
+                    state_path,
+                    exc_info=True,
+                )
 
     # Wire up logging as early as possible so every module that gets
     # imported next (commands, optimizer, coding agent, …) can emit debug
@@ -520,6 +545,9 @@ def main() -> None:
         )
 
     try:
+        if args.command != "init":
+            overmind.init(service_name="overmind.cli", providers=None)
+
         if args.command == "init":
             _init()
 
@@ -572,7 +600,10 @@ def main() -> None:
         print("\nAborted.", file=sys.stderr)
         raise SystemExit(130) from None
     finally:
-        _flush_traces()
+        # CLI exits the process right after this; give the BatchSpanProcessor
+        # a generous window so the workflow span and any in-flight LLM /
+        # tool child spans land on the backend before teardown.
+        force_flush_traces(timeout_millis=10_000)
 
 
 if __name__ == "__main__":

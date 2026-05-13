@@ -11,6 +11,7 @@ from overmind.core.constants import OVERMIND_DIR_NAME
 
 
 class TestSetupCmdMainFast:
+    @patch("overmind.commands.setup_cmd.get_client")
     @patch("overmind.commands.setup_cmd.generate_synthetic_data")
     @patch("overmind.commands.setup_cmd.generate_policy_from_code")
     @patch("overmind.commands.setup_cmd.analyze_agent")
@@ -23,9 +24,15 @@ class TestSetupCmdMainFast:
         mock_analyze,
         mock_policy,
         mock_gen,
+        mock_get_client,
         tmp_path,
         monkeypatch,
     ):
+        from unittest.mock import MagicMock as _MM
+
+        mock_get_client.return_value = _MM(
+            **{"get_agent.return_value": _MM(id="agent-id")}
+        )
         (tmp_path / OVERMIND_DIR_NAME).mkdir(parents=True)
         agent_dir = tmp_path / "agents" / "test"
         agent_dir.mkdir(parents=True)
@@ -68,6 +75,7 @@ class TestSetupCmdMainFast:
         )
         assert spec_path.exists()
 
+    @patch("overmind.commands.setup_cmd.get_client")
     @patch("overmind.commands.setup_cmd.generate_synthetic_data")
     @patch("overmind.commands.setup_cmd.improve_existing_policy")
     @patch("overmind.commands.setup_cmd.analyze_agent")
@@ -80,9 +88,15 @@ class TestSetupCmdMainFast:
         mock_analyze,
         mock_improve,
         mock_gen,
+        mock_get_client,
         tmp_path,
         monkeypatch,
     ):
+        from unittest.mock import MagicMock as _MM
+
+        mock_get_client.return_value = _MM(
+            **{"get_agent.return_value": _MM(id="agent-id")}
+        )
         (tmp_path / OVERMIND_DIR_NAME).mkdir(parents=True)
         agent_dir = tmp_path / "agents" / "test"
         agent_dir.mkdir(parents=True)

@@ -10,6 +10,8 @@ Use this skill to create a separate entrypoint file that Overmind can call to ru
 
 **Setup coverage (no silent skips):** Every topic in **Inputs** must be **resolved once per run** — either via `AskQuestion` / chat, or via a **one-line explicit confirmation** when the user already answered in the same conversation before this skill run (quote their choice, ask “still correct?”). Never proceed without resolving each topic.
 
+> always export the environment variables OVERMIND_API_KEY and OVERMIND_API_URL if present in the `.env`
+
 ## Operating principles
 
 - **Mandatory topic coverage**: Cover every item in **Inputs** in order (entrypoint choice, agent path, name, dataset presence, analyzer provider, model, agent LLM provider, **mandatory keys pause**, credentials verified). Do not infer away a user choice; use in-thread short-circuit only as above.

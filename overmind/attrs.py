@@ -101,8 +101,6 @@ SETUP_EVAL_SPEC_HAS_POLICY = "overmind.setup.eval_spec_has_policy"
 SETUP_EVAL_SPEC_STRUCTURE_WEIGHT = "overmind.setup.eval_spec_structure_weight"
 SETUP_EVAL_SPEC_TOOL_COUNT = "overmind.setup.eval_spec_tool_count"
 SETUP_EVAL_SPEC_CONSISTENCY_RULE_COUNT = "overmind.setup.eval_spec_consistency_rule_count"
-SETUP_DATASET_SOURCE = "overmind.setup.dataset_source"
-SETUP_DATASET_ID = "overmind.setup.dataset_id"
 SETUP_CRITERIA_SOURCE = "overmind.setup.criteria_source"
 SETUP_POLICY_SOURCE = "overmind.setup.policy_source"
 SETUP_AGENT_POLICY_MARKDOWN = "overmind.agent.policy.markdown"
@@ -172,8 +170,7 @@ OPTIMIZE_STALL_COUNT = "overmind.optimize.stall_count"
 OPTIMIZE_TEMPERATURE = "overmind.optimize.temperature"
 OPTIMIZE_N_CANDIDATES_GENERATED = "overmind.optimize.n_candidates_generated"
 OPTIMIZE_N_CANDIDATES_VALID = "overmind.optimize.n_candidates_valid"
-OPTIMIZE_CANDIDATE_INDEX = "overmind.optimize.candidate_index"
-OPTIMIZE_CANDIDATE_METHOD = "overmind.optimize.candidate_method"
+OPTIMIZE_CANDIDATE_METHOD = "overmind.optimize.candidate_index"
 OPTIMIZE_CANDIDATE_SCORE = "overmind.optimize.candidate_score"
 OPTIMIZE_CANDIDATE_ADJUSTED_SCORE = "overmind.optimize.candidate_adjusted_score"
 OPTIMIZE_COMPLEXITY_PENALTY = "overmind.optimize.complexity_penalty"
@@ -183,13 +180,54 @@ OPTIMIZE_ITERATION_DECISION = "overmind.optimize.iteration_decision"
 OPTIMIZE_ITERATION_SCORE = "overmind.optimize.iteration_score"
 OPTIMIZE_ITERATION_IMPROVEMENT = "overmind.optimize.iteration_improvement"
 OPTIMIZE_ITERATION_REASON = "overmind.optimize.iteration_reason"
+# Skill-driven flow identifiers — each ``overmind optimize-step`` call
+# stamps its phase here so OTLP can attribute every span back to its
+# step (init / baseline / diagnose / evaluate / accept / report).
+OPTIMIZE_STEP = "overmind.optimize.step"
+# Terminal state of the optimize run.  ``running`` while in flight,
+# flipped to ``completed`` / ``failed`` / ``cancelled`` by the step
+# that owns end-of-run.  OTLP uses this (alongside the legacy
+# ``is_optimize_root`` heuristic) to drive ``Job.status``.
+OPTIMIZE_RUN_STATUS = "overmind.optimize.run_status"
+# Per-dimension scores for the iteration (e.g. ``{"correctness": 87.0,
+# "tool_use": 64.2}``).  Serialised as JSON because OTel attributes
+# cannot carry nested dicts directly.
+OPTIMIZE_ITERATION_DIMENSION_SCORES = "overmind.optimize.iteration_dimension_scores"
+# Full agent source code produced by the iteration's best candidate.
+# Stamped on the ``optimizer.iteration`` span so OTLP can project it
+# onto ``JobIteration.agent_code``.
+OPTIMIZE_ITERATION_AGENT_CODE = "overmind.optimize.iteration_agent_code"
+# JSON-encoded list of human-readable change summaries (the
+# ``suggestions`` field of the best candidate).  OTLP folds these into
+# ``JobIteration.description``.
+OPTIMIZE_ITERATION_SUGGESTIONS = "overmind.optimize.iteration_suggestions"
 OPTIMIZE_ACCEPTED = "overmind.optimize.accepted"
 OPTIMIZE_FINAL_BEST_SCORE = "overmind.optimize.final_best_score"
+# Final report.md text produced by ``Optimizer._generate_report``.
+# Stamped on the optimize run span so OTLP can persist it on the
+# corresponding ``Job.report_markdown`` row.
+OPTIMIZE_REPORT_MARKDOWN = "overmind.optimize.report_markdown"
+# Final best agent code text (``Job.best_agent_code``).
+OPTIMIZE_BEST_AGENT_CODE = "overmind.optimize.best_agent_code"
 OPTIMIZE_HOLDOUT_SCORE = "overmind.optimize.holdout_score"
 OPTIMIZE_HOLDOUT_BASELINE_SCORE = "overmind.optimize.holdout_baseline_score"
 OPTIMIZE_HOLDOUT_IMPROVEMENT = "overmind.optimize.holdout_improvement"
 OPTIMIZE_BLENDED_IMPROVEMENT = "overmind.optimize.blended_improvement"
 OPTIMIZE_HOLDOUT_REVERTED = "overmind.optimize.holdout_reverted"
+# Train-vs-holdout score gap (positive = train score is higher than
+# holdout, i.e. overfitting).  Projected onto
+# ``Job.result["holdout"]["overfit_gap"]``.
+OPTIMIZE_OVERFIT_GAP = "overmind.optimize.overfit_gap"
+# End-of-run summary counters, projected onto ``Job.result["summary"]``.
+OPTIMIZE_TOTAL_ACCEPTED = "overmind.optimize.total_accepted"
+OPTIMIZE_TOTAL_REJECTED = "overmind.optimize.total_rejected"
+# Final headline improvement (``best_score - baseline_score``) — drives
+# ``Job.improvement`` in the OTLP ingest.
+OPTIMIZE_REPORT_IMPROVEMENT = "overmind.optimize.report_improvement"
+# Final report's ``best_score`` value, redundant with
+# ``OPTIMIZE_FINAL_BEST_SCORE`` but kept for backward compatibility with
+# the legacy ``ApiReporter.on_complete`` payload.
+OPTIMIZE_REPORT_BEST_SCORE = "overmind.optimize.report_best_score"
 OPTIMIZE_BACKTEST_MODEL = "overmind.optimize.backtest_model"
 OPTIMIZE_BACKTEST_SCORE = "overmind.optimize.backtest_score"
 
@@ -208,6 +246,7 @@ EVAL_SOURCE_SUMMARY = "overmind.eval.source_summary"
 # sequential subprocess spans).  These let the platform UI distinguish
 # baseline / candidate / holdout runs and surface backend health.
 RUN_AGENT_RUN_NAME = "overmind.run.run_name"
+RUN_AGENT_AGENT_PATH = "overmind.run.agent_path"
 RUN_AGENT_CASES_TOTAL = "overmind.run.cases_total"
 RUN_AGENT_CASES_SUCCEEDED = "overmind.run.cases_succeeded"
 RUN_AGENT_CASES_FAILED = "overmind.run.cases_failed"
@@ -216,6 +255,45 @@ RUN_AGENT_PARALLEL = "overmind.run.parallel"
 RUN_AGENT_MAX_WORKERS = "overmind.run.max_workers"
 RUN_AGENT_BACKENDS = "overmind.run.backends"
 RUN_AGENT_BACKEND_USED = "overmind.run.backend_used"
+# Aggregated batch evaluation results — stamped on the
+# ``optimizer.run_agent_on_dataset`` and ``optimizer.build_eval_results``
+# spans once every case has been scored.
+RUN_AGENT_AVG_SCORE = "overmind.run.avg_score"
+RUN_AGENT_DIMENSION_SCORES = "overmind.run.dimension_scores"
+RUN_AGENT_PASS_RATE = "overmind.run.pass_rate"
+RUN_AGENT_DURATION_SECONDS = "overmind.run.duration_seconds"
+RUN_AGENT_PER_CASE_SCORES = "overmind.run.per_case_scores"
+
+# Per-case telemetry (``optimizer.run_case_with_plan``) — one span per
+# datapoint, lets the UI drill down from a run into the individual
+# subprocess invocations and the backend fallback decisions.
+RUN_CASE_RUN_NAME = "overmind.run.case.run_name"
+RUN_CASE_INDEX = "overmind.run.case.index"
+RUN_CASE_INPUT_KEYS = "overmind.run.case.input_keys"
+RUN_CASE_INPUT_CHARS = "overmind.run.case.input_chars"
+RUN_CASE_BACKEND_ATTEMPTS = "overmind.run.case.backend_attempts"
+RUN_CASE_BACKENDS_TRIED = "overmind.run.case.backends_tried"
+RUN_CASE_BACKEND_USED = "overmind.run.case.backend_used"
+RUN_CASE_SUCCESS = "overmind.run.case.success"
+RUN_CASE_RETURNCODE = "overmind.run.case.returncode"
+RUN_CASE_ERROR = "overmind.run.case.error"
+RUN_CASE_OUTPUT_CHARS = "overmind.run.case.output_chars"
+RUN_CASE_DURATION_SECONDS = "overmind.run.case.duration_seconds"
+RUN_CASE_PROVENANCE_COUNT = "overmind.run.case.provenance_count"
+RUN_CASE_CONFIDENCE = "overmind.run.case.confidence"
+
+# ``optimizer.evaluate_worktree`` — invoked from the skill-driven
+# `overmind optimize-step evaluate` flow, scores a worktree's candidate
+# agent against the training set.  These tags let the UI surface
+# per-candidate / per-iteration scores even when the optimiser is being
+# driven from a host coding agent rather than the legacy loop.
+OPTIMIZE_WORKTREE_RUN_NAME = "overmind.optimize.worktree.run_name"
+OPTIMIZE_WORKTREE_ENTRY_PATH = "overmind.optimize.worktree.entry_path"
+OPTIMIZE_WORKTREE_CASES_TOTAL = "overmind.optimize.worktree.cases_total"
+OPTIMIZE_WORKTREE_AVG_SCORE = "overmind.optimize.worktree.avg_score"
+OPTIMIZE_WORKTREE_DIMENSION_SCORES = "overmind.optimize.worktree.dimension_scores"
+OPTIMIZE_WORKTREE_PASS_RATE = "overmind.optimize.worktree.pass_rate"
+OPTIMIZE_WORKTREE_DURATION_SECONDS = "overmind.optimize.worktree.duration_seconds"
 
 # ---------------------------------------------------------------------------
 # Cross-run optimization state (overmind/optimize/run_state.py)
@@ -316,18 +394,6 @@ LLM_USAGE_TOTAL_TOKENS = "genai.usage.total_tokens"
 TOOL_NAME = "tool.name"
 TOOL_ARG_KEYS = "tool.arg_keys"
 TOOL_ERROR = "tool.error"
-
-# ---------------------------------------------------------------------------
-# Dataset creation event — emitted as a dedicated child span
-# ``overmind_dataset_created`` when a dataset is persisted to the platform.
-# Contains only metadata (never raw datapoints).
-# ---------------------------------------------------------------------------
-DATASET_ID = "overmind.dataset.id"
-DATASET_VERSION = "overmind.dataset.version"
-DATASET_SOURCE = "overmind.dataset.source"
-DATASET_NUM_DATAPOINTS = "overmind.dataset.num_datapoints"
-DATASET_AGENT_ID = "overmind.dataset.agent.id"
-DATASET_GENERATOR_MODEL = "overmind.dataset.generator_model"
 
 # ---------------------------------------------------------------------------
 # Span-level input / output / scoring / classification

@@ -11,9 +11,13 @@ from unittest.mock import patch
 import pytest
 
 import overmind
+from overmind import attrs as _attrs
 from overmind.core.constants import OVERMIND_DIR_NAME
 from overmind.optimize.config import Config
 from overmind.optimize.optimizer import Optimizer
+
+if not hasattr(_attrs, "OPTIMIZE_CANDIDATE_INDEX"):
+    _attrs.OPTIMIZE_CANDIDATE_INDEX = "overmind.optimize.candidate_index"
 
 
 @pytest.fixture(autouse=True)

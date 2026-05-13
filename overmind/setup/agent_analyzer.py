@@ -20,11 +20,11 @@ from overmind import SpanType, attrs, set_tag
 from overmind.core.logging import stage
 from overmind.core.registry import project_root, project_root_from_agent_file
 from overmind.prompts.agent_analyzer import ANALYSIS_PROMPT
+from overmind.tracing import observe_safe
 from overmind.utils.code import AgentBundle
 from overmind.utils.display import BRAND, make_spinner_progress
 from overmind.utils.ignore import build_ignore_predicate
 from overmind.utils.llm import llm_completion
-from overmind.utils.tracing import traced
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ def _build_setup_code_section(agent_path: str, bundle: AgentBundle | None) -> st
     return f"```python\n{code}\n```"
 
 
-@traced(span_name="overmind_analyze_agent", type=SpanType.FUNCTION)
+@observe_safe(span_name="overmind.setup.analyze_agent", type=SpanType.FUNCTION)
 def analyze_agent(
     agent_path: str,
     model: str,

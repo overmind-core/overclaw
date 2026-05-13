@@ -22,10 +22,12 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from overmind import SpanType, attrs, set_tag
 from overmind.core.paths import (
     agent_experiments_dir,
     agent_setup_spec_dir,
@@ -34,6 +36,7 @@ from overmind.core.paths import (
 from overmind.core.registry import get_agent_id, resolve_agent
 from overmind.optimize.config import Config, apply_eval_spec_scope
 from overmind.optimize.steps.state import SkillRunState
+from overmind.tracing import force_flush_traces, get_tracer, observe_safe
 
 logger = logging.getLogger("overmind.optimize.steps.init")
 
@@ -63,6 +66,7 @@ def _coerce_into_config_kwargs(raw: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+@observe_safe(span_name="overmind.optimize.init", type=SpanType.FUNCTION)
 def run_init(
     *,
     agent_name: str,
@@ -158,16 +162,69 @@ def run_init(
         state_path=state_file,
     )
     state.output_dir = str(experiments_dir)
+    state.job_id = str(uuid.uuid4())
+
+    # Emit the optimize workflow root span and persist its W3C
+    # traceparent so every subsequent ``overmind optimize-step`` CLI
+    # invocation attaches its spans as children of this root — single
+    # trace_id, single Job in the UI.  Stamps the full Config snapshot
+    # (iterations, candidates-per-iteration, models, dataset, eval spec
+    # path, …) so the OTLP ingest can populate the Job header on the
+    # very first span it sees, even if the user Ctrl-C's before the
+    # baseline finishes.
+    tracer = get_tracer()
+    with tracer.start_as_current_span("overmind.optimize") as root_span:
+        root_span.set_attribute(attrs.SPAN_TYPE, SpanType.WORKFLOW.value)
+        root_span.set_attribute(attrs.COMMAND, "optimize")
+        root_span.set_attribute(attrs.JOB_ID, state.job_id)
+        root_span.set_attribute(attrs.AGENT_NAME, agent_name)
+        root_span.set_attribute(attrs.OPTIMIZE_AGENT_NAME, agent_name)
+        root_span.set_attribute(attrs.OPTIMIZE_AGENT_PATH, cfg.agent_path or "")
+        root_span.set_attribute(attrs.OPTIMIZE_ENTRYPOINT_FN, cfg.entrypoint_fn or "")
+        root_span.set_attribute(attrs.OPTIMIZE_ITERATIONS, int(cfg.iterations))
+        root_span.set_attribute(attrs.OPTIMIZE_CANDIDATES_PER_ITERATION, int(cfg.candidates_per_iteration))
+        root_span.set_attribute(attrs.OPTIMIZE_ANALYZER_MODEL, cfg.analyzer_model or "")
+        root_span.set_attribute(attrs.OPTIMIZE_LLM_JUDGE_MODEL, cfg.llm_judge_model or "disabled")
+        root_span.set_attribute(attrs.OPTIMIZE_PARALLEL, bool(cfg.parallel))
+        root_span.set_attribute(attrs.OPTIMIZE_MAX_WORKERS, int(cfg.max_workers))
+        root_span.set_attribute(attrs.OPTIMIZE_EARLY_STOPPING_PATIENCE, int(cfg.early_stopping_patience))
+        root_span.set_attribute(attrs.OPTIMIZE_EVAL_SPEC_PATH, cfg.eval_spec_path or "")
+        root_span.set_attribute(attrs.OPTIMIZE_DATA_PATH, cfg.data_path or "")
+        root_span.set_attribute(attrs.OPTIMIZE_RUN_STATUS, "running")
+        root_span.set_attribute(attrs.STATUS, "running")
+
+        # Capture the trace context BEFORE the span ends so subsequent
+        # CLI invocations can stitch onto it.  W3C format:
+        # ``00-<trace_id_hex32>-<span_id_hex16>-<flags>``.
+        ctx = root_span.get_span_context()
+        flags = "01" if ctx.trace_flags else "00"
+        state.traceparent = f"00-{ctx.trace_id:032x}-{ctx.span_id:016x}-{flags}"
+
+    # Also stamp the same job id on the active init span (parent of the
+    # workflow root via @observe_safe) so OTLP-side coalescing works as
+    # a fallback when TRACEPARENT propagation is unavailable (e.g. the
+    # user invokes steps from different shells).
+    set_tag(attrs.JOB_ID, state.job_id)
+    set_tag(attrs.OPTIMIZE_STEP, "init")
+
     state.save()
+
+    # Make sure the root span (and our init span) ship to the backend
+    # before this CLI process exits — without this the Job row stays
+    # invisible until the next step lands.
+    force_flush_traces(timeout_millis=3000)
 
     logger.info(
         f"optimize-step init: agent={agent_name} state={state_file} "
+        f"job_id={state.job_id} "
         f"iterations={cfg.iterations} candidates={cfg.candidates_per_iteration}"
     )
 
     return {
         "status": "ok",
         "state_path": str(state_file),
+        "job_id": state.job_id,
+        "traceparent": state.traceparent,
         "agent_path": cfg.agent_path,
         "entrypoint_fn": cfg.entrypoint_fn,
         "eval_spec_path": cfg.eval_spec_path,

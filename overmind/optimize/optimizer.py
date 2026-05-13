@@ -48,7 +48,6 @@ from rich.text import Text
 
 from overmind import SpanType, attrs, set_tag
 from overmind import start_span as otel_span
-from overmind.client import ApiReporter, flush_pending_api_updates
 from overmind.core.paths import (
     agent_experiments_dir,
     agent_instrumented_dir,
@@ -81,9 +80,8 @@ from overmind.optimize.runner import AgentRunner, Language, RunnerConfig
 from overmind.optimize.trace_reader import (
     ParsedTrace,
     attach_shadow_provenance,
-    parse_trace_file_per_line,
 )
-from overmind.storage import StorageNotConfiguredError, get_storage
+from overmind.tracing import force_flush_traces, observe_safe
 from overmind.utils.code import AgentBundle
 from overmind.utils.display import BRAND, confirm_option, make_spinner_progress, rel
 from overmind.utils.instrument import deinstrument_source
@@ -93,7 +91,6 @@ from overmind.utils.policy import (
     format_for_judge,
     load_policy_data,
 )
-from overmind.utils.tracing import force_flush_traces, traced
 
 
 def _is_subpath(child: Path, parent: Path) -> bool:
@@ -171,28 +168,16 @@ def _eval_spec_json_for_otlp_tag(spec: dict) -> str:
 class Optimizer:
     """Runs the full optimization pipeline for an agent."""
 
-    @traced("optimizer.init")
+    @observe_safe("optimizer.init")
     def __init__(self, config: Config):
         self.config = config
         self.console = Console()
-        set_tag(attrs.OPTIMIZE_AGENT_NAME, getattr(config, "agent_name", "") or "")
-        set_tag(attrs.AGENT_NAME, getattr(config, "agent_name", "") or "")
-        set_tag(attrs.OPTIMIZE_AGENT_PATH, str(getattr(config, "agent_path", "") or ""))
-        set_tag(attrs.OPTIMIZE_ITERATIONS, int(getattr(config, "iterations", 0) or 0))
-        set_tag(
-            attrs.OPTIMIZE_ANALYZER_MODEL,
-            getattr(config, "analyzer_model", "") or "",
-        )
-        set_tag(
-            attrs.OPTIMIZE_CANDIDATES_PER_ITERATION,
-            int(getattr(config, "candidates_per_iteration", 1) or 1),
-        )
-        set_tag(attrs.OPTIMIZE_PARALLEL, bool(getattr(config, "parallel", False)))
-        try:
-            self._storage = get_storage()
-        except (ValueError, StorageNotConfiguredError):
-            self._storage = None
-        self._reporter: ApiReporter | None = None
+        set_tag(attrs.AGENT_NAME, config.agent_name)
+        set_tag(attrs.OPTIMIZE_AGENT_PATH, config.agent_path)
+        set_tag(attrs.OPTIMIZE_ITERATIONS, config.iterations)
+        set_tag(attrs.OPTIMIZE_ANALYZER_MODEL, config.analyzer_model)
+        set_tag(attrs.OPTIMIZE_CANDIDATES_PER_ITERATION, config.candidates_per_iteration)
+        set_tag(attrs.OPTIMIZE_PARALLEL, config.parallel)
 
         # Load policy from eval spec for injection into pipeline stages
         with open(config.eval_spec_path) as _f:
@@ -202,6 +187,8 @@ class Optimizer:
         self._policy_diagnosis = format_for_diagnosis(self._policy_data or {})
         self._policy_codegen = format_for_codegen(self._policy_data or {})
         self._policy_judge = format_for_judge(self._policy_data or {})
+
+        set_tag(attrs.SETUP_POLICY_PATH, getattr(config, "llm_judge_model", "disabled"))
 
         self.evaluator: SpecEvaluator = load_evaluator(
             config.eval_spec_path,
@@ -292,7 +279,7 @@ class Optimizer:
 
         return self.config.agent_path
 
-    @traced("optimizer.instrument_agent_copy")
+    @observe_safe("optimizer.instrument_agent_copy")
     def _instrument_agent_copy(self) -> None:
         """Add ``@observe()`` instrumentation to all ``.py`` files in the agent copy.
 
@@ -312,42 +299,24 @@ class Optimizer:
             return
         instrument_directory(inst_dir)
 
-    @property
-    def _use_local_traces(self) -> bool:
-        """Whether to use local OVERMIND_TRACE_FILE for tracing.
-
-        Returns True when OVERMIND_API_KEY is NOT set, meaning traces
-        should be stored locally via OVERMIND_TRACE_FILE.
-        """
-        return not os.environ.get("OVERMIND_API_KEY")
-
     # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
 
-    @traced("optimizer.run", SpanType.WORKFLOW)
+    @observe_safe("optimizer.run", SpanType.WORKFLOW)
     def run(self):
         self._logger.info(
             f"Optimizer.run starting agent={getattr(self.config, 'agent_name', '?')} "
             f"iterations={self.config.iterations} parallel={getattr(self.config, 'parallel', False)} "
             f"max_workers={getattr(self.config, 'max_workers', None)}"
         )
-        set_tag(attrs.OPTIMIZE_AGENT_NAME, getattr(self.config, "agent_name", "") or "")
-        set_tag(attrs.AGENT_NAME, getattr(self.config, "agent_name", "") or "")
-        set_tag(attrs.OPTIMIZE_ITERATIONS, int(self.config.iterations))
-        set_tag(attrs.OPTIMIZE_PARALLEL, bool(getattr(self.config, "parallel", False)))
-        set_tag(
-            attrs.OPTIMIZE_MAX_WORKERS,
-            int(getattr(self.config, "max_workers", 0) or 0),
-        )
-        set_tag(
-            attrs.OPTIMIZE_ANALYZER_MODEL,
-            getattr(self.config, "analyzer_model", "") or "",
-        )
-        set_tag(
-            attrs.OPTIMIZE_CANDIDATES_PER_ITERATION,
-            int(getattr(self.config, "candidates_per_iteration", 1) or 1),
-        )
+        set_tag(attrs.AGENT_NAME, self.config.agent_name)
+        set_tag(attrs.OPTIMIZE_ITERATIONS, self.config.iterations)
+        set_tag(attrs.OPTIMIZE_PARALLEL, self.config.parallel)
+        set_tag(attrs.OPTIMIZE_MAX_WORKERS, self.config.max_workers)
+        set_tag(attrs.OPTIMIZE_ANALYZER_MODEL, self.config.analyzer_model)
+        set_tag(attrs.OPTIMIZE_CANDIDATES_PER_ITERATION, self.config.candidates_per_iteration)
+
         self._setup_output_dirs()
         dataset = self._load_dataset()
         self._logger.info(f"Loaded dataset with {len(dataset)} cases")
@@ -457,22 +426,6 @@ class Optimizer:
             },
         ):
             pass
-
-        # Start real-time API reporting once we know baseline score.
-        if self.config.agent_id:
-            self._reporter = ApiReporter.create(
-                agent_id=self.config.agent_id,
-                analyzer_model=self.config.analyzer_model,
-                num_iterations=self.config.iterations,
-                candidates_per_iteration=getattr(
-                    self.config,
-                    "candidates_per_iteration",
-                    1,
-                ),
-            )
-            if self._reporter and self._storage:
-                self._storage.set_job_id(self._reporter.job_id)
-                self._reporter.on_baseline(self.best_score)
 
         self._log_result("baseline", baseline_eval, "keep", "Initial baseline")
         self._print_eval(baseline_eval, "Baseline (train)", prev_evaluation=None)
@@ -1002,6 +955,13 @@ class Optimizer:
                     finally:
                         self._cleanup_candidate(probe_path, best_cand)
 
+                # Per-dimension scores for this iteration — stamped on
+                # the OTel iteration span so the OTLP ingest can project
+                # them onto the corresponding ``JobIteration`` row.
+                dim_scores = {
+                    key: float(best_cand_eval.get(key, 0)) for _, key in self.evaluator.get_dimension_labels()
+                }
+
                 set_tag(attrs.OPTIMIZE_ACCEPTED, bool(accept))
                 set_tag(
                     attrs.OPTIMIZE_ITERATION_DECISION,
@@ -1013,6 +973,20 @@ class Optimizer:
                     attrs.OPTIMIZE_ITERATION_IMPROVEMENT,
                     float(best_cand_score - self.best_score),
                 )
+                if dim_scores:
+                    set_tag(attrs.OPTIMIZE_ITERATION_DIMENSION_SCORES, dim_scores)
+                # Stamp the full best-candidate code and its human-readable
+                # suggestions so OTLP can project them onto the matching
+                # ``JobIteration`` row (``agent_code`` + ``description``).
+                cand_code = best_cand.get("updated_code") or ""
+                if cand_code:
+                    set_tag(attrs.OPTIMIZE_ITERATION_AGENT_CODE, cand_code)
+                cand_suggestions = best_cand.get("suggestions") or []
+                if cand_suggestions:
+                    set_tag(
+                        attrs.OPTIMIZE_ITERATION_SUGGESTIONS,
+                        [str(s) for s in cand_suggestions],
+                    )
 
                 if accept:
                     improvement = best_cand_score - self.best_score
@@ -1095,18 +1069,6 @@ class Optimizer:
                             )
 
                     self._log_result(f"iter_{i:03d}", best_cand_eval, "keep", desc)
-                    if self._reporter:
-                        dim_scores = {
-                            key: float(best_cand_eval.get(key, 0)) for _, key in self.evaluator.get_dimension_labels()
-                        }
-                        self._reporter.on_iteration(
-                            order=i,
-                            avg_score=float(best_cand_eval.get("avg_total", 0)),
-                            decision="keep",
-                            agent_code=self.best_code,
-                            description=desc,
-                            dimension_scores=dim_scores,
-                        )
                     self.stall_count = 0
                 else:
                     self.console.print(
@@ -1116,18 +1078,6 @@ class Optimizer:
                         self.console.print(f"    [dim]{reason}[/dim]")
                     working_path.write_text(self.best_code)
                     self._log_result(f"iter_{i:03d}", best_cand_eval, "discard", desc)
-                    if self._reporter:
-                        dim_scores = {
-                            key: float(best_cand_eval.get(key, 0)) for _, key in self.evaluator.get_dimension_labels()
-                        }
-                        self._reporter.on_iteration(
-                            order=i,
-                            avg_score=float(best_cand_eval.get("avg_total", 0)),
-                            decision="discard",
-                            agent_code=best_cand.get("updated_code"),
-                            description=desc,
-                            dimension_scores=dim_scores,
-                        )
                     dim_deltas = self._compute_dimension_deltas(latest_eval, best_cand_eval)
                     fail_record = {
                         "suggestions": best_cand.get("suggestions", []),
@@ -1327,8 +1277,7 @@ class Optimizer:
             set_tag(attrs.OPTIMIZE_HOLDOUT_IMPROVEMENT, float(holdout_improvement))
             set_tag(attrs.OPTIMIZE_BLENDED_IMPROVEMENT, float(blended_improvement))
             set_tag(attrs.OPTIMIZE_HOLDOUT_REVERTED, bool(reverted))
-            if self._reporter:
-                self._reporter.on_holdout(self._holdout_results)
+            set_tag(attrs.OPTIMIZE_OVERFIT_GAP, float(overfit_gap))
 
         # ---- Phase 3: Model backtesting (optional) ----
         if self.config.model_backtesting and self.config.backtest_models:
@@ -1349,17 +1298,51 @@ class Optimizer:
 
         # ---- Phase 4: Report ----
         set_tag(attrs.OPTIMIZE_FINAL_BEST_SCORE, float(self.best_score))
+        # Mirror of ``OPTIMIZE_FINAL_BEST_SCORE`` under the legacy key the
+        # OTLP ingest checks first when computing ``Job.best_score``.
+        set_tag(attrs.OPTIMIZE_REPORT_BEST_SCORE, float(self.best_score))
+        # Headline improvement = best - baseline.  Drives ``Job.improvement``
+        # (OTLP reads ``overmind.optimize.report_improvement``).
+        baseline = float(getattr(self, "_baseline_train_score", 0.0) or 0.0)
+        set_tag(
+            attrs.OPTIMIZE_REPORT_IMPROVEMENT,
+            float(self.best_score - baseline),
+        )
+        # Run-level summary counters that the OTLP ingest folds into
+        # ``Job.result["summary"]`` (alongside the per-iteration
+        # ``stall_count`` already stamped on each iteration span).
+        set_tag(
+            attrs.OPTIMIZE_TOTAL_ACCEPTED,
+            len(getattr(self, "_session_successful", [])),
+        )
+        set_tag(
+            attrs.OPTIMIZE_TOTAL_REJECTED,
+            len(getattr(self, "_session_failed", [])),
+        )
+        set_tag(attrs.OPTIMIZE_STALL_COUNT, int(self.stall_count))
+
         self._generate_report()
-        if self._reporter:
-            report_md = (self.output_dir / "report.md").read_text(encoding="utf-8")
-            self._reporter.on_complete(
-                best_score=self.best_score,
-                baseline_score=self._baseline_train_score,
-                report_markdown=report_md,
-                best_agent_code=self.best_code,
-                backtest_results=self.backtest_results or None,
-            )
-            flush_pending_api_updates(timeout=20.0)
+        # Stamp the final artefacts on the run span so OTLP can persist
+        # them onto ``Job.report_markdown`` / ``Job.best_agent_code``.
+        try:
+            report_path = self.output_dir / "report.md"
+            if report_path.exists():
+                set_tag(
+                    attrs.OPTIMIZE_REPORT_MARKDOWN,
+                    report_path.read_text(encoding="utf-8"),
+                )
+        except Exception:
+            self._logger.exception("optimize: failed to stamp report.md on span")
+        if self.best_code:
+            set_tag(attrs.OPTIMIZE_BEST_AGENT_CODE, self.best_code)
+        # Terminal lifecycle marker — flips ``Job.status`` to ``completed``
+        # on the OTLP side (works for both legacy CLI and skill flows,
+        # without OTLP having to guess from span topology).
+        set_tag(attrs.OPTIMIZE_RUN_STATUS, "completed")
+        # Force-flush any pending OTel spans so the backend sees the final
+        # ``overmind.optimize.final_best_score`` / report tags before the
+        # process exits.  ``otlp.py`` projects those onto the Job row.
+        force_flush_traces(timeout_millis=5000)
 
         # ---- Persist cross-run state ----
         if getattr(self.config, "cross_run_persistence", True):
@@ -1401,7 +1384,7 @@ class Optimizer:
     # identical to running the full ``run()`` end-to-end.
     # ------------------------------------------------------------------
 
-    @traced("optimizer.run_baseline_phase", SpanType.WORKFLOW)
+    @observe_safe("optimizer.run_baseline_phase", SpanType.WORKFLOW)
     def run_baseline_phase(self) -> dict:
         """Execute Phase 1 of :meth:`run` (baseline) and return a state dict.
 
@@ -1527,7 +1510,7 @@ class Optimizer:
             f"No baseline or latest items file under {self.output_dir}. Run `overmind optimize-step baseline` first."
         )
 
-    @traced("optimizer.run_diagnose_phase", SpanType.WORKFLOW)
+    @observe_safe("optimizer.run_diagnose_phase", SpanType.WORKFLOW)
     def run_diagnose_phase(
         self,
         iteration: int,
@@ -1621,7 +1604,7 @@ class Optimizer:
             })
         return out
 
-    @traced("optimizer.evaluate_worktree", SpanType.WORKFLOW)
+    @observe_safe("optimizer.evaluate_worktree", SpanType.WORKFLOW)
     def evaluate_worktree(
         self,
         worktree_entry_path: str,
@@ -1636,14 +1619,37 @@ class Optimizer:
         """
         train, _ = self.load_train_holdout()
         ds = dataset_subset if dataset_subset is not None else train
+
+        set_tag(attrs.OPTIMIZE_WORKTREE_RUN_NAME, run_name)
+        set_tag(attrs.OPTIMIZE_WORKTREE_ENTRY_PATH, str(worktree_entry_path))
+        set_tag(attrs.OPTIMIZE_WORKTREE_CASES_TOTAL, len(ds))
+
+        started = time.monotonic()
         c_eval, _, c_items = self._run_agent_on_dataset(worktree_entry_path, ds, run_name)
+        duration = time.monotonic() - started
+
+        avg_total = float(c_eval.get("avg_total", 0.0))
+        dim_scores = {
+            key: float(c_eval.get(key, 0.0)) for _, key in self.evaluator.get_dimension_labels() if key in c_eval
+        }
+        per_case_totals = [float(item["score"].get("total", 0.0)) for item in c_items]
+        pass_threshold = float(getattr(self.config, "case_pass_threshold", 70.0))
+        pass_rate = (
+            sum(1 for s in per_case_totals if s >= pass_threshold) / len(per_case_totals) if per_case_totals else 0.0
+        )
+
+        set_tag(attrs.OPTIMIZE_WORKTREE_AVG_SCORE, avg_total)
+        set_tag(attrs.OPTIMIZE_WORKTREE_DIMENSION_SCORES, dim_scores)
+        set_tag(attrs.OPTIMIZE_WORKTREE_PASS_RATE, float(pass_rate))
+        set_tag(attrs.OPTIMIZE_WORKTREE_DURATION_SECONDS, float(duration))
+
         return {
-            "avg_total": float(c_eval["avg_total"]),
+            "avg_total": avg_total,
             "evaluation": c_eval,
             "case_results": Optimizer._build_case_results(c_items, ds),
         }
 
-    @traced("optimizer.commit_winner", SpanType.WORKFLOW)
+    @observe_safe("optimizer.commit_winner", SpanType.WORKFLOW)
     def commit_winner(
         self,
         winner_entry_path: str,
@@ -1677,7 +1683,7 @@ class Optimizer:
             )
         )
 
-    @traced("optimizer.render_report_only", SpanType.WORKFLOW)
+    @observe_safe("optimizer.render_report_only", SpanType.WORKFLOW)
     def render_report_only(self) -> str:
         """Render ``report.md`` from ``self.results``. Returns the report path."""
         self._setup_output_dirs()
@@ -1689,7 +1695,7 @@ class Optimizer:
     # Commit optimized sources back to original agent files
     # ------------------------------------------------------------------
 
-    @traced("optimizer.collect_commit_targets")
+    @observe_safe("optimizer.collect_commit_targets")
     def _collect_commit_targets(self) -> list[tuple[Path, str, str]]:
         """Return ``[(abs_path, original, optimized), ...]`` for files to commit.
 
@@ -1726,7 +1732,7 @@ class Optimizer:
 
         return targets
 
-    @traced("optimizer.prompt_commit")
+    @observe_safe("optimizer.prompt_commit")
     def _prompt_commit_to_original_sources(self) -> None:
         """After optimization, show diffs and offer to write them to originals.
 
@@ -1820,7 +1826,7 @@ class Optimizer:
     # Complexity penalty (prompt bloat + code growth + override detection)
     # ------------------------------------------------------------------
 
-    @traced("optimizer.compute_complexity_penalty")
+    @observe_safe("optimizer.compute_complexity_penalty")
     def _compute_complexity_penalty(
         self,
         candidate_code: str,
@@ -1903,7 +1909,7 @@ class Optimizer:
 
         return penalty
 
-    @traced("optimizer.detect_data_leakage")
+    @observe_safe("optimizer.detect_data_leakage")
     def _detect_data_leakage(self, candidate_code: str, train_set: list[dict]) -> int:
         """Count expected-output literals that appear in new code but not the baseline.
 
@@ -1982,7 +1988,7 @@ class Optimizer:
     # Dataset splitting
     # ------------------------------------------------------------------
 
-    @traced("optimizer.split_dataset")
+    @observe_safe("optimizer.split_dataset")
     @staticmethod
     def _split_dataset(dataset: list[dict], holdout_ratio: float) -> tuple[list[dict], list[dict]]:
         """Split dataset into train and holdout sets.
@@ -2005,7 +2011,7 @@ class Optimizer:
     # Holdout snapshot rollback
     # ------------------------------------------------------------------
 
-    @traced("optimizer.rollback_to_best_snapshot")
+    @observe_safe("optimizer.rollback_to_best_snapshot")
     def _rollback_to_best_snapshot(
         self,
         best_path: Path,
@@ -2102,7 +2108,7 @@ class Optimizer:
     # Dimension delta computation
     # ------------------------------------------------------------------
 
-    @traced("optimizer.compute_dimension_deltas")
+    @observe_safe("optimizer.compute_dimension_deltas")
     def _compute_dimension_deltas(self, old_eval: dict, new_eval: dict) -> dict[str, float]:
         """Per-dimension score deltas (only includes changes > 0.5)."""
         deltas: dict[str, float] = {}
@@ -2118,7 +2124,7 @@ class Optimizer:
     # Regression-aware acceptance
     # ------------------------------------------------------------------
 
-    @traced("optimizer.check_acceptance")
+    @observe_safe("optimizer.check_acceptance")
     def _check_acceptance(
         self,
         candidate_score: float,
@@ -2209,7 +2215,7 @@ class Optimizer:
     # Cross-run regression gate
     # ------------------------------------------------------------------
 
-    @traced("optimizer.check_regression_suite")
+    @observe_safe("optimizer.check_regression_suite")
     def _check_regression_suite(
         self,
         candidate: dict,
@@ -2232,44 +2238,33 @@ class Optimizer:
             self._cleanup_candidate(tmp_path, candidate)
             return len(self._run_state.regression_cases)
 
-        trace_path: Path | None = None
-        if self._use_local_traces:
-            trace_path = self.traces_dir / "regression.jsonl"
-            trace_path.parent.mkdir(parents=True, exist_ok=True)
-            if trace_path.exists():
-                trace_path.unlink()
-
+        # Traces from the agent subprocess flow through OTel to the remote
+        # backend (the SDK reads ``TRACEPARENT`` injected by ``runner.run``
+        # and reports its own spans there).  We no longer collect a local
+        # trace file here, so the regression-gate evaluator scores without
+        # tool-trace context.
         outputs: list[dict | None] = []
         failed_indices: set[int] = set()
         for rc_idx, rc in enumerate(self._run_state.regression_cases):
-            run_output = runner.run(rc.case_input, trace_file=trace_path)
+            run_output = runner.run(rc.case_input)
             if run_output.success:
                 outputs.append(run_output.data)
             else:
                 outputs.append(None)
                 failed_indices.add(rc_idx)
 
-        per_line_traces: list[ParsedTrace] = []
-        if trace_path is not None and trace_path.exists():
-            per_line_traces = parse_trace_file_per_line(trace_path)
-
         failures = 0
-        trace_line_idx = 0
         for rc_idx, rc in enumerate(self._run_state.regression_cases):
             if rc_idx in failed_indices:
                 failures += 1
                 continue
 
-            parsed_trace = per_line_traces[trace_line_idx] if trace_line_idx < len(per_line_traces) else ParsedTrace()
-            trace_line_idx += 1
-
-            tool_trace = parsed_trace.tool_trace
             skip_judge = not getattr(self.config, "judge_in_regression", False)
             score = self.evaluator.evaluate_output(
                 outputs[rc_idx],
                 rc.expected_output,
                 input_data=rc.case_input,
-                tool_trace=tool_trace,
+                tool_trace=[],
                 _skip_judge=skip_judge,
             )
             if score["total"] < rc.min_score:
@@ -2279,7 +2274,7 @@ class Optimizer:
         runner.cleanup()
         return failures
 
-    @traced("optimizer.promote_resolved_to_regression")
+    @observe_safe("optimizer.promote_resolved_to_regression")
     def _promote_resolved_to_regression(
         self,
         resolved_clusters: list,
@@ -2308,7 +2303,7 @@ class Optimizer:
     # Multi-run evaluation
     # ------------------------------------------------------------------
 
-    @traced("optimizer.run_multi_eval")
+    @observe_safe("optimizer.run_multi_eval")
     def _run_multi_eval(
         self,
         agent_path: str,
@@ -2366,7 +2361,7 @@ class Optimizer:
     # Baseline diagnostics
     # ------------------------------------------------------------------
 
-    @traced("optimizer.print_baseline_diagnostics")
+    @observe_safe("optimizer.print_baseline_diagnostics")
     def _print_baseline_diagnostics(self, evaluation: dict, items: list[dict]):
         """Print smart diagnostics about the baseline run."""
         self.console.print()
@@ -2414,7 +2409,7 @@ class Optimizer:
     # Dataset loading
     # ------------------------------------------------------------------
 
-    @traced("optimizer.load_dataset")
+    @observe_safe("optimizer.load_dataset")
     def _load_dataset(self) -> list[dict]:
         """Load the dataset from disk.
 
@@ -2464,14 +2459,14 @@ class Optimizer:
             rel = Path(self.config.agent_path).name
         return {rel: current_code}
 
-    @traced("optimizer.build_bundle")
+    @observe_safe("optimizer.build_bundle")
     def _build_bundle(self) -> AgentBundle | None:
         """Build an ``AgentBundle`` from the current config."""
         from overmind.optimize.bundle_factory import build_agent_bundle
 
         return build_agent_bundle(self.config)
 
-    @traced("optimizer.rebuild_bundle")
+    @observe_safe("optimizer.rebuild_bundle")
     def _rebuild_bundle(self) -> None:
         """Rebuild the bundle from current ``_best_files`` state.
 
@@ -2500,7 +2495,7 @@ class Optimizer:
         self._bundle.pieces = new_pieces
         self._bundle._assign_ids()
 
-    @traced("optimizer.resolve_bundle_candidate")
+    @observe_safe("optimizer.resolve_bundle_candidate")
     def _resolve_bundle_candidate(self, bundle_updates: dict) -> dict | None:
         """Resolve bundle updates into modified files.
 
@@ -2537,7 +2532,7 @@ class Optimizer:
 
         return {"entry_code": entry_code, "files": modified}
 
-    @traced("optimizer.write_candidate_to_disk")
+    @observe_safe("optimizer.write_candidate_to_disk")
     def _write_candidate_to_disk(self, cand: dict) -> Path:
         """Write a candidate to disk for evaluation, handling both modes.
 
@@ -2571,7 +2566,7 @@ class Optimizer:
         tmp.write_text(code)
         return tmp
 
-    @traced("optimizer.cleanup_candidate")
+    @observe_safe("optimizer.cleanup_candidate")
     def _cleanup_candidate(self, tmp_path: Path, cand: dict) -> None:
         """Clean up temporary files/dirs created by ``_write_candidate_to_disk``."""
         resolved = cand.get("_resolved_files")
@@ -2602,7 +2597,7 @@ class Optimizer:
     # Agent loading & execution
     # ------------------------------------------------------------------
 
-    @traced("optimizer.build_runner")
+    @observe_safe("optimizer.build_runner")
     def _build_runner(
         self,
         agent_path: str,
@@ -2647,7 +2642,7 @@ class Optimizer:
             env_dir=original_agent_dir,
         )
 
-    @traced("optimizer.ensure_runner_env")
+    @observe_safe("optimizer.ensure_runner_env")
     def _ensure_runner_env(self) -> None:
         """Provision the runner's environment (deps install). Idempotent."""
         from overmind.optimize.runner import MissingDependenciesError
@@ -2677,7 +2672,7 @@ class Optimizer:
         spec.loader.exec_module(module)
         return module
 
-    @traced("optimizer.run_agent_on_dataset")
+    @observe_safe("optimizer.run_agent_on_dataset")
     def _run_agent_on_dataset(
         self,
         agent_path: str,
@@ -2687,12 +2682,11 @@ class Optimizer:
         runner = self._build_runner(agent_path, self.config.entrypoint_fn)
         runner.ensure_environment()
 
+        # All traces flow through OTel to the remote backend — no local
+        # ``OVERMIND_TRACE_FILE`` is written.  Backends still accept a
+        # ``trace_file`` arg for their shadow / record modes; we always
+        # pass ``None`` so they fall back to the OTel-only path.
         trace_path: Path | None = None
-        if self._use_local_traces:
-            trace_path = self.traces_dir / f"{run_name}.jsonl"
-            trace_path.parent.mkdir(parents=True, exist_ok=True)
-            if trace_path.exists():
-                trace_path.unlink()
 
         cassette_path = self._cassette_path_for(run_name)
         shadow_prov_dir = self._shadow_prov_dir_for(run_name)
@@ -2704,21 +2698,55 @@ class Optimizer:
         )
 
         set_tag(attrs.RUN_AGENT_RUN_NAME, run_name)
+        set_tag(attrs.RUN_AGENT_AGENT_PATH, str(agent_path))
         set_tag(attrs.RUN_AGENT_CASES_TOTAL, len(dataset))
         set_tag(attrs.RUN_AGENT_PARALLEL, bool(self.config.parallel))
         set_tag(attrs.RUN_AGENT_MAX_WORKERS, int(self.config.max_workers or 0))
         set_tag(attrs.RUN_AGENT_BACKENDS, [b.name for b in plan])
 
+        started = time.monotonic()
         if self.config.parallel:
             self._logger.debug(
                 f"Running agent in parallel: run={run_name} cases={len(dataset)} "
                 f"workers={self.config.max_workers} trace={trace_path} backends={len(plan)}"
             )
-            return self._run_parallel_subprocess(runner, dataset, run_name, trace_path, plan)
-        self._logger.debug(
-            f"Running agent sequentially: run={run_name} cases={len(dataset)} trace={trace_path} backends={len(plan)}"
+            batch_eval, traces, eval_items = self._run_parallel_subprocess(runner, dataset, run_name, trace_path, plan)
+        else:
+            self._logger.debug(
+                f"Running agent sequentially: run={run_name} cases={len(dataset)} "
+                f"trace={trace_path} backends={len(plan)}"
+            )
+            batch_eval, traces, eval_items = self._run_sequential_subprocess(
+                runner, dataset, run_name, trace_path, plan
+            )
+        duration = time.monotonic() - started
+
+        # Aggregated batch eval — gives the OTLP ingest and the UI a
+        # single span where the run's headline numbers live.
+        avg_total = float(batch_eval.get("avg_total", 0.0))
+        dim_scores = {
+            key: float(batch_eval.get(key, 0.0))
+            for _, key in self.evaluator.get_dimension_labels()
+            if key in batch_eval
+        }
+        per_case_totals = [float(item["score"].get("total", 0.0)) for item in eval_items]
+        pass_threshold = float(getattr(self.config, "case_pass_threshold", 70.0))
+        pass_rate = (
+            sum(1 for s in per_case_totals if s >= pass_threshold) / len(per_case_totals) if per_case_totals else 0.0
         )
-        return self._run_sequential_subprocess(runner, dataset, run_name, trace_path, plan)
+
+        set_tag(attrs.RUN_AGENT_AVG_SCORE, avg_total)
+        if dim_scores:
+            set_tag(attrs.RUN_AGENT_DIMENSION_SCORES, dim_scores)
+        set_tag(attrs.RUN_AGENT_PASS_RATE, float(pass_rate))
+        set_tag(attrs.RUN_AGENT_DURATION_SECONDS, float(duration))
+        if per_case_totals:
+            # Cap the inline per-case list to keep the span attribute
+            # small — full per-case results live on the individual
+            # ``optimizer.run_case_with_plan`` spans.
+            set_tag(attrs.RUN_AGENT_PER_CASE_SCORES, per_case_totals[:200])
+
+        return batch_eval, traces, eval_items
 
     def _cassette_path_for(self, run_name: str) -> Path:
         """Cassette file used to record/replay external calls for *run_name*."""
@@ -2747,7 +2775,7 @@ class Optimizer:
             return False
         return bool(getattr(self.config, "enable_shadow", True))
 
-    @traced("optimizer.run_sequential_subprocess")
+    @observe_safe("optimizer.run_sequential_subprocess")
     def _run_sequential_subprocess(
         self,
         runner: AgentRunner,
@@ -2801,7 +2829,7 @@ class Optimizer:
         set_tag(attrs.RUN_AGENT_BACKEND_USED, backends_used)
         return self._build_eval_results(outputs, cases_data, run_name, trace_path, provenance_by_idx)
 
-    @traced("optimizer.run_parallel_subprocess")
+    @observe_safe("optimizer.run_parallel_subprocess")
     def _run_parallel_subprocess(
         self,
         runner: AgentRunner,
@@ -2881,7 +2909,7 @@ class Optimizer:
         set_tag(attrs.RUN_AGENT_BACKEND_USED, backends_used)
         return self._build_eval_results(outputs, dataset, run_name, trace_path, provenance_by_idx)
 
-    @traced("optimizer.run_case_with_plan")
+    @observe_safe("optimizer.run_case_with_plan")
     def _run_case_with_plan(
         self,
         plan: BackendPlan | None,
@@ -2897,12 +2925,27 @@ class Optimizer:
         returned :class:`BackendOutput` carries provenance tags and a
         :class:`Confidence` that the evaluator/optimizer can inspect.
         """
+        # Stamp per-case context up front so the span carries it even if
+        # the run raises before we get to the "after" tags below.
+        set_tag(attrs.RUN_CASE_RUN_NAME, run_name)
+        set_tag(attrs.RUN_CASE_INDEX, int(idx))
+        if isinstance(input_data, dict):
+            set_tag(attrs.RUN_CASE_INPUT_KEYS, sorted(str(k) for k in input_data)[:32])
+        try:
+            input_chars = len(json.dumps(input_data, default=str))
+        except Exception:
+            input_chars = len(str(input_data))
+        set_tag(attrs.RUN_CASE_INPUT_CHARS, int(input_chars))
+
         if plan is None or len(plan) == 0:
             raise RuntimeError("BackendPlan missing — cannot run case")
 
+        backends_tried: list[str] = []
+        started = time.monotonic()
         last_output: BackendOutput | None = None
         for i, backend in enumerate(plan):
             backend.prepare()
+            backends_tried.append(backend.name)
             out = backend.run(input_data, trace_file=trace_path)
             last_output = out
             if out.success:
@@ -2910,13 +2953,45 @@ class Optimizer:
                     self._logger.info(
                         f"[{run_name}] Case {idx} recovered via backend={backend.name} after subprocess failure."
                     )
+                self._stamp_run_case_outcome(out, backends_tried=backends_tried, started=started)
                 return out
             if not should_try_next(out.diagnosis):
+                self._stamp_run_case_outcome(out, backends_tried=backends_tried, started=started)
                 return out
         assert last_output is not None
+        self._stamp_run_case_outcome(last_output, backends_tried=backends_tried, started=started)
         return last_output
 
-    @traced("optimizer.build_eval_results")
+    def _stamp_run_case_outcome(
+        self,
+        out: BackendOutput,
+        *,
+        backends_tried: list[str],
+        started: float,
+    ) -> None:
+        """Stamp per-case result tags on the active ``run_case_with_plan`` span."""
+        set_tag(attrs.RUN_CASE_BACKEND_ATTEMPTS, len(backends_tried))
+        set_tag(attrs.RUN_CASE_BACKENDS_TRIED, list(backends_tried))
+        set_tag(attrs.RUN_CASE_BACKEND_USED, str(out.backend))
+        set_tag(attrs.RUN_CASE_SUCCESS, bool(out.success))
+        set_tag(attrs.RUN_CASE_RETURNCODE, int(getattr(out.run_output, "returncode", 0) or 0))
+        if out.error:
+            set_tag(attrs.RUN_CASE_ERROR, str(out.error)[:2000])
+        try:
+            output_chars = len(json.dumps(out.data, default=str)) if out.data is not None else 0
+        except Exception:
+            output_chars = len(str(out.data)) if out.data is not None else 0
+        set_tag(attrs.RUN_CASE_OUTPUT_CHARS, int(output_chars))
+        set_tag(attrs.RUN_CASE_DURATION_SECONDS, float(time.monotonic() - started))
+        set_tag(attrs.RUN_CASE_PROVENANCE_COUNT, len(out.provenance or []))
+        confidence = getattr(out, "confidence", None)
+        if confidence is not None:
+            try:
+                set_tag(attrs.RUN_CASE_CONFIDENCE, confidence.to_dict())
+            except Exception:
+                self._logger.debug("run_case: failed to serialise confidence", exc_info=True)
+
+    @observe_safe("optimizer.build_eval_results")
     def _build_eval_results(
         self,
         outputs: list[dict | None],
@@ -2925,11 +3000,12 @@ class Optimizer:
         trace_path: Path | None,
         provenance_by_idx: dict[int, list[dict]] | None = None,
     ) -> tuple[dict, list[ParsedTrace], list[dict]]:
-        """Parse the single trace file and build per-case eval items.
+        """Build per-case eval items from agent outputs and shadow provenance.
 
-        Each JSONL line in the trace file corresponds (in order) to one
-        datapoint execution.  When ``trace_path`` is ``None`` (token-based
-        tracing), empty :class:`ParsedTrace` objects are used.
+        Traces from the agent subprocess are streamed straight to the
+        remote backend via OTel — we no longer read any local trace
+        file here, so ``trace_path`` is kept only for backward
+        compatibility and is otherwise ignored.
 
         When *provenance_by_idx* is provided (populated by the shadow
         backend), each :class:`ParsedTrace` is decorated with per-call
@@ -2937,19 +3013,12 @@ class Optimizer:
         ``_source_summary`` metadata so the optimiser can reason about how
         trustworthy the signal is.
         """
-        if trace_path is not None and trace_path.exists():
-            per_line_traces = parse_trace_file_per_line(trace_path)
-        else:
-            per_line_traces = []
-
         provenance_by_idx = provenance_by_idx or {}
 
         traces: list[ParsedTrace] = []
         eval_items: list[dict] = []
 
-        # Pad per_line_traces to dataset length so indices align.
-        while len(per_line_traces) < len(dataset):
-            per_line_traces.append(ParsedTrace())
+        per_line_traces: list[ParsedTrace] = [ParsedTrace() for _ in range(len(dataset))]
 
         # Attach shadow provenance tags in bulk — keeps ParsedTrace and
         # tool_trace rows in sync with what actually ran.
@@ -2960,19 +3029,6 @@ class Optimizer:
             parsed_trace = per_line_traces[idx]
             traces.append(parsed_trace)
             case_prov = provenance_by_idx.get(idx, [])
-
-            if self._reporter:
-                trace_payload = {
-                    "trace_id": f"{run_name}_{idx:03d}",
-                    "input_data": case.get("input", {}),
-                    "output_data": output,
-                    "total_tokens": parsed_trace.total_tokens,
-                    "total_cost": parsed_trace.total_cost,
-                    "tool_trace": parsed_trace.tool_trace,
-                    "trace_group": run_name,
-                    "source_tags": case_prov,
-                }
-                self._reporter.on_trace(trace_payload)
 
             expected = case.get("expected_output", case.get("expected", {}))
             tool_trace = parsed_trace.tool_trace
@@ -3107,7 +3163,7 @@ class Optimizer:
     # Validation
     # ------------------------------------------------------------------
 
-    @traced("optimizer.validate_code")
+    @observe_safe("optimizer.validate_code")
     def _validate_code(self, code: str) -> bool:
         from overmind.optimize.runner import (
             _validate_js_entrypoint,
@@ -3138,7 +3194,7 @@ class Optimizer:
     # Model backtesting
     # ------------------------------------------------------------------
 
-    @traced("optimizer.run_backtesting")
+    @observe_safe("optimizer.run_backtesting")
     def _run_backtesting(self, dataset: list[dict]):
         for model_id in self.config.backtest_models:
             with otel_span(
@@ -3200,7 +3256,7 @@ class Optimizer:
     # Logging & reporting
     # ------------------------------------------------------------------
 
-    @traced("optimizer.setup_output_dirs")
+    @observe_safe("optimizer.setup_output_dirs")
     def _setup_output_dirs(self):
         for d in (self.output_dir, self.traces_dir, self.analysis_dir):
             d.mkdir(parents=True, exist_ok=True)
@@ -3265,7 +3321,7 @@ class Optimizer:
             else:
                 self.console.print(f"    {display:>18}: {val:.1f} / {max_val:.0f}")
 
-    @traced("optimizer.generate_report")
+    @observe_safe("optimizer.generate_report")
     def _generate_report(self):
         self.console.print()
         self.console.print(Rule(style="dim"))
@@ -3358,7 +3414,7 @@ class Optimizer:
 
         self._write_report_md(baseline_score)
 
-    @traced("optimizer.write_report_md")
+    @observe_safe("optimizer.write_report_md")
     def _write_report_md(self, baseline_score: float):
         dim_labels = self.evaluator.get_dimension_labels()
 

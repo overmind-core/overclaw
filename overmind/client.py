@@ -186,7 +186,7 @@ class OvermindClient(
         Raises :class:`ValueError` when no agent with that slug exists
         in the project bound to this client's API token.
         """
-        page = _run_async(self.agents_list(slug=agent_slug))
+        page = self.agents_list(slug=agent_slug)
         results = page.results or []
         if not results:
             raise ValueError(f"Agent {agent_slug!r} not found")
@@ -380,7 +380,7 @@ def upsert_agent(
 
     existing = None
     try:
-        page = _run_async(client.agents_list(project=UUID(project_id)))
+        page = client.agents_list(project=UUID(project_id))
         for ag in page.results or []:
             if ag.slug == slug or ag.agent_path == agent_path:
                 existing = ag
@@ -391,7 +391,7 @@ def upsert_agent(
             exc_info=True,
         )
         try:
-            page = _run_async(client.agents_list())
+            page = client.agents_list()
             for ag in page.results or []:
                 ag_project = str(getattr(ag, "project", "") or "")
                 if ag_project != str(project_id):
@@ -406,11 +406,11 @@ def upsert_agent(
 
     if existing:
         patch = PatchedAgentRequest(**shared)
-        result = _run_async(client.agents_partial_update(id=existing.id, patched_agent_request=patch))
+        result = client.agents_partial_update(id=existing.id, patched_agent_request=patch)
         logger.info(f"upsert_agent: updated existing agent id={existing.id} slug={slug}")
     else:
         req = AgentRequest(name=name, slug=slug, project=UUID(project_id), **shared)
-        result = _run_async(client.agents_create(agent_request=req))
+        result = client.agents_create(agent_request=req)
         logger.info(f"upsert_agent: created new agent id={getattr(result, 'id', '?')} slug={slug}")
     return result
 
@@ -469,10 +469,7 @@ def create_dataset(
         datapoints=[_datapoint_request(dp, i) for i, dp in enumerate(datapoints)],
     )
     try:
-        created = _run_async(
-            client.datasets_create(dataset_request=req),
-            timeout=60.0,
-        )
+        created = client.datasets_create(dataset_request=req)
         return created.model_dump(mode="json") if created is not None else None
     except Exception:
         logger.exception(f"create_dataset failed agent_id={agent_id}")
@@ -485,7 +482,7 @@ def fetch_dataset_datapoints(client: OvermindClient, dataset_id: str) -> list[di
     page_num = 1
     while page_num <= 200:
         try:
-            page = _run_async(client.datasets_datapoints_list(id=UUID(dataset_id), page=page_num))
+            page = client.datasets_datapoints_list(id=UUID(dataset_id), page=page_num)
         except Exception:
             logger.debug(
                 f"fetch_dataset_datapoints: page={page_num} failed dataset_id={dataset_id}",
@@ -505,7 +502,7 @@ def fetch_dataset_datapoints(client: OvermindClient, dataset_id: str) -> list[di
 def get_active_dataset_id(client: OvermindClient, agent_id: str) -> str | None:
     """Return the agent's ``active_dataset`` UUID, or ``None``."""
     try:
-        agent = _run_async(client.agents_retrieve(id=UUID(agent_id)))
+        agent = client.agents_retrieve(id=UUID(agent_id))
     except Exception:
         return None
     active = getattr(agent, "active_dataset", None)
@@ -515,7 +512,7 @@ def get_active_dataset_id(client: OvermindClient, agent_id: str) -> str | None:
 def delete_dataset(client: OvermindClient, dataset_id: str) -> bool:
     """``DELETE /api/datasets/{id}/`` via :meth:`DatasetsApi.datasets_destroy`."""
     try:
-        _run_async(client.datasets_destroy(id=UUID(dataset_id)))
+        client.datasets_destroy(id=UUID(dataset_id))
         return True
     except Exception:
         logger.exception(f"delete_dataset failed dataset_id={dataset_id}")
@@ -544,7 +541,7 @@ def _create_job(
             candidates_per_iteration=candidates_per_iteration,
             data_source="dataset",
         )
-        job = _run_async(client.jobs_create(job_request=req))
+        job = client.jobs_create(job_request=req)
         logger.info(f"_create_job: created job id={job.id} agent_id={agent_id} iterations={num_iterations}")
         return str(job.id)
     except Exception:
@@ -555,7 +552,7 @@ def _create_job(
 def _patch_job(client: OvermindClient, job_id: str, **fields: Any) -> None:
     try:
         patch = PatchedJobRequest(**fields)
-        _submit_async(client.jobs_partial_update(id=UUID(job_id), patched_job_request=patch))
+        client.jobs_partial_update(id=UUID(job_id), patched_job_request=patch)
         logger.debug(f"_patch_job: job_id={job_id} fields={list(fields)}")
     except Exception:
         logger.exception(f"_patch_job: failed job_id={job_id}")
@@ -583,7 +580,7 @@ def _create_iteration(
             agent_code=agent_code or "",
             dimension_scores=dimension_scores or {},
         )
-        iteration = _run_async(client.job_iterations_create(job_iteration_request=req))
+        iteration = client.job_iterations_create(job_iteration_request=req)
         logger.info(f"_create_iteration: job_id={job_id} order={order} status={status} avg_score={avg_score:.4f}")
         return str(iteration.id)
     except Exception:

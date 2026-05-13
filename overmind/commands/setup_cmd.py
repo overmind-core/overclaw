@@ -36,7 +36,6 @@ from rich.rule import Rule
 
 from overmind import SpanType, attrs, set_tag
 from overmind.client import (
-    _run_async,
     flush_pending_api_updates,
     get_client,
     get_project_id,
@@ -78,6 +77,7 @@ from overmind.setup.policy_generator import (
 from overmind.setup.questionnaire import run_questionnaire
 from overmind.setup.spec_generator import generate_spec_from_proposal, save_spec
 from overmind.storage import configure_storage, get_storage
+from overmind.tracing import observe_safe
 from overmind.utils.display import (
     BRAND,
     confirm_option,
@@ -102,7 +102,6 @@ from overmind.utils.provider_keys import (
 from overmind.utils.provider_keys import (
     update_agent_env as _update_agent_env,
 )
-from overmind.utils.tracing import force_flush_traces, start_child_span, traced
 
 logger = logging.getLogger("overmind.commands.setup")
 
@@ -447,24 +446,15 @@ def _save_and_finish(
     has_judge = spec.get("llm_judge_weight", 0) > 0
     has_policy = bool(spec.get("policy"))
 
-    set_tag(attrs.SETUP_EVAL_SPEC_FIELD_COUNT, str(n_fields))
-    set_tag(attrs.SETUP_EVAL_SPEC_HAS_TOOLS, str(has_tools))
-    set_tag(attrs.SETUP_EVAL_SPEC_HAS_JUDGE, str(has_judge))
-    set_tag(attrs.SETUP_EVAL_SPEC_HAS_POLICY, str(has_policy))
-    set_tag(
-        attrs.SETUP_EVAL_SPEC_STRUCTURE_WEIGHT,
-        str(spec.get("structure_weight", 0)),
-    )
+    set_tag(attrs.SETUP_EVAL_SPEC_FIELD_COUNT, n_fields)
+    set_tag(attrs.SETUP_EVAL_SPEC_HAS_TOOLS, has_tools)
+    set_tag(attrs.SETUP_EVAL_SPEC_HAS_JUDGE, has_judge)
+    set_tag(attrs.SETUP_EVAL_SPEC_HAS_POLICY, has_policy)
+    set_tag(attrs.SETUP_EVAL_SPEC_STRUCTURE_WEIGHT, spec.get("structure_weight", 0))
     if has_tools:
-        set_tag(
-            attrs.SETUP_EVAL_SPEC_TOOL_COUNT,
-            str(len(spec["tool_config"]["expected_tools"])),
-        )
+        set_tag(attrs.SETUP_EVAL_SPEC_TOOL_COUNT, len(spec["tool_config"]["expected_tools"]))
     if has_consistency:
-        set_tag(
-            attrs.SETUP_EVAL_SPEC_CONSISTENCY_RULE_COUNT,
-            str(len(spec["consistency_rules"])),
-        )
+        set_tag(attrs.SETUP_EVAL_SPEC_CONSISTENCY_RULE_COUNT, len(spec["consistency_rules"]))
 
     # Emit the full eval spec so the OTLP ingest pipeline can populate
     # input_schema, output_fields, tool_config etc. on the Agent record.
@@ -910,14 +900,15 @@ def _save_dataset(
     policy_md: str | None = None,
     metadata: dict | None = None,
 ) -> str:
-    """Write the final dataset to setup_spec/dataset.json. Returns the path."""
     """Persist the final dataset.
 
-    Always writes ``setup_spec/dataset.json`` locally. When an API backend is
-    configured, also POSTs a new versioned ``Dataset`` to Overmind and records
-    the resulting ID as ``overmind.setup.dataset_id`` so ingest can link the
-    trace to the dataset row.
+    Always writes ``setup_spec/dataset.json`` locally. When an API
+    backend is configured, also POSTs a new versioned :class:`Dataset`
+    to Overmind via :meth:`OvermindClient.upsert_dataset` — datasets
+    are persisted explicitly through the REST API, not derived from
+    span attributes by the OTLP ingest path.
     """
+    agent = get_client().get_agent(agent_name)
     data_path = agent_setup_spec_dir(agent_name) / "dataset.json"
     data_path.parent.mkdir(parents=True, exist_ok=True)
     with open(data_path, "w") as f:
@@ -941,6 +932,7 @@ def _save_dataset(
         policy_hash = ""
         if resolved_policy_md:
             policy_hash = hashlib.sha256(resolved_policy_md.encode("utf-8")).hexdigest()[:64]
+        storage._agent_id = str(agent.id)
 
         dataset_meta = storage.save_dataset(
             cases,
@@ -951,25 +943,6 @@ def _save_dataset(
         )
 
     dataset_id: str | None = dataset_meta.get("id") if dataset_meta else None
-
-    set_tag(attrs.SETUP_DATASET_SOURCE, source)
-    if dataset_id:
-        set_tag(attrs.SETUP_DATASET_ID, dataset_id)
-
-    # Emit a single dedicated span with dataset metadata (no raw data).
-    # This is the canonical signal the platform uses to display dataset
-    # creation in the trace timeline and link it to the agent.
-    if dataset_meta and dataset_id:
-        with start_child_span("overmind_dataset_created", span_type=SpanType.WORKFLOW):
-            set_tag(attrs.DATASET_ID, dataset_id)
-            set_tag(attrs.DATASET_SOURCE, dataset_meta.get("source") or source)
-            set_tag(attrs.DATASET_NUM_DATAPOINTS, str(dataset_meta.get("num_datapoints") or len(cases)))
-            set_tag(attrs.DATASET_AGENT_ID, str(dataset_meta.get("agent_id") or ""))
-            if dataset_meta.get("version") is not None:
-                set_tag(attrs.DATASET_VERSION, str(dataset_meta["version"]))
-            if dataset_meta.get("generator_model"):
-                set_tag(attrs.DATASET_GENERATOR_MODEL, str(dataset_meta["generator_model"]))
-        force_flush_traces()
 
     console.print(
         f"\n  [bold {BRAND}]✓[/bold {BRAND}]  Saved [bold]{len(cases)}[/bold] cases  [dim]→ {rel(data_path)}[/dim]"
@@ -998,7 +971,7 @@ def _ensure_remote_agent_id(
         # This avoids silently writing to another project's similarly-slugged agent.
         if client and project_id:
             with suppress(Exception):
-                existing = _run_async(client.agents_retrieve(id=UUID(existing_id)))
+                existing = client.agents_retrieve(id=UUID(existing_id))
                 existing_project = str(getattr(existing, "project", "") or "")
                 if existing_project == str(project_id):
                     return existing_id
@@ -1123,7 +1096,7 @@ def _sync_setup_artifacts(agent_name: str, agent_path: str, console: Console) ->
         console.print(f"  [dim]Synced setup artifacts to Overmind ({', '.join(synced)}).[/dim]")
 
 
-@traced(span_name="overmind_setup_data_phase", type=SpanType.FUNCTION)
+@observe_safe(span_name="overmind.setup.data_phase", type=SpanType.FUNCTION)
 def _run_data_phase(
     analysis: dict,
     policy_data: dict | None,
@@ -1578,7 +1551,7 @@ def _collect_agent_provider_config(agent_name: str, console: Console) -> None:
     collect_agent_provider_config(agent_name, console)
 
 
-@traced(span_name="overmind_setup", type=SpanType.WORKFLOW)
+@observe_safe(span_name="overmind.setup", type=SpanType.WORKFLOW)
 def main(
     agent_name: str,
     fast: bool = False,
@@ -1591,11 +1564,11 @@ def main(
     logger.info(f"setup: start agent={agent_name} fast={fast} policy={policy} data={data}")
     load_overmind_dotenv()
 
-    # CLI-level flags — set as soon as the span is open
-    set_tag(attrs.COMMAND, "setup")
-    set_tag(attrs.SETUP_FAST, str(fast))
-    set_tag(attrs.SETUP_HAS_POLICY, str(bool(policy)))
-    set_tag(attrs.SETUP_HAS_SEED_DATA, str(bool(data)))
+    # CLI-level flags — set as soon as the span is open so the
+    # backend can identify the run before any phase work begins.
+    set_tag(attrs.SETUP_FAST, fast)
+    set_tag(attrs.SETUP_HAS_POLICY, policy)
+    set_tag(attrs.SETUP_HAS_SEED_DATA, data)
     if policy:
         set_tag(attrs.SETUP_POLICY_PATH, policy)
     if data:
