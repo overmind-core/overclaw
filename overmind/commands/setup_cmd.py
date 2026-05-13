@@ -36,7 +36,6 @@ from rich.rule import Rule
 
 from overmind import SpanType, attrs, set_tag
 from overmind.client import (
-    _run_async,
     flush_pending_api_updates,
     get_client,
     get_project_id,
@@ -972,7 +971,7 @@ def _ensure_remote_agent_id(
         # This avoids silently writing to another project's similarly-slugged agent.
         if client and project_id:
             with suppress(Exception):
-                existing = _run_async(client.agents_retrieve(id=UUID(existing_id)))
+                existing = client.agents_retrieve(id=UUID(existing_id))
                 existing_project = str(getattr(existing, "project", "") or "")
                 if existing_project == str(project_id):
                     return existing_id
@@ -1567,10 +1566,9 @@ def main(
 
     # CLI-level flags — set as soon as the span is open so the
     # backend can identify the run before any phase work begins.
-    set_tag(attrs.COMMAND, "setup")
-    set_tag(attrs.SETUP_FAST, bool(fast))
-    set_tag(attrs.SETUP_HAS_POLICY, bool(policy))
-    set_tag(attrs.SETUP_HAS_SEED_DATA, bool(data))
+    set_tag(attrs.SETUP_FAST, fast)
+    set_tag(attrs.SETUP_HAS_POLICY, policy)
+    set_tag(attrs.SETUP_HAS_SEED_DATA, data)
     if policy:
         set_tag(attrs.SETUP_POLICY_PATH, policy)
     if data:

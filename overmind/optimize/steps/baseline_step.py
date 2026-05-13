@@ -5,12 +5,15 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from overmind import SpanType, attrs, set_tag
 from overmind.optimize.optimizer import Optimizer
 from overmind.optimize.steps.state import SkillRunState
+from overmind.tracing import observe_safe
 
 logger = logging.getLogger("overmind.optimize.steps.baseline")
 
 
+@observe_safe(span_name="overmind.optimize.baseline", type=SpanType.WORKFLOW)
 def run_baseline(state: SkillRunState) -> dict[str, Any]:
     """Reconstruct an Optimizer from *state* and run :meth:`Optimizer.run_baseline_phase`."""
     cfg = state.to_config()
@@ -40,6 +43,15 @@ def run_baseline(state: SkillRunState) -> dict[str, Any]:
         "description": "Initial baseline",
     })
     state.save()
+
+    # Surface the baseline on the active OTel span so the backend's
+    # ``Job.baseline_score`` column gets populated and the UI's
+    # ``BASELINE`` cell is no longer empty.
+    set_tag(attrs.OPTIMIZE_BASELINE_SCORE, state.baseline_score)
+    set_tag(attrs.OPTIMIZE_DATASET_TOTAL, state.dataset_size)
+    set_tag(attrs.OPTIMIZE_DATASET_TRAIN, state.train_size)
+    set_tag(attrs.OPTIMIZE_DATASET_HOLDOUT, state.holdout_size)
+    set_tag(attrs.OPTIMIZE_PHASE, "baseline_complete")
 
     return {
         "status": "ok",

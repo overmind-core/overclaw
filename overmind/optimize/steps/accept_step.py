@@ -66,12 +66,15 @@ def _load_candidate_results(path: str) -> list[dict]:
     return raw
 
 
+@observe_safe(span_name="overmind.optimize.accept", type=SpanType.WORKFLOW)
 def run_accept(
     state: SkillRunState,
     *,
     iteration: int,
     candidate_results_path: str,
 ) -> dict[str, Any]:
+    set_tag(attrs.OPTIMIZE_ITERATION, iteration)
+    set_tag(attrs.OPTIMIZE_PHASE, "accept")
     candidates = _load_candidate_results(candidate_results_path)
     if not candidates:
         state.bump_stall()
