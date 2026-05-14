@@ -278,15 +278,6 @@ def get_client() -> OvermindClient | None:
     endpoint), mirroring the behaviour of :mod:`overmind.tracing`.
     Self-hosted deployments override the default by setting
     ``OVERMIND_API_URL`` explicitly.
-
-    **Auth routing:** the SDK previously stamped the token into both
-    ``Authorization: Bearer …`` *and* ``X-Api-Key``.  The backend prefers
-    the Bearer header and resolves it via the user-JWT path, which grants
-    the request access to **every** project the user belongs to — making
-    ``OVERMIND_PROJECT_ID`` feel mandatory even for project-scoped keys.
-    We now route ``ovr_…`` keys through ``ApiKeyAuth`` only so the backend
-    can derive the project directly from the key, and only fall back to
-    ``Authorization: Bearer`` for plain JWTs / dev tokens.
     """
     base_url = (os.getenv("OVERMIND_API_URL", "").strip() or DEFAULT_BASE_URL).rstrip("/")
     token = os.getenv("OVERMIND_API_KEY", "").strip()
