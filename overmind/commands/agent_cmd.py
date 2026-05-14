@@ -706,8 +706,7 @@ def cmd_validate(name: str, data: str) -> None:
         json_files = sorted(discovered)
         if not json_files:
             console.print(
-                f"\n  [bold red]Error:[/bold red] No .json/.jsonl/.ndjson files found in "
-                f"[cyan]{data}[/cyan]\n"
+                f"\n  [bold red]Error:[/bold red] No .json/.jsonl/.ndjson files found in [cyan]{data}[/cyan]\n"
             )
             raise SystemExit(1)
     else:

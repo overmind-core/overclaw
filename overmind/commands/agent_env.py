@@ -244,9 +244,7 @@ def collect_agent_provider_config(agent_name: str, console: Console) -> None:
             )
             provider_hint = describe_configured_agent_llm_provider(existing)
             if provider_hint:
-                console.print(
-                    f"  [dim]Looks like this agent is set up for:[/dim] {escape(provider_hint)}"
-                )
+                console.print(f"  [dim]Looks like this agent is set up for:[/dim] {escape(provider_hint)}")
         else:
             console.print(
                 f"\n  [yellow]No agent env at[/yellow] [cyan]{rel(env_path)}[/cyan]. "

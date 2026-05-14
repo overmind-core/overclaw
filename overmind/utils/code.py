@@ -188,12 +188,7 @@ def _is_local_module(
     top = module_name.split(".")[0]
     if top in _STDLIB_TOP:
         return False
-    return (
-        _resolve_module_to_file(
-            module_name, from_file, project_root, search_paths=search_paths
-        )
-        is not None
-    )
+    return _resolve_module_to_file(module_name, from_file, project_root, search_paths=search_paths) is not None
 
 
 def _resolve_module_to_file(
@@ -316,9 +311,7 @@ def discover_search_paths(project_root: Path) -> list[Path]:
                             _add(project_root / raw)
                 find_cfg = setuptools_cfg.get("packages", {})
                 if isinstance(find_cfg, dict):
-                    where = find_cfg.get("find", {}).get("where") if isinstance(
-                        find_cfg.get("find"), dict
-                    ) else None
+                    where = find_cfg.get("find", {}).get("where") if isinstance(find_cfg.get("find"), dict) else None
                     if isinstance(where, list):
                         for raw in where:
                             if isinstance(raw, str) and raw:
@@ -440,9 +433,7 @@ def _eval_path_expr(
             if base is None:
                 return None
             slice_node = node.slice
-            if isinstance(slice_node, ast.Constant) and isinstance(
-                slice_node.value, int
-            ):
+            if isinstance(slice_node, ast.Constant) and isinstance(slice_node.value, int):
                 try:
                     return base.parents[slice_node.value]
                 except IndexError:
@@ -474,9 +465,7 @@ def _eval_path_expr(
                 if base is None:
                     return None
                 for seg in node.args[1:]:
-                    if not (
-                        isinstance(seg, ast.Constant) and isinstance(seg.value, str)
-                    ):
+                    if not (isinstance(seg, ast.Constant) and isinstance(seg.value, str)):
                         return None
                     base = base / seg.value
                 return base
@@ -484,17 +473,13 @@ def _eval_path_expr(
                 base = _eval_path_expr(node.args[0], file=file, constants=constants)
                 return base.parent if base is not None else None
             if func.attr in ("abspath", "realpath"):
-                return _eval_path_expr(
-                    node.args[0], file=file, constants=constants
-                )
+                return _eval_path_expr(node.args[0], file=file, constants=constants)
         return None
 
     return None
 
 
-def _detect_entry_search_paths(
-    entry_path: Path, project_root: Path
-) -> list[Path]:
+def _detect_entry_search_paths(entry_path: Path, project_root: Path) -> list[Path]:
     """Best-effort static detection of ``sys.path``-style mutations in *entry_path*.
 
     Many agents bridge non-standard layouts (hyphenated package roots,
@@ -585,9 +570,7 @@ def _detect_entry_search_paths(
             if isinstance(node, ast.Assign):
                 # Module-level constants assigned via the supported grammar
                 # become resolvable names for downstream sys.path.* calls.
-                value = _eval_path_expr(
-                    node.value, file=entry, constants=constants
-                )
+                value = _eval_path_expr(node.value, file=entry, constants=constants)
                 if value is not None:
                     for target in node.targets:
                         if isinstance(target, ast.Name):
@@ -679,9 +662,7 @@ def _collect_import_targets(source: str) -> list[str]:
                     and isinstance(node.value, (ast.List, ast.Tuple))
                 ):
                     for elt in node.value.elts:
-                        if isinstance(elt, ast.Constant) and isinstance(
-                            elt.value, str
-                        ):
+                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
                             targets.append(elt.value)
     return targets
 
@@ -854,13 +835,9 @@ def resolve_local_files(
 
         # Resolve absolute imports
         for mod_name in _collect_import_targets(source):
-            if not _is_local_module(
-                mod_name, file_path, root, search_paths=effective_search_paths
-            ):
+            if not _is_local_module(mod_name, file_path, root, search_paths=effective_search_paths):
                 continue
-            resolved = _resolve_module_to_file(
-                mod_name, file_path, root, search_paths=effective_search_paths
-            )
+            resolved = _resolve_module_to_file(mod_name, file_path, root, search_paths=effective_search_paths)
             if resolved and resolved not in visited:
                 try:
                     rrel = str(resolved.relative_to(root))

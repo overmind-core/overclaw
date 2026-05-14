@@ -198,8 +198,7 @@ def _build_spec(
             excl_paths = [p for p in excl_paths if p != entry_rel]
             scope["exclude_paths"] = excl_paths
             logger.warning(
-                "spec_generator: moved %r from exclude_paths to read_only_paths "
-                "(entry must be reachable for BFS)",
+                "spec_generator: moved %r from exclude_paths to read_only_paths (entry must be reachable for BFS)",
                 entry_rel,
             )
             if entry_rel not in opt_paths and entry_rel not in ro_paths:
@@ -219,10 +218,7 @@ def _build_spec(
     if agent_path:
         try:
             entry_path = Path(agent_path).resolve()
-            pr = (
-                project_root_from_agent_file(agent_path)
-                or project_root()
-            )
+            pr = project_root_from_agent_file(agent_path) or project_root()
             root = Path(pr).resolve()
             detected = _detect_entry_search_paths(entry_path, root)
         except Exception:
@@ -252,8 +248,7 @@ def _build_spec(
             if injected:
                 scope["search_paths"] = declared
                 logger.info(
-                    "spec_generator: injected scope.search_paths=%s from entry "
-                    "sys.path mutation",
+                    "spec_generator: injected scope.search_paths=%s from entry sys.path mutation",
                     injected,
                 )
 

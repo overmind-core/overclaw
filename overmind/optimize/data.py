@@ -66,10 +66,11 @@ def _parse_jsonl_text(text: str, path: str) -> list[dict]:
     """Parse JSON-Lines / NDJSON content into a list of dicts.
 
     Empty / whitespace-only lines and ``#``-prefixed comment lines are
-    skipped.  Each non-skipped line must be a JSON object — bare arrays
-    or scalars produce a clear ``ValueError`` pointing at the offending
-    line number, which beats the cryptic decode error users would
-    otherwise see when validating an exported dataset.
+    skipped.  Each non-skipped line must be a JSON object — invalid JSON
+    raises ``ValueError``; a JSON value that is not an object (e.g. an
+    array or scalar) raises ``TypeError`` with the offending line number,
+    which beats the cryptic decode error users would otherwise see when
+    validating an exported dataset.
     """
     cases: list[dict] = []
     for lineno, raw in enumerate(text.splitlines(), start=1):
@@ -79,13 +80,10 @@ def _parse_jsonl_text(text: str, path: str) -> list[dict]:
         try:
             obj = json.loads(line)
         except json.JSONDecodeError as exc:
-            raise ValueError(
-                f"Invalid JSONL in {path} (line {lineno}): {exc.msg} at column {exc.colno}"
-            ) from exc
+            raise ValueError(f"Invalid JSONL in {path} (line {lineno}): {exc.msg} at column {exc.colno}") from exc
         if not isinstance(obj, dict):
-            raise ValueError(
-                f"Invalid JSONL in {path} (line {lineno}): expected a JSON object, "
-                f"got {type(obj).__name__}"
+            raise TypeError(
+                f"Invalid JSONL in {path} (line {lineno}): expected a JSON object, got {type(obj).__name__}"
             )
         cases.append(obj)
     return cases

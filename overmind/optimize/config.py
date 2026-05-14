@@ -193,9 +193,7 @@ def _validate_consistency_rules(rules: object) -> None:
     if rules is None:
         return
     if not isinstance(rules, list):
-        raise SpecValidationError(
-            f"consistency_rules: expected a list, got {type(rules).__name__}"
-        )
+        raise SpecValidationError(f"consistency_rules: expected a list, got {type(rules).__name__}")
     for i, rule in enumerate(rules):
         prefix = f"consistency_rules[{i}]"
         if not isinstance(rule, dict):
@@ -211,33 +209,25 @@ def _validate_consistency_rules(rules: object) -> None:
                 raise SpecValidationError(f"{prefix}.{key}: required string is missing")
             if not isinstance(rule[key], str) or not rule[key]:
                 raise SpecValidationError(
-                    f"{prefix}.{key}: must be a non-empty string referring to "
-                    f"an output_fields entry"
+                    f"{prefix}.{key}: must be a non-empty string referring to an output_fields entry"
                 )
         if "type" in rule and rule["type"] not in _VALID_RULE_TYPES:
             raise SpecValidationError(
-                f"{prefix}.type: must be one of "
-                f"{sorted(_VALID_RULE_TYPES)}, got {rule['type']!r}"
+                f"{prefix}.type: must be one of {sorted(_VALID_RULE_TYPES)}, got {rule['type']!r}"
             )
         if "operator" in rule and rule["operator"] not in _VALID_RULE_OPERATORS:
             raise SpecValidationError(
-                f"{prefix}.operator: must be one of "
-                f"{sorted(_VALID_RULE_OPERATORS)}, got {rule['operator']!r}"
+                f"{prefix}.operator: must be one of {sorted(_VALID_RULE_OPERATORS)}, got {rule['operator']!r}"
             )
         if "penalty" in rule and not isinstance(rule["penalty"], (int, float)):
-            raise SpecValidationError(
-                f"{prefix}.penalty: must be numeric, got "
-                f"{type(rule['penalty']).__name__}"
-            )
+            raise SpecValidationError(f"{prefix}.penalty: must be numeric, got {type(rule['penalty']).__name__}")
 
 
 def _validate_scope(scope: object) -> None:
     if scope is None:
         return
     if not isinstance(scope, dict):
-        raise SpecValidationError(
-            f"scope: expected an object, got {type(scope).__name__}"
-        )
+        raise SpecValidationError(f"scope: expected an object, got {type(scope).__name__}")
     for key in (
         "optimizable_paths",
         "context_paths",
@@ -246,9 +236,7 @@ def _validate_scope(scope: object) -> None:
         "search_paths",
     ):
         if key in scope and not _is_path_list(scope[key]):
-            raise SpecValidationError(
-                f"scope.{key}: must be a list of strings"
-            )
+            raise SpecValidationError(f"scope.{key}: must be a list of strings")
 
 
 def _validate_output_fields(fields: object) -> None:
@@ -261,23 +249,16 @@ def _validate_output_fields(fields: object) -> None:
         # *shape* errors when the key exists.
         return
     if not isinstance(fields, dict):
-        raise SpecValidationError(
-            f"output_fields: expected an object, got {type(fields).__name__}"
-        )
+        raise SpecValidationError(f"output_fields: expected an object, got {type(fields).__name__}")
     for name, cfg in fields.items():
         if not isinstance(cfg, dict):
             raise SpecValidationError(
-                f"output_fields.{name}: must be an object describing the "
-                f"field (type/description/weight/...)"
+                f"output_fields.{name}: must be an object describing the field (type/description/weight/...)"
             )
         if "weight" in cfg and not isinstance(cfg["weight"], (int, float)):
-            raise SpecValidationError(
-                f"output_fields.{name}.weight: must be numeric"
-            )
+            raise SpecValidationError(f"output_fields.{name}.weight: must be numeric")
         if "values" in cfg and not isinstance(cfg["values"], list):
-            raise SpecValidationError(
-                f"output_fields.{name}.values: must be a list"
-            )
+            raise SpecValidationError(f"output_fields.{name}.values: must be a list")
 
 
 def validate_eval_spec(spec: object) -> None:
@@ -291,10 +272,7 @@ def validate_eval_spec(spec: object) -> None:
     at a time without re-reading the whole list.
     """
     if not isinstance(spec, dict):
-        raise SpecValidationError(
-            f"eval_spec: expected an object at the top level, got "
-            f"{type(spec).__name__}"
-        )
+        raise SpecValidationError(f"eval_spec: expected an object at the top level, got {type(spec).__name__}")
     _validate_output_fields(spec.get("output_fields"))
     _validate_consistency_rules(spec.get("consistency_rules"))
     _validate_scope(spec.get("scope"))
@@ -400,8 +378,7 @@ def apply_eval_spec_scope(cfg: Config, spec: dict) -> None:
     if literal_overlap:
         raise ValueError(
             "eval_spec scope error: the following paths appear in both "
-            "optimizable_paths and read_only_paths — pick one: "
-            + ", ".join(sorted(literal_overlap))
+            "optimizable_paths and read_only_paths — pick one: " + ", ".join(sorted(literal_overlap))
         )
 
     # Tier 2 — file-level overlap after glob expansion. Catches the
@@ -409,11 +386,7 @@ def apply_eval_spec_scope(cfg: Config, spec: dict) -> None:
     # overlapping files (e.g. ``**/*.py`` vs ``entry.py``). Skipped
     # when no project root is resolvable (synthetic configs in tests).
     root = _project_root_for(cfg)
-    if (
-        root is not None
-        and cfg.optimizable_scope
-        and cfg.read_only_scope
-    ):
+    if root is not None and cfg.optimizable_scope and cfg.read_only_scope:
         opt_files = _expand_scope_patterns(cfg.optimizable_scope, root)
         ro_files = _expand_scope_patterns(cfg.read_only_scope, root)
         file_overlap = opt_files & ro_files
@@ -422,8 +395,7 @@ def apply_eval_spec_scope(cfg: Config, spec: dict) -> None:
                 "eval_spec scope error: optimizable_paths and "
                 "read_only_paths resolve to overlapping files after glob "
                 "expansion — pick one (the patterns differ as strings, "
-                "but match the same files): "
-                + ", ".join(sorted(file_overlap))
+                "but match the same files): " + ", ".join(sorted(file_overlap))
             )
 
 

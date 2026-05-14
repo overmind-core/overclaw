@@ -283,9 +283,7 @@ def detect_external_imports(agent_dir: Path, entry_file: str, language: Language
         # "bundle finds it but runner flags it external" split that
         # caused MissingDependenciesError for valid layouts.
         search_paths = discover_search_paths(project_root)
-        closure = resolve_local_files(
-            str(entry_path), str(project_root), search_paths=search_paths
-        )
+        closure = resolve_local_files(str(entry_path), str(project_root), search_paths=search_paths)
 
         raw_imports: list[str] = []
         for src in closure.values():
@@ -294,21 +292,14 @@ def detect_external_imports(agent_dir: Path, entry_file: str, language: Language
         # Fall back to the entry file alone if BFS produced nothing,
         # so a syntactically broken closure still surfaces some signal.
         if not raw_imports:
-            raw_imports = _extract_python_imports(
-                entry_path.read_text(encoding="utf-8")
-            )
+            raw_imports = _extract_python_imports(entry_path.read_text(encoding="utf-8"))
 
         externals: list[str] = []
         for mod in dict.fromkeys(raw_imports):
             top = mod.split(".")[0]
             if top in _PYTHON_STDLIB or top == "overmind":
                 continue
-            if (
-                _resolve_module_to_file(
-                    mod, entry_path, project_root, search_paths=search_paths
-                )
-                is not None
-            ):
+            if _resolve_module_to_file(mod, entry_path, project_root, search_paths=search_paths) is not None:
                 continue
             externals.append(top)
         return list(dict.fromkeys(externals))

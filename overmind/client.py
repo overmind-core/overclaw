@@ -365,9 +365,7 @@ def resolve_project_id(client: OvermindClient | None = None) -> str:
     if client is None:
         client = get_client()
     if client is None:
-        raise ProjectResolutionError(
-            "Cannot resolve project: OVERMIND_API_KEY is not set."
-        )
+        raise ProjectResolutionError("Cannot resolve project: OVERMIND_API_KEY is not set.")
 
     try:
         page = client.projects_list(page_size=2)

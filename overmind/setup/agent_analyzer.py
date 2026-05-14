@@ -156,9 +156,7 @@ def analyze_agent(
     # step's read-only enforcement and remain silently editable.
     try:
         pr2 = project_root_from_agent_file(agent_path) or project_root()
-        analysis["_entry_rel"] = str(
-            Path(agent_path).resolve().relative_to(Path(pr2).resolve())
-        )
+        analysis["_entry_rel"] = str(Path(agent_path).resolve().relative_to(Path(pr2).resolve()))
     except Exception:
         analysis["_entry_rel"] = Path(agent_path).name
 

@@ -78,9 +78,7 @@ def _read_only_cache_key(read_only_scope: list[str]) -> str:
     return json.dumps(sorted(read_only_scope))
 
 
-def _load_or_build_read_only_baseline(
-    state: SkillRunState, cfg
-) -> tuple[dict[str, str], set[str]]:
+def _load_or_build_read_only_baseline(state: SkillRunState, cfg) -> tuple[dict[str, str], set[str]]:
     """Return ``(baseline_files, read_only_paths)`` for the accept gate.
 
     Reads from :attr:`SkillRunState.read_only_baseline` when the cache
@@ -94,10 +92,7 @@ def _load_or_build_read_only_baseline(
     rebuild and keeps the optimizer running on transient I/O hiccups.
     """
     current_key = _read_only_cache_key(list(cfg.read_only_scope))
-    if (
-        state.read_only_baseline
-        and state.read_only_baseline_key == current_key
-    ):
+    if state.read_only_baseline and state.read_only_baseline_key == current_key:
         return (
             dict(state.read_only_baseline),
             set(state.read_only_baseline.keys()),
@@ -109,15 +104,9 @@ def _load_or_build_read_only_baseline(
         if optimizer._bundle is None:
             return {}, set()
         ro_paths = set(optimizer._bundle.read_only_files)
-        baseline = {
-            rel: src
-            for rel, src in optimizer._bundle.original_files.items()
-            if rel in ro_paths
-        }
+        baseline = {rel: src for rel, src in optimizer._bundle.original_files.items() if rel in ro_paths}
     except Exception as exc:
-        logger.warning(
-            f"accept: bundle rebuild failed; skipping read-only check: {exc}"
-        )
+        logger.warning(f"accept: bundle rebuild failed; skipping read-only check: {exc}")
         return {}, set()
 
     # Persist for next iteration — invalidated automatically when the
@@ -251,21 +240,14 @@ def run_accept(
     # edits their spec mid-run (rare), the key changes and we rebuild.
     read_only_violations: list[dict] = []
     if cfg.read_only_scope:
-        baseline_files, read_only_paths = _load_or_build_read_only_baseline(
-            state, cfg
-        )
+        baseline_files, read_only_paths = _load_or_build_read_only_baseline(state, cfg)
 
         if read_only_paths:
             clean: list[dict] = []
             for cand in scored:
-                violated = _candidate_violates_read_only(
-                    cand["candidate_dir"], read_only_paths, baseline_files
-                )
+                violated = _candidate_violates_read_only(cand["candidate_dir"], read_only_paths, baseline_files)
                 if violated:
-                    logger.warning(
-                        f"Rejecting candidate {cand['candidate_id']}: "
-                        f"modified read_only files: {violated}"
-                    )
+                    logger.warning(f"Rejecting candidate {cand['candidate_id']}: modified read_only files: {violated}")
                     read_only_violations.append({
                         "candidate_id": cand["candidate_id"],
                         "candidate_dir": cand["candidate_dir"],
@@ -293,24 +275,17 @@ def run_accept(
             "status": "reject",
             "description": (
                 "All candidates modified read_only files: "
-                + ", ".join(
-                    f"{v['candidate_id']}->{v['files']}" for v in read_only_violations
-                )
+                + ", ".join(f"{v['candidate_id']}->{v['files']}" for v in read_only_violations)
             ),
         })
         state.save()
 
-        early_stop = (
-            cfg.early_stopping_patience > 0
-            and state.stall_count >= cfg.early_stopping_patience
-        )
+        early_stop = cfg.early_stopping_patience > 0 and state.stall_count >= cfg.early_stopping_patience
         if early_stop:
             state.early_stopping_triggered = True
             state.save()
 
-        _prune_git_worktrees(
-            [c["candidate_dir"] for c in candidates if c.get("candidate_dir")]
-        )
+        _prune_git_worktrees([c["candidate_dir"] for c in candidates if c.get("candidate_dir")])
 
         return {
             "status": "ok",

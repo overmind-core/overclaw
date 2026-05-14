@@ -78,6 +78,7 @@ def is_non_interactive() -> bool:
         return True
     return False
 
+
 # ---------------------------------------------------------------------------
 # Brand colour
 # ---------------------------------------------------------------------------
@@ -235,8 +236,7 @@ def _select_option_prompt_fallback(
             )
             if console:
                 console.print(
-                    f"  [dim]No input available — using default: "
-                    f"[bold]{options[default_index]}[/bold].[/dim]"
+                    f"  [dim]No input available — using default: [bold]{options[default_index]}[/bold].[/dim]"
                 )
             return default_index
         if 1 <= choice <= len(options):
@@ -270,9 +270,7 @@ def select_option(
     if console and title:
         console.print(f"\n  [dim]{title}[/dim]")
 
-    logger.debug(
-        f"select_option presented title={title!r} options={options!r} default_index={default_index}"
-    )
+    logger.debug(f"select_option presented title={title!r} options={options!r} default_index={default_index}")
 
     if is_non_interactive():
         idx = default_index
@@ -284,9 +282,7 @@ def select_option(
             logger=logger,
         )
         if console:
-            console.print(
-                f"  [bold]{options[idx]}[/bold]  [dim](non-interactive default)[/dim]"
-            )
+            console.print(f"  [bold]{options[idx]}[/bold]  [dim](non-interactive default)[/dim]")
             console.print()
         return idx
 
@@ -307,17 +303,10 @@ def select_option(
         # back to a textual prompt so the user can still complete the
         # command; the prompt itself silently uses *default_index* when
         # stdin is also closed.
-        logger.info(
-            f"select_option falling back to text prompt (TerminalMenu OSError: {exc})"
-        )
+        logger.info(f"select_option falling back to text prompt (TerminalMenu OSError: {exc})")
         if console:
-            console.print(
-                "  [dim]Arrow-key menu unavailable in this shell — "
-                "using a text prompt instead.[/dim]"
-            )
-        idx = _select_option_prompt_fallback(
-            options, title=title, default_index=default_index, console=console
-        )
+            console.print("  [dim]Arrow-key menu unavailable in this shell — using a text prompt instead.[/dim]")
+        idx = _select_option_prompt_fallback(options, title=title, default_index=default_index, console=console)
 
     if idx is None:
         logger.info(f"select_option cancelled title={title!r}")
@@ -364,9 +353,7 @@ def confirm_option(
             logger=logger,
         )
         if console:
-            console.print(
-                f"  [bold]{'Yes' if default else 'No'}[/bold]  [dim](non-interactive default)[/dim]"
-            )
+            console.print(f"  [bold]{'Yes' if default else 'No'}[/bold]  [dim](non-interactive default)[/dim]")
             console.print()
         return default
 
@@ -385,14 +372,9 @@ def confirm_option(
         # When stdin is also unavailable the ``Confirm.ask`` raises
         # ``EOFError`` — we surface that as the supplied *default* so the
         # caller can keep moving instead of crashing.
-        logger.info(
-            f"confirm_option falling back to text prompt (TerminalMenu OSError: {exc})"
-        )
+        logger.info(f"confirm_option falling back to text prompt (TerminalMenu OSError: {exc})")
         if console:
-            console.print(
-                "  [dim]Arrow-key menu unavailable in this shell — "
-                "using a text prompt instead.[/dim]"
-            )
+            console.print("  [dim]Arrow-key menu unavailable in this shell — using a text prompt instead.[/dim]")
         try:
             answer = Confirm.ask("  Confirm", default=default, console=console)
         except EOFError:
@@ -402,8 +384,7 @@ def confirm_option(
             )
             if console:
                 console.print(
-                    f"  [dim]No input available — using default: "
-                    f"[bold]{'Yes' if default else 'No'}[/bold].[/dim]"
+                    f"  [dim]No input available — using default: [bold]{'Yes' if default else 'No'}[/bold].[/dim]"
                 )
             answer = default
         idx = 0 if answer else 1
