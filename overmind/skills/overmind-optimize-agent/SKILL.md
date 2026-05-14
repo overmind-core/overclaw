@@ -10,7 +10,7 @@ Use this skill to drive the `overmind optimize-step` JSON CLI from a host coding
 
 This skill optimizes the agent files selected by the existing Overmind eval spec and optimizer scope. It should not add extra setup restrictions that prevent `overmind optimize-step` from running.
 
-> always export the environment variables OVERMIND_API_KEY and OVERMIND_API_URL if present in the `.env`
+> always export the environment variable OVERMIND_API_KEY if present in the `.env`
 
 ## Operating principles
 
@@ -38,7 +38,7 @@ Before starting, verify:
 - `.overmind/agents/<agent-name>/setup_spec/eval_spec.json` exists.
 - `.overmind/agents/<agent-name>/setup_spec/dataset.json` exists.
 - Provider configuration needed for evaluation and analyzer models is available in `.overmind/.env`, `.overmind/agents/<agent-name>/.env`, or the host environment. Per-agent `.env` overrides `.overmind/.env` for duplicate keys when both are loaded.
-- Overmind backend credentials (`OVERMIND_API_URL`, `OVERMIND_API_KEY`) are configured so the agent / policy / eval-spec / dataset can be synced before `optimize-step init`. `OVERMIND_PROJECT_ID` is **optional** when `OVERMIND_API_KEY` is a project-scoped key (starts with `ovr_`) — the client auto-resolves the project from the key. Only set it explicitly when the key has access to multiple projects (e.g. a user-level token).
+- `OVERMIND_API_KEY` is configured so the agent / policy / eval-spec / dataset can be synced before `optimize-step init`. The project is auto-resolved from the key.
 - Git is available and the project can create detached worktrees.
 
 If any prerequisite is missing, stop and tell the user which setup skill or configuration step to run.
@@ -275,9 +275,8 @@ try:
     storage = get_storage()
 except StorageNotConfiguredError as exc:
     raise SystemExit(
-        f"Overmind backend not configured ({exc}). Set OVERMIND_API_URL / "
-        "OVERMIND_API_KEY (+ OVERMIND_PROJECT_ID for new agents) in "
-        ".overmind/.env before running /overmind-optimize-agent."
+        f"Overmind backend not configured ({exc}). Set OVERMIND_API_KEY "
+        "in .overmind/.env before running /overmind-optimize-agent."
     )
 
 storage.save_spec(spec)
@@ -300,7 +299,7 @@ print(
 )
 ```
 
-If this push fails, stop the skill and report the concrete error (most often a missing `OVERMIND_API_KEY`, an `OVERMIND_PROJECT_ID` that the bound key cannot access, or — when no `OVERMIND_PROJECT_ID` is set and the key is **not** a project-scoped `ovr_` key — an ambiguous project lookup. The CLI's error message will list the candidate project ids so the user can pick one). Do **not** proceed to `init` against a half-synced backend — the UI will show a `Job` with no spec / dataset and the optimize loop's scores will not surface against the right `Agent`.
+If this push fails, stop the skill and report the concrete error (most often a missing or invalid `OVERMIND_API_KEY`). Do **not** proceed to `init` against a half-synced backend — the UI will show a `Job` with no spec / dataset and the optimize loop's scores will not surface against the right `Agent`.
 
 ### Initialize optimization state
 
@@ -452,7 +451,7 @@ Prefer to let evaluation catch quality regressions, but do not evaluate candidat
 
 - **State already exists**: Ask whether to resume or start fresh. Use overwrite only with explicit approval.
 - **Missing eval spec or dataset**: Stop and run or recommend `/overmind-generate-spec-and-dataset` (or `overmind setup <agent>`).
-- **Backend sync failure before `init`**: `OVERMIND_API_URL` / `OVERMIND_API_KEY` are missing or invalid, or the bound key cannot access the configured `OVERMIND_PROJECT_ID`. If you're using a project-scoped `ovr_` key, leave `OVERMIND_PROJECT_ID` unset and let the client auto-resolve. If you're using a multi-project key, set `OVERMIND_PROJECT_ID` to one of the candidate ids the CLI prints in its error. Fix `.overmind/.env` and re-run the sync block; do not skip it.
+- **Backend sync failure before `init`**: `OVERMIND_API_KEY` is missing or invalid. Fix `.overmind/.env` and re-run the sync block; do not skip it.
 - **Output schema may be incompatible**: Warn the user that scoring may be affected, then rely on optimize-step baseline or evaluation to confirm the actual failure.
 - **Nested or list outputs**: Do not block up front. Let the evaluator determine whether the current eval spec can score them.
 - **Analyzer warning**: Stop and report the warning’s last error and hint; usually provider configuration or model name is wrong.

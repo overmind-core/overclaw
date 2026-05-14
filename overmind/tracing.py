@@ -74,7 +74,7 @@ def get_api_settings(
     base_url: str | None = None,
 ) -> tuple[str, str]:
     overmind_api_key = overmind_api_key or os.getenv("OVERMIND_API_KEY")
-    base_url = base_url or os.getenv("OVERMIND_API_URL") or DEFAULT_BASE_URL
+    base_url = base_url or DEFAULT_BASE_URL
 
     # Avoid prompting for key if running as library or during tests
     # Detect (roughly) if running under pytest or other test envs
@@ -354,7 +354,7 @@ def init(
         environment: Environment name (e.g., "production", "staging"). Defaults to
                      OVERMIND_ENVIRONMENT env var or "development".
         providers: List of providers to trace. Supported values: "openai", "anthropic", "google", "agno".
-        overmind_base_url: Base URL for traces. If not provided, uses OVERMIND_API_URL env var.
+        overmind_base_url: Base URL for traces. If not provided, uses the Overmind Cloud endpoint.
     """
     global _initialized, _tracer
 
@@ -903,32 +903,27 @@ def tool(name: str | None = None):
     return observe(span_name=name, type=SpanType.TOOL)
 
 
-"""Tracing helpers for Overmind.
-
-The overmind SDK ships ``@observe`` (in :mod:`overmind.tracing`) which
-serialises a function's positional arguments and return value into
-``inputs`` / ``outputs`` span attributes.  That's useful for general
-observability but unsafe inside Overmind itself, where most traced
-functions touch the user's agent source, prompts, datasets, or
-credentials.
-
-This module provides the leaner primitives the rest of the CLI builds
-on:
-
-* :func:`observe_safe` — drop-in for ``@observe`` that opens a child
-  span **without** capturing inputs or outputs.  Use :func:`set_tag`
-  inside the function for the specific scalar / categorical metadata
-  you want to surface.
-* :func:`start_child_span` — explicit context-manager variant for
-  loops, conditional blocks, or sub-stages within a workflow.
-* :func:`set_progress` / :func:`set_status` /
-  :func:`set_iteration_analytics` — helpers that stamp the right
-  ``overmind.*`` attributes on the current span using the canonical
-  keys from :mod:`overmind.attrs`.  Keeping the keys centralised here
-  is what lets the OTLP ingest pipeline parse them reliably.
-* :func:`force_flush_traces` — best-effort flush so terminal events
-  reach the backend before the CLI exits.
-"""
+# ---------------------------------------------------------------------------
+# Safe tracing helpers
+#
+# The overmind SDK ships @observe which serialises a function's positional
+# arguments and return value into ``inputs`` / ``outputs`` span attributes.
+# That's useful for general observability but unsafe inside Overmind itself,
+# where most traced functions touch the user's agent source, prompts,
+# datasets, or credentials.
+#
+# observe_safe      — drop-in for @observe that opens a child span WITHOUT
+#                     capturing inputs or outputs.  Use set_tag inside the
+#                     function for specific scalar / categorical metadata.
+# start_child_span  — explicit context-manager variant for loops, conditional
+#                     blocks, or sub-stages within a workflow.
+# set_progress / set_status / set_iteration_analytics
+#                   — stamp the right overmind.* attributes on the current
+#                     span using canonical keys from overmind.attrs so the
+#                     OTLP ingest pipeline can parse them reliably.
+# force_flush_traces — best-effort flush so terminal events reach the
+#                     backend before the CLI exits.
+# ---------------------------------------------------------------------------
 
 
 def observe_safe(

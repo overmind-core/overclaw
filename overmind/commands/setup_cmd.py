@@ -39,7 +39,6 @@ from overmind.client import (
     ProjectResolutionError,
     flush_pending_api_updates,
     get_client,
-    get_project_id,
     resolve_project_id,
     upsert_agent,
 )
@@ -1041,25 +1040,12 @@ def _ensure_remote_agent_id(
 def _sync_setup_artifacts(agent_name: str, agent_path: str, console: Console) -> None:
     """Upload local setup artifacts to Overmind backend if configured.
 
-    Gating rules:
-      * No client (no ``OVERMIND_API_KEY``) → silently skip.
-      * Client + env-set project id → proceed (legacy path).
-      * Client + project-scoped ``ovr_…`` key → proceed; the project id is
-        resolved lazily inside :func:`_ensure_remote_agent_id`.
-      * Client + user JWT *and* no env project id → skip (we can't pick a
-        project unambiguously and the caller never opted-in via env).
+    Silently skips when ``OVERMIND_API_KEY`` is not set.  The project is
+    auto-resolved from the key via :func:`resolve_project_id`.
     """
     client = get_client()
     if not client:
         return
-    if not get_project_id():
-        # Allow project-scoped keys to proceed (they self-resolve); for
-        # user-scoped JWTs without an explicit project id, bail out early
-        # so we don't make a projects_list() call that's only going to fail
-        # ambiguously.
-        token = os.getenv("OVERMIND_API_KEY", "").strip()
-        if not token.startswith("ovr_"):
-            return
 
     spec_path = agent_setup_spec_dir(agent_name) / "eval_spec.json"
     dataset_path = agent_setup_spec_dir(agent_name) / "dataset.json"

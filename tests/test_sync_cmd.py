@@ -4,23 +4,18 @@ from unittest.mock import patch
 
 import pytest
 
-pytestmark = pytest.mark.skip(
-    reason="overmind.commands.sync_cmd has not been ported from overclaw yet"
-)
+pytestmark = pytest.mark.skip(reason="overmind.commands.sync_cmd has not been ported from overclaw yet")
 
 
 class TestSyncCmd:
     @patch("overmind.commands.sync_cmd.load_overmind_dotenv")
     @patch("overmind.commands.sync_cmd.get_client")
-    @patch("overmind.commands.sync_cmd.get_project_id")
     def test_exits_when_api_not_configured(
         self,
-        mock_project_id,
         mock_client,
         _mock_load_env,
     ):
         mock_client.return_value = None
-        mock_project_id.return_value = None
         from overmind.commands.sync_cmd import main
 
         with pytest.raises(SystemExit) as exc:
@@ -29,14 +24,12 @@ class TestSyncCmd:
 
     @patch("overmind.commands.sync_cmd.load_overmind_dotenv")
     @patch("overmind.commands.sync_cmd.get_client")
-    @patch("overmind.commands.sync_cmd.get_project_id")
     @patch("overmind.commands.sync_cmd.load_registry")
     @patch("overmind.commands.sync_cmd._sync_setup_artifacts")
     def test_syncs_registered_agent_with_existing_file(
         self,
         mock_sync,
         mock_registry,
-        mock_project_id,
         mock_client,
         _mock_load_env,
         tmp_path,
@@ -47,7 +40,6 @@ class TestSyncCmd:
         agent_file.write_text("def run(x):\n    return {}\n", encoding="utf-8")
 
         mock_client.return_value = object()
-        mock_project_id.return_value = "project-id"
         mock_registry.return_value = {
             "alpha": {
                 "entrypoint": "agents.a:run",

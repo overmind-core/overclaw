@@ -8,7 +8,7 @@ unit-test suite.
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from time import sleep
 
 import pytest
@@ -20,12 +20,12 @@ pytestmark = pytest.mark.skipif(
     reason="Integration test: requires OVERMIND_API_KEY and OPENAI_API_KEY",
 )
 
-from openai import OpenAI  # noqa: E402
-from opentelemetry import trace as otel_trace  # noqa: E402
+from openai import OpenAI
+from opentelemetry import trace as otel_trace
 
-from overmind.tracing import init  # noqa: E402
+from overmind.tracing import init
 
-project_id = os.environ.get("OVERMIND_PROJECT_ID", "e5445c2d-0e4b-4cb1-8a0c-26c18d0ba19f")
+project_id = "e5445c2d-0e4b-4cb1-8a0c-26c18d0ba19f"
 
 base_url = "https://api.overmindlab.ai"
 
@@ -55,10 +55,7 @@ def check_for_signature(signature: str) -> list[bool]:
         timeout=30,
     )
     if traces_response.status_code != 200:
-        pytest.skip(
-            f"Traces API returned {traces_response.status_code}; "
-            "skipping integration test."
-        )
+        pytest.skip(f"Traces API returned {traces_response.status_code}; skipping integration test.")
     traces = traces_response.json()["traces"]
     input_has_signature = []
     for trace in traces:
@@ -75,7 +72,7 @@ def check_for_signature(signature: str) -> list[bool]:
     return input_has_signature
 
 
-today = str(datetime.now().timestamp())
+today = str(datetime.now(tz=timezone.utc).timestamp())
 system_prompt = f"""You are a fashion taxonomy assistant.
 Classify the product into exactly one category from the allowed list.
 Return strict JSON only in this format:
