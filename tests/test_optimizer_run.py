@@ -14,16 +14,126 @@ import overmind
 from overmind import attrs as _attrs
 from overmind.core.constants import OVERMIND_DIR_NAME
 from overmind.optimize.config import Config
+from overmind.optimize.execution_backend import BackendOutput
 from overmind.optimize.optimizer import Optimizer
+from overmind.optimize.runner import RunOutput
 
 if not hasattr(_attrs, "OPTIMIZE_CANDIDATE_INDEX"):
     _attrs.OPTIMIZE_CANDIDATE_INDEX = "overmind.optimize.candidate_index"
 
+# Cases whose ``input`` may appear in ``_run_case_with_plan`` when these tests
+# exercise ``_run_agent_on_dataset`` / ``run()`` (subprocess path is mocked).
+STANDARD_OPTIMIZER_DATASET: list[dict] = [
+    {
+        "input": {"company": "Acme"},
+        "expected_output": {
+            "qualification": "hot",
+            "score": 80,
+            "reasoning": "big",
+            "is_enterprise": True,
+        },
+    },
+    {
+        "input": {"company": "Small"},
+        "expected_output": {
+            "qualification": "cold",
+            "score": 20,
+            "reasoning": "small",
+            "is_enterprise": False,
+        },
+    },
+    {
+        "input": {"company": "Med"},
+        "expected_output": {
+            "qualification": "warm",
+            "score": 50,
+            "reasoning": "mid",
+            "is_enterprise": False,
+        },
+    },
+    {
+        "input": {"company": "Big"},
+        "expected_output": {
+            "qualification": "hot",
+            "score": 90,
+            "reasoning": "huge",
+            "is_enterprise": True,
+        },
+    },
+    {
+        "input": {"company": "Tiny"},
+        "expected_output": {
+            "qualification": "cold",
+            "score": 10,
+            "reasoning": "tiny",
+            "is_enterprise": False,
+        },
+    },
+]
+
+MULTI_EVAL_FIXTURE_CASE = {
+    "input": {"company": "Test"},
+    "expected_output": {
+        "qualification": "hot",
+        "score": 80,
+        "reasoning": "ok",
+        "is_enterprise": True,
+    },
+}
+
+PARALLEL_FIXTURE_DATASET: list[dict] = [
+    {
+        "input": {"company": "A"},
+        "expected_output": {
+            "qualification": "hot",
+            "score": 80,
+            "reasoning": "ok",
+            "is_enterprise": True,
+        },
+    },
+    {
+        "input": {"company": "B"},
+        "expected_output": {
+            "qualification": "cold",
+            "score": 20,
+            "reasoning": "no",
+            "is_enterprise": False,
+        },
+    },
+]
+
+_REFERENCE_CASES: tuple[dict, ...] = (
+    *STANDARD_OPTIMIZER_DATASET,
+    MULTI_EVAL_FIXTURE_CASE,
+    *PARALLEL_FIXTURE_DATASET,
+)
+
+
+def _fast_run_case_side_effect(plan, input_data, trace_path, idx, run_name):
+    for case in _REFERENCE_CASES:
+        if case["input"] == input_data:
+            return BackendOutput(
+                run_output=RunOutput(success=True, data=dict(case["expected_output"])),
+                backend="subprocess",
+            )
+    msg = f"No reference case for input_data={input_data!r} (idx={idx}, run_name={run_name!r})"
+    raise AssertionError(msg)
+
+
+@pytest.fixture
+def _fast_subprocess_eval():
+    with (
+        patch.object(Optimizer, "_run_case_with_plan", side_effect=_fast_run_case_side_effect),
+        patch("overmind.optimize.optimizer.AgentRunner.ensure_environment"),
+    ):
+        yield
+
+
+pytestmark = pytest.mark.usefixtures("_fast_subprocess_eval")
+
 
 @pytest.fixture(autouse=True)
-def _optimizer_run_project_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def _optimizer_run_project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (tmp_path / OVERMIND_DIR_NAME).mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
     os.environ["OVERMIND_API_KEY"] = "test"
@@ -71,55 +181,8 @@ def _make_config(tmp_path: Path) -> Config:
     spec_path = spec_dir / "eval_spec.json"
     spec_path.write_text(json.dumps(spec))
 
-    dataset = [
-        {
-            "input": {"company": "Acme"},
-            "expected_output": {
-                "qualification": "hot",
-                "score": 80,
-                "reasoning": "big",
-                "is_enterprise": True,
-            },
-        },
-        {
-            "input": {"company": "Small"},
-            "expected_output": {
-                "qualification": "cold",
-                "score": 20,
-                "reasoning": "small",
-                "is_enterprise": False,
-            },
-        },
-        {
-            "input": {"company": "Med"},
-            "expected_output": {
-                "qualification": "warm",
-                "score": 50,
-                "reasoning": "mid",
-                "is_enterprise": False,
-            },
-        },
-        {
-            "input": {"company": "Big"},
-            "expected_output": {
-                "qualification": "hot",
-                "score": 90,
-                "reasoning": "huge",
-                "is_enterprise": True,
-            },
-        },
-        {
-            "input": {"company": "Tiny"},
-            "expected_output": {
-                "qualification": "cold",
-                "score": 10,
-                "reasoning": "tiny",
-                "is_enterprise": False,
-            },
-        },
-    ]
     data_path = spec_dir / "dataset.json"
-    data_path.write_text(json.dumps(dataset))
+    data_path.write_text(json.dumps(STANDARD_OPTIMIZER_DATASET))
 
     return Config(
         agent_name="test-agent",
@@ -219,26 +282,17 @@ class TestOptimizerRun:
 
 
 class TestRunMultiEval:
-    def setup(self):
+    def setup_method(self) -> None:
         overmind.init()
+
     def test_multi_eval(self, tmp_path):
         cfg = _make_config(tmp_path)
         opt = Optimizer(cfg)
         opt._setup_output_dirs()
 
-        result_eval, result_items = opt._run_multi_eval(
+        result_eval, _result_items = opt._run_multi_eval(
             cfg.agent_path,
-            [
-                {
-                    "input": {"company": "Test"},
-                    "expected_output": {
-                        "qualification": "hot",
-                        "score": 80,
-                        "reasoning": "ok",
-                        "is_enterprise": True,
-                    },
-                }
-            ],
+            [MULTI_EVAL_FIXTURE_CASE],
             "multi_test",
             2,
         )
@@ -254,28 +308,6 @@ class TestRunParallel:
         opt = Optimizer(cfg)
         opt._setup_output_dirs()
 
-        dataset = [
-            {
-                "input": {"company": "A"},
-                "expected_output": {
-                    "qualification": "hot",
-                    "score": 80,
-                    "reasoning": "ok",
-                    "is_enterprise": True,
-                },
-            },
-            {
-                "input": {"company": "B"},
-                "expected_output": {
-                    "qualification": "cold",
-                    "score": 20,
-                    "reasoning": "no",
-                    "is_enterprise": False,
-                },
-            },
-        ]
-        eval_result, tracers, items = opt._run_agent_on_dataset(
-            cfg.agent_path, dataset, "par_test"
-        )
+        eval_result, _tracers, items = opt._run_agent_on_dataset(cfg.agent_path, PARALLEL_FIXTURE_DATASET, "par_test")
         assert len(items) == 2
         assert "avg_total" in eval_result
