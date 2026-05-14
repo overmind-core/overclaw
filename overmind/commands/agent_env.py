@@ -25,7 +25,7 @@ from overmind.core.paths import (
 )
 from overmind.core.registry import project_root_from_agent_file
 from overmind.utils.code import resolve_local_files
-from overmind.utils.display import BRAND, confirm_option, rel, select_option
+from overmind.utils.display import BRAND, confirm_option, is_non_interactive, rel, select_option
 from overmind.utils.env_scan import discover_env_var_defaults
 from overmind.utils.ignore import build_ignore_predicate
 from overmind.utils.io import read_api_key_masked
@@ -175,6 +175,7 @@ def collect_code_detected_env_vars(agent_name: str, entry_path: str, console: Co
         "in code.[/dim]"
     )
 
+    non_interactive = is_non_interactive()
     updates: dict[str, str] = {}
     for key in sorted(discovered.keys()):
         if existing.get(key, "").strip():
@@ -185,6 +186,10 @@ def collect_code_detected_env_vars(agent_name: str, entry_path: str, console: Co
         if code_default is not None:
             display = escape(code_default) if len(code_default) < 120 else escape(code_default[:117] + "...")
             console.print(f"\n  [bold]{escape(key)}[/bold]  [dim](code default: [cyan]{display}[/cyan])[/dim]")
+            if non_interactive:
+                console.print(f"  [dim]Using code default (non-interactive): [cyan]{display}[/cyan][/dim]")
+                updates[key] = code_default
+                continue
             val = Prompt.ask(
                 "  Value",
                 default=code_default,
@@ -194,6 +199,9 @@ def collect_code_detected_env_vars(agent_name: str, entry_path: str, console: Co
             updates[key] = val
         else:
             console.print(f"\n  [bold]{escape(key)}[/bold]  [dim](no literal default in code)[/dim]")
+            if non_interactive:
+                console.print("  [dim]Skipping (non-interactive, no code default).[/dim]")
+                continue
             val = Prompt.ask(
                 "  Value (leave empty to skip)",
                 default="",
@@ -214,21 +222,50 @@ def collect_code_detected_env_vars(agent_name: str, entry_path: str, console: Co
 
 
 def collect_agent_provider_config(agent_name: str, console: Console) -> None:
-    """Ask which LLM provider the agent uses and save credentials to its per-agent .env."""
-    env_path = agent_env_path(agent_name)
+    """Ask which LLM provider the agent uses and save credentials to its per-agent .env.
 
+    In non-interactive mode (``OVERMIND_NONINTERACTIVE=1``, ``CI=1`` or no
+    TTY) this never prompts: the existing ``.overmind/agents/<name>/.env``
+    is used as-is and, if missing, a friendly note tells the user how to
+    populate it.  This lets ``overmind agent register --non-interactive``
+    work in sandboxed shells where ``/dev/tty`` isn't available.
+    """
+    env_path = agent_env_path(agent_name)
+    existing: dict[str, str] = {}
     if env_path.exists() and env_path.stat().st_size > 0:
         existing = {k: v for k, v in (dotenv_values(env_path) or {}).items() if (v or "").strip()}
+
+    if is_non_interactive():
         if existing:
             console.print(
                 f"\n  [dim]Agent env already configured at [cyan]{rel(env_path)}[/cyan] "
-                f"({len(existing)} variable(s) set).[/dim]"
+                f"({len(existing)} variable(s) set) — keeping as-is "
+                "(non-interactive).[/dim]"
             )
             provider_hint = describe_configured_agent_llm_provider(existing)
             if provider_hint:
-                console.print(f"  [dim]Looks like this agent is set up for:[/dim] {escape(provider_hint)}")
-            if not confirm_option("Reconfigure agent model provider?", default=False, console=console):
-                return
+                console.print(
+                    f"  [dim]Looks like this agent is set up for:[/dim] {escape(provider_hint)}"
+                )
+        else:
+            console.print(
+                f"\n  [yellow]No agent env at[/yellow] [cyan]{rel(env_path)}[/cyan]. "
+                "[dim]Skipping provider prompts (non-interactive).\n"
+                "  Create the file manually with your provider keys (e.g. "
+                "[bold]OPENAI_API_KEY=...[/bold]) before running setup or optimize.[/dim]"
+            )
+        return
+
+    if existing:
+        console.print(
+            f"\n  [dim]Agent env already configured at [cyan]{rel(env_path)}[/cyan] "
+            f"({len(existing)} variable(s) set).[/dim]"
+        )
+        provider_hint = describe_configured_agent_llm_provider(existing)
+        if provider_hint:
+            console.print(f"  [dim]Looks like this agent is set up for:[/dim] {escape(provider_hint)}")
+        if not confirm_option("Reconfigure agent model provider?", default=False, console=console):
+            return
 
     console.print()
     console.print(Rule(style="dim"))

@@ -697,9 +697,18 @@ def cmd_validate(name: str, data: str) -> None:
 
     json_files: list[Path] = []
     if data_path.is_dir():
-        json_files = sorted(data_path.glob("*.json"))
+        # Accept JSON, JSONL, and NDJSON datasets — exporters frequently
+        # emit one JSON object per line for streaming reasons; rejecting
+        # them here would force users to convert files just to validate.
+        discovered: set[Path] = set()
+        for pattern in ("*.json", "*.jsonl", "*.ndjson"):
+            discovered.update(data_path.glob(pattern))
+        json_files = sorted(discovered)
         if not json_files:
-            console.print(f"\n  [bold red]Error:[/bold red] No .json files found in [cyan]{data}[/cyan]\n")
+            console.print(
+                f"\n  [bold red]Error:[/bold red] No .json/.jsonl/.ndjson files found in "
+                f"[cyan]{data}[/cyan]\n"
+            )
             raise SystemExit(1)
     else:
         json_files = [data_path]

@@ -46,7 +46,7 @@ User: *“Generate eval spec + dataset for `hotel-agent`.”* You resolve the re
 - **Preview files over giant chat pastes**: Prefer writing preview artifacts to disk and summarizing in chat (deterministic paths, IDE-openable). Full paste is optional when the user requests it.
 - **No silent dropping**: never silently drop input fields, output fields, sibling packages, seed cases, or existing artifact logic. Preserve, repair, or explicitly report every dropped item.
 - **Smoke testing here is non-blocking but owned by this skill**: this skill may run light invocation/schema smoke checks against up to three dataset cases. Do not run full semantic evaluation here. If a smoke check reaches external APIs and fails due to credentials, auth, network, or provider configuration, classify it as an environment issue and keep structurally valid artifacts.
-- **Backend sync is mandatory (no silent skips)**: every artifact this skill writes — `eval_spec.json`, `policies.md`, and `dataset.json` — must also be pushed to the Overmind backend via `overmind.storage.get_storage()` (`save_spec` / `save_policy` / `save_dataset`) in the same step that writes the local file. The optimize loop (`/overmind-optimise-agent`) and the UI both read from the backend record, so a local-only artifact is **not** considered "saved". If `OVERMIND_API_URL` / `OVERMIND_API_KEY` / `OVERMIND_PROJECT_ID` are not configured, stop and tell the user to configure them in `.overmind/.env` before continuing — do not write the local files only and claim success.
+- **Backend sync is mandatory (no silent skips)**: every artifact this skill writes — `eval_spec.json`, `policies.md`, and `dataset.json` — must also be pushed to the Overmind backend via `overmind.storage.get_storage()` (`save_spec` / `save_policy` / `save_dataset`) in the same step that writes the local file. The optimize loop (`/overmind-optimise-agent`) and the UI both read from the backend record, so a local-only artifact is **not** considered "saved". If `OVERMIND_API_URL` / `OVERMIND_API_KEY` are not configured, stop and tell the user to configure them in `.overmind/.env` before continuing — do not write the local files only and claim success. `OVERMIND_PROJECT_ID` is **optional** when the key is a project-scoped `ovr_` key (auto-resolved by the client); only set it when the key has access to more than one project.
 
 ## Workflow
 
@@ -260,8 +260,9 @@ try:
 except StorageNotConfiguredError as exc:
     raise SystemExit(
         f"Overmind backend not configured ({exc}). Set OVERMIND_API_URL / "
-        "OVERMIND_API_KEY / OVERMIND_PROJECT_ID in .overmind/.env, then re-run "
-        "this step. Local files are written but not synced."
+        "OVERMIND_API_KEY in .overmind/.env (OVERMIND_PROJECT_ID is only needed "
+        "for non-project-scoped keys), then re-run this step. Local files are "
+        "written but not synced."
     )
 
 storage.save_spec(spec)
@@ -449,8 +450,9 @@ meta = storage.save_dataset(
 if not meta:
     raise SystemExit(
         "Dataset upload to Overmind backend failed. Check OVERMIND_API_URL / "
-        "OVERMIND_API_KEY / OVERMIND_PROJECT_ID and re-run this step. "
-        "Local dataset.json is fine; the backend record is missing."
+        "OVERMIND_API_KEY (OVERMIND_PROJECT_ID only needed for non-project-scoped "
+        "keys) and re-run this step. Local dataset.json is fine; the backend "
+        "record is missing."
     )
 print(f"Backend sync ok — dataset_id={meta['id']} version={meta['version']} cases={meta['num_datapoints']}")
 ```
@@ -512,7 +514,7 @@ The diff must be concrete, showing current and proposed values rather than vague
 - **Many generated cases dropped**: Tighten the schema prompt, reduce batch size, generate per persona, or add seed data.
 - **Smoke check unexpected keyword error**: The dataset input field names do not match the Overmind entrypoint signature; repair the dataset schema or repair the separate entrypoint file.
 - **Smoke check API/auth failure**: The artifacts may still be structurally valid; configure credentials before optimization.
-- **Backend sync failure (`StorageNotConfiguredError`)**: `OVERMIND_API_URL` / `OVERMIND_API_KEY` are missing from `.overmind/.env` and the process environment. Set both (plus `OVERMIND_PROJECT_ID` if creating a new agent record), then re-run Step 6 / Step 9.
+- **Backend sync failure (`StorageNotConfiguredError`)**: `OVERMIND_API_URL` / `OVERMIND_API_KEY` are missing from `.overmind/.env` and the process environment. Set both, then re-run Step 6 / Step 9. `OVERMIND_PROJECT_ID` is only required when the key has access to multiple projects (the CLI will surface the candidate ids in its error message if so); a project-scoped `ovr_` key auto-resolves.
 - **`save_dataset` returns `None`**: Backend rejected the upload. Inspect the surfaced error (most often the agent record was never created in Step 6, or the project token does not own the project). Re-run Step 6 first, then retry Step 9.
 
 ## What this skill must NOT do

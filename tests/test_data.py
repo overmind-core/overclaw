@@ -56,6 +56,80 @@ class TestLoadData:
         path.write_text("[]")
         assert load_data(str(path)) == []
 
+    # ---- JSONL / NDJSON ---------------------------------------------------
+
+    def test_load_jsonl_extension(self, tmp_path):
+        path = tmp_path / "data.jsonl"
+        path.write_text(
+            '{"input": {"x": 1}, "expected_output": {"y": 2}}\n'
+            '{"input": {"x": 3}, "expected_output": {"y": 4}}\n'
+        )
+        result = load_data(str(path))
+        assert result == [
+            {"input": {"x": 1}, "expected_output": {"y": 2}},
+            {"input": {"x": 3}, "expected_output": {"y": 4}},
+        ]
+
+    def test_load_ndjson_extension(self, tmp_path):
+        path = tmp_path / "data.ndjson"
+        path.write_text('{"input": {"x": 1}}\n{"input": {"x": 2}}\n')
+        assert load_data(str(path)) == [{"input": {"x": 1}}, {"input": {"x": 2}}]
+
+    def test_jsonl_skips_blank_and_comment_lines(self, tmp_path):
+        path = tmp_path / "data.jsonl"
+        path.write_text(
+            "\n"
+            "# a comment line\n"
+            '{"input": {"x": 1}}\n'
+            "\n"
+            '{"input": {"x": 2}}\n'
+        )
+        assert load_data(str(path)) == [{"input": {"x": 1}}, {"input": {"x": 2}}]
+
+    def test_jsonl_with_inputs_outputs_aliases(self, tmp_path):
+        """Real-world export shape — alias normalisation happens later in
+        ``normalize_data_fields``; here we just confirm the loader keeps
+        the keys intact."""
+        path = tmp_path / "data.jsonl"
+        path.write_text(
+            '{"inputs": {"user_message": "hi"}, "outputs": {"response_text": "hello"}}\n'
+        )
+        result = load_data(str(path))
+        assert result == [
+            {"inputs": {"user_message": "hi"}, "outputs": {"response_text": "hello"}}
+        ]
+
+    def test_jsonl_malformed_line_raises_with_lineno(self, tmp_path):
+        path = tmp_path / "data.jsonl"
+        path.write_text(
+            '{"input": {"x": 1}}\n'
+            '{this is not valid json}\n'
+        )
+        with pytest.raises(ValueError, match="line 2"):
+            load_data(str(path))
+
+    def test_jsonl_non_object_line_raises(self, tmp_path):
+        path = tmp_path / "data.jsonl"
+        path.write_text('{"input": {"x": 1}}\n[1, 2, 3]\n')
+        with pytest.raises(ValueError, match="expected a JSON object"):
+            load_data(str(path))
+
+    def test_json_file_with_jsonl_content_falls_back(self, tmp_path):
+        """An exporter that wrote one-object-per-line into a ``.json`` file
+        should still be readable (best-effort fallback)."""
+        path = tmp_path / "data.json"
+        path.write_text(
+            '{"input": {"x": 1}}\n'
+            '{"input": {"x": 2}}\n'
+        )
+        assert load_data(str(path)) == [{"input": {"x": 1}}, {"input": {"x": 2}}]
+
+    def test_truly_malformed_json_still_raises(self, tmp_path):
+        path = tmp_path / "data.json"
+        path.write_text("not even close to json")
+        with pytest.raises(ValueError, match="Could not parse"):
+            load_data(str(path))
+
 
 # ---------------------------------------------------------------------------
 # validate_case_against_spec

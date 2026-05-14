@@ -168,6 +168,16 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="MODULE:FUNCTION",
         help="Python entrypoint (e.g. agents.agent1.sample_agent:run)",
     )
+    reg_p.add_argument(
+        "--non-interactive",
+        "-y",
+        action="store_true",
+        help=(
+            "skip every interactive prompt (provider menu, confirmations, env "
+            f"variable values). Uses an existing {overmind_rel('agents', '<name>', '.env')} "
+            "as-is; create it manually first when running in sandboxed shells or CI."
+        ),
+    )
 
     agent_subs.add_parser(
         "list",
@@ -219,6 +229,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "entrypoint",
         metavar="MODULE:FUNCTION",
         help="New Python entrypoint (e.g. agents.agent2.new_agent:run)",
+    )
+    upd_p.add_argument(
+        "--non-interactive",
+        "-y",
+        action="store_true",
+        help=(
+            "skip every interactive prompt (provider menu, confirmations, env "
+            f"variable values). Uses an existing {overmind_rel('agents', '<name>', '.env')} "
+            "as-is; create it manually first when running in sandboxed shells or CI."
+        ),
     )
 
     show_p = agent_subs.add_parser(
@@ -476,6 +496,15 @@ def _resolve_agent_name_for_env(args: argparse.Namespace) -> str | None:
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
+
+    # Honour ``--non-interactive`` / ``-y`` on subcommands that opt in
+    # (currently ``agent register`` and ``agent update``).  Setting the
+    # env var here means every helper that imports
+    # ``overmind.utils.display.is_non_interactive`` automatically picks
+    # the non-interactive code paths without having to thread a flag
+    # through every call site.
+    if getattr(args, "non_interactive", False):
+        os.environ["OVERMIND_NONINTERACTIVE"] = "1"
 
     if args.command != "init":
         require_overmind_initialized()

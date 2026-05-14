@@ -59,20 +59,90 @@ class DatasetGenerationError(Exception):
 # ---------------------------------------------------------------------------
 
 
-def load_data(path: str) -> list[dict]:
-    """Load test cases from a JSON file.
+_JSONL_SUFFIXES = (".jsonl", ".ndjson")
 
-    Accepts either a bare JSON array or an object with a ``test_cases`` key.
+
+def _parse_jsonl_text(text: str, path: str) -> list[dict]:
+    """Parse JSON-Lines / NDJSON content into a list of dicts.
+
+    Empty / whitespace-only lines and ``#``-prefixed comment lines are
+    skipped.  Each non-skipped line must be a JSON object — bare arrays
+    or scalars produce a clear ``ValueError`` pointing at the offending
+    line number, which beats the cryptic decode error users would
+    otherwise see when validating an exported dataset.
     """
-    with open(path) as f:
-        data = json.load(f)
+    cases: list[dict] = []
+    for lineno, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Invalid JSONL in {path} (line {lineno}): {exc.msg} at column {exc.colno}"
+            ) from exc
+        if not isinstance(obj, dict):
+            raise ValueError(
+                f"Invalid JSONL in {path} (line {lineno}): expected a JSON object, "
+                f"got {type(obj).__name__}"
+            )
+        cases.append(obj)
+    return cases
+
+
+def load_data(path: str) -> list[dict]:
+    """Load test cases from a JSON, JSONL, or NDJSON file.
+
+    Supported shapes:
+    * Bare JSON array of case objects.
+    * JSON object with a ``test_cases`` key.
+    * **JSON Lines** / **NDJSON** — one JSON object per line.  Activated
+      automatically for ``*.jsonl`` and ``*.ndjson`` files, and used as a
+      best-effort fallback when a ``.json`` file fails normal parsing but
+      its first non-empty line is itself a JSON object (covers exported
+      datasets that were given a ``.json`` name by mistake).
+
+    Returns a list of dicts; downstream code (``normalize_data_fields``)
+    handles aliases like ``inputs`` / ``outputs`` so JSONL exports from
+    other tools work without an extra transform step.
+    """
+    text = Path(path).read_text(encoding="utf-8")
+
+    suffix = Path(path).suffix.lower()
+    if suffix in _JSONL_SUFFIXES:
+        return _parse_jsonl_text(text, path)
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        # ``.json`` files that are actually JSONL (or exports that forgot
+        # the array brackets) are common enough that we attempt a JSONL
+        # parse before giving up.  Only kick in when the very first
+        # non-empty line looks like a JSON object, so we don't swallow
+        # genuinely malformed JSON with a misleading "expected object"
+        # error.
+        for raw in text.splitlines():
+            stripped = raw.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("{"):
+                return _parse_jsonl_text(text, path)
+            break
+        raise ValueError(
+            f"Could not parse {path} as JSON: {exc.msg} (line {exc.lineno}, column {exc.colno}). "
+            "If this file uses one JSON object per line, rename it to .jsonl."
+        ) from exc
 
     if isinstance(data, list):
         return data
     if isinstance(data, dict) and "test_cases" in data:
         return data["test_cases"]
 
-    raise ValueError(f"Unrecognized data format in {path}. Expected a JSON array or an object with a 'test_cases' key.")
+    raise ValueError(
+        f"Unrecognized data format in {path}. "
+        "Expected a JSON array, an object with a 'test_cases' key, or JSONL (one object per line)."
+    )
 
 
 def check_consistent_fields(cases: list[dict]) -> tuple[bool, set[str], list[int]]:
