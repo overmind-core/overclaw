@@ -10,15 +10,18 @@ import pytest
 
 import overmind
 from overmind.optimize.evaluator import (
-    SpecEvaluator,
     _JUDGE_FALLBACK_SCORE,
+    SpecEvaluator,
     has_entrypoint,
     has_run_entrypoint,
     load_evaluator,
 )
 
+
 def setup(self):
     overmind.init()
+
+
 # ---------------------------------------------------------------------------
 # has_entrypoint / has_run_entrypoint
 # ---------------------------------------------------------------------------
@@ -75,9 +78,7 @@ class TestSpecEvaluatorConstruction:
 
     def test_weight_mismatch_warns(self, tmp_path):
         spec = {
-            "output_fields": {
-                "f": {"type": "text", "weight": 50, "eval_mode": "non_empty"}
-            },
+            "output_fields": {"f": {"type": "text", "weight": 50, "eval_mode": "non_empty"}},
             "structure_weight": 20,
             "total_points": 200,  # deliberate mismatch
         }
@@ -224,9 +225,7 @@ class TestScoreText:
 
 class TestTextSimilarity:
     def test_identical_text(self):
-        score = SpecEvaluator._text_similarity(
-            "Large budget enterprise company", "Large budget enterprise company"
-        )
+        score = SpecEvaluator._text_similarity("Large budget enterprise company", "Large budget enterprise company")
         assert score == pytest.approx(1.0)
 
     def test_high_overlap(self):
@@ -237,9 +236,7 @@ class TestTextSimilarity:
         assert score > 0.6
 
     def test_no_overlap(self):
-        score = SpecEvaluator._text_similarity(
-            "xyz abc 123", "Large budget enterprise company"
-        )
+        score = SpecEvaluator._text_similarity("xyz abc 123", "Large budget enterprise company")
         assert score < 0.2
 
     def test_empty_actual(self):
@@ -498,9 +495,7 @@ class TestEvaluateBatch:
     def test_batch_queues_pre_scored_items_for_judge(self, tmp_path):
         """Pre-scored items missing llm_judge should be queued for batch judging."""
         spec = {
-            "output_fields": {
-                "result": {"type": "text", "weight": 50, "eval_mode": "non_empty"}
-            },
+            "output_fields": {"result": {"type": "text", "weight": 50, "eval_mode": "non_empty"}},
             "structure_weight": 20,
             "total_points": 100,
             "llm_judge_weight": 30,
@@ -555,55 +550,44 @@ class TestDimensionLabelsAndMaxScores:
 class TestTypeCorrectness:
     def test_all_correct_types(self, sample_eval_spec):
         ev = SpecEvaluator(sample_eval_spec)
-        penalty = ev._check_type_correctness(
-            {
-                "qualification": "hot",
-                "score": 85,
-                "reasoning": "text here",
-                "is_enterprise": True,
-            }
-        )
+        penalty = ev._check_type_correctness({
+            "qualification": "hot",
+            "score": 85,
+            "reasoning": "text here",
+            "is_enterprise": True,
+        })
         assert penalty == 0.0
 
     def test_wrong_number_type(self, sample_eval_spec):
         ev = SpecEvaluator(sample_eval_spec)
-        penalty = ev._check_type_correctness(
-            {
-                "qualification": "hot",
-                "score": "eighty-five",
-                "reasoning": "ok",
-                "is_enterprise": True,
-            }
-        )
+        penalty = ev._check_type_correctness({
+            "qualification": "hot",
+            "score": "eighty-five",
+            "reasoning": "ok",
+            "is_enterprise": True,
+        })
         assert penalty == -2.0
 
     def test_multiple_type_errors(self, sample_eval_spec):
         ev = SpecEvaluator(sample_eval_spec)
-        penalty = ev._check_type_correctness(
-            {
-                "qualification": "invalid_value",
-                "score": "not_number",
-                "reasoning": 123,
-                "is_enterprise": "maybe",
-            }
-        )
+        penalty = ev._check_type_correctness({
+            "qualification": "invalid_value",
+            "score": "not_number",
+            "reasoning": 123,
+            "is_enterprise": "maybe",
+        })
         assert penalty <= -6.0
 
     def test_cap_at_minus_10(self, tmp_path):
         spec = {
-            "output_fields": {
-                f"f{i}": {"type": "number", "weight": 5, "tolerance": 1}
-                for i in range(10)
-            },
+            "output_fields": {f"f{i}": {"type": "number", "weight": 5, "tolerance": 1} for i in range(10)},
             "structure_weight": 10,
             "total_points": 60,
         }
         path = tmp_path / "spec.json"
         path.write_text(json.dumps(spec))
         ev = SpecEvaluator(str(path))
-        penalty = ev._check_type_correctness(
-            {f"f{i}": "not_a_number" for i in range(10)}
-        )
+        penalty = ev._check_type_correctness({f"f{i}": "not_a_number" for i in range(10)})
         assert penalty == -10.0
 
     def test_none_values_not_penalized(self, sample_eval_spec):
@@ -613,11 +597,9 @@ class TestTypeCorrectness:
 
     def test_bool_accepts_01(self, sample_eval_spec):
         ev = SpecEvaluator(sample_eval_spec)
-        penalty = ev._check_type_correctness(
-            {
-                "is_enterprise": 1,
-            }
-        )
+        penalty = ev._check_type_correctness({
+            "is_enterprise": 1,
+        })
         assert penalty == 0.0
 
 
@@ -871,18 +853,14 @@ class TestLlmJudge:
         ev = SpecEvaluator(sample_eval_spec, llm_judge_model="test-model")
         mock_resp = MagicMock()
         mock_resp.choices = [MagicMock()]
-        mock_resp.choices[0].message.content = json.dumps(
-            {
-                "semantic_correctness": 8,
-                "internal_consistency": 7,
-                "reasoning_quality": 9,
-            }
-        )
+        mock_resp.choices[0].message.content = json.dumps({
+            "semantic_correctness": 8,
+            "internal_consistency": 7,
+            "reasoning_quality": 9,
+        })
         mock_litellm.completion.return_value = mock_resp
 
-        score = ev._score_with_llm_judge(
-            {"input": "test"}, {"expected": "x"}, {"output": "y"}
-        )
+        score = ev._score_with_llm_judge({"input": "test"}, {"expected": "x"}, {"output": "y"})
         assert 0.0 <= score <= 1.0
 
     @patch("overmind.utils.llm.litellm")
@@ -894,14 +872,12 @@ class TestLlmJudge:
         )
         mock_resp = MagicMock()
         mock_resp.choices = [MagicMock()]
-        mock_resp.choices[0].message.content = json.dumps(
-            {
-                "semantic_correctness": 8,
-                "internal_consistency": 7,
-                "reasoning_quality": 9,
-                "policy_compliance": 8,
-            }
-        )
+        mock_resp.choices[0].message.content = json.dumps({
+            "semantic_correctness": 8,
+            "internal_consistency": 7,
+            "reasoning_quality": 9,
+            "policy_compliance": 8,
+        })
         mock_litellm.completion.return_value = mock_resp
 
         score = ev._score_with_llm_judge({"input": "test"}, {}, {})
@@ -916,13 +892,11 @@ class TestLlmJudge:
 
         success_resp = MagicMock()
         success_resp.choices = [MagicMock()]
-        success_resp.choices[0].message.content = json.dumps(
-            {
-                "semantic_correctness": 8,
-                "internal_consistency": 7,
-                "reasoning_quality": 9,
-            }
-        )
+        success_resp.choices[0].message.content = json.dumps({
+            "semantic_correctness": 8,
+            "internal_consistency": 7,
+            "reasoning_quality": 9,
+        })
         mock_litellm.completion.side_effect = [fail_resp, success_resp]
 
         score = ev._score_with_llm_judge({"input": "test"}, {}, {})
@@ -940,10 +914,9 @@ class TestLlmJudge:
         score = ev._score_with_llm_judge({}, {}, {})
         assert score == _JUDGE_FALLBACK_SCORE
 
+    @patch("overmind.optimize.evaluator.time.sleep")
     @patch("overmind.utils.llm.litellm")
-    def test_judge_exception_retries_then_fallback(
-        self, mock_litellm, sample_eval_spec
-    ):
+    def test_judge_exception_retries_then_fallback(self, mock_litellm, mock_sleep, sample_eval_spec):
         ev = SpecEvaluator(sample_eval_spec, llm_judge_model="model")
         mock_litellm.completion.side_effect = RuntimeError("boom")
 

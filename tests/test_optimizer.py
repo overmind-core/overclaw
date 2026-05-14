@@ -11,7 +11,9 @@ import pytest
 
 from overmind.core.constants import OVERMIND_DIR_NAME
 from overmind.optimize.config import Config
+from overmind.optimize.execution_backend import BackendOutput
 from overmind.optimize.optimizer import Optimizer
+from overmind.optimize.runner import RunOutput
 
 
 @pytest.fixture(autouse=True)
@@ -20,9 +22,7 @@ def _optimizer_project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.chdir(tmp_path)
 
 
-def _make_config(
-    tmp_path: Path, spec: dict | None = None, dataset: list | None = None
-) -> Config:
+def _make_config(tmp_path: Path, spec: dict | None = None, dataset: list | None = None) -> Config:
     agent_dir = tmp_path / "agents" / "test"
     agent_dir.mkdir(parents=True)
     agent_file = agent_dir / "sample_agent.py"
@@ -126,9 +126,7 @@ class TestOptimizerInit:
         cfg = _make_config(
             tmp_path,
             spec={
-                "output_fields": {
-                    "x": {"type": "text", "weight": 80, "eval_mode": "non_empty"}
-                },
+                "output_fields": {"x": {"type": "text", "weight": 80, "eval_mode": "non_empty"}},
                 "structure_weight": 20,
                 "total_points": 100,
                 "policy": {"purpose": "test", "domain_rules": ["rule1"]},
@@ -261,10 +259,7 @@ class TestComputeComplexityPenalty:
         opt = Optimizer(cfg)
         opt._baseline_code = "def run(x): pass\n"
         opt.best_code = opt._baseline_code
-        branchy = (
-            "\n".join(f"if cond_{i}:\n  pass" for i in range(25))
-            + "\ndef run(x): pass\n"
-        )
+        branchy = "\n".join(f"if cond_{i}:\n  pass" for i in range(25)) + "\ndef run(x): pass\n"
         penalty = opt._compute_complexity_penalty(branchy)
         assert penalty > 0
 
@@ -301,7 +296,7 @@ class TestCheckAcceptance:
         opt = Optimizer(cfg)
         opt.best_score = 60.0
         opt.best_case_scores = [60.0, 60.0]
-        accept, reason = opt._check_acceptance(55.0, [55.0, 55.0], [], [])
+        accept, _reason = opt._check_acceptance(55.0, [55.0, 55.0], [], [])
         assert accept is False
 
     def test_improvement_accepted(self, tmp_path):
@@ -309,7 +304,7 @@ class TestCheckAcceptance:
         opt = Optimizer(cfg)
         opt.best_score = 60.0
         opt.best_case_scores = [60.0, 60.0]
-        accept, reason = opt._check_acceptance(70.0, [70.0, 70.0], [], [])
+        accept, _reason = opt._check_acceptance(70.0, [70.0, 70.0], [], [])
         assert accept is True
 
     def test_too_many_regressions_rejected(self, tmp_path):
@@ -317,9 +312,7 @@ class TestCheckAcceptance:
         opt = Optimizer(cfg)
         opt.best_score = 50.0
         opt.best_case_scores = [80.0, 80.0, 80.0, 80.0, 80.0]
-        accept, reason = opt._check_acceptance(
-            55.0, [20.0, 20.0, 20.0, 90.0, 90.0], [], []
-        )
+        accept, reason = opt._check_acceptance(55.0, [20.0, 20.0, 20.0, 90.0, 90.0], [], [])
         assert accept is False
         assert "regress" in reason.lower()
 
@@ -427,7 +420,23 @@ class TestAnimateCodeUpdate:
 
 
 class TestRunSingleCase:
-    def test_runs_agent(self, tmp_path):
+    """Exercise ``_build_eval_results`` via ``_run_agent_on_dataset`` without subprocesses."""
+
+    @patch.object(Optimizer, "_run_case_with_plan")
+    @patch("overmind.optimize.optimizer.AgentRunner.ensure_environment")
+    def test_runs_agent(self, mock_ensure_env, mock_run_case, tmp_path):
+        mock_run_case.return_value = BackendOutput(
+            run_output=RunOutput(
+                success=True,
+                data={
+                    "qualification": "hot",
+                    "score": 80,
+                    "reasoning": "ok",
+                    "is_enterprise": True,
+                },
+            ),
+            backend="subprocess",
+        )
         cfg = _make_config(tmp_path)
         opt = Optimizer(cfg)
         opt._setup_output_dirs()
@@ -447,7 +456,13 @@ class TestRunSingleCase:
         assert "score" in item
         assert item["score"]["total"] >= 0
 
-    def test_handles_agent_exception(self, tmp_path):
+    @patch.object(Optimizer, "_run_case_with_plan")
+    @patch("overmind.optimize.optimizer.AgentRunner.ensure_environment")
+    def test_handles_agent_exception(self, mock_ensure_env, mock_run_case, tmp_path):
+        mock_run_case.return_value = BackendOutput(
+            run_output=RunOutput(success=False, error="ValueError: boom"),
+            backend="subprocess",
+        )
         agent_dir = tmp_path / "agents" / "bad"
         agent_dir.mkdir(parents=True)
         agent_file = agent_dir / "agent.py"

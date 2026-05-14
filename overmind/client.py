@@ -2,14 +2,12 @@
 
 A thin, synchronous-feeling facade over the generated
 ``overmind.openapi_client`` SDK.  Configure via the standard environment
-variables:
+variable:
 
-* ``OVERMIND_API_URL``     Base URL of the Overmind backend (e.g. ``http://localhost:8000``)
-* ``OVERMIND_API_KEY``     Either a project-scoped key (``ovr_…``) or a user JWT.
-* ``OVERMIND_PROJECT_ID``  Optional UUID of the project to associate agents with.
-                           When the key is project-scoped and the user has access
-                           to exactly one project, this is auto-discovered via
-                           :func:`resolve_project_id`.
+* ``OVERMIND_API_KEY``  Either a project-scoped key (``ovr_…``) or a user JWT.
+                        The backend URL defaults to the Overmind Cloud endpoint;
+                        the project is auto-resolved from the key via
+                        :func:`resolve_project_id`.
 
 Why this module exists
 ----------------------
@@ -273,13 +271,10 @@ class OvermindClient(
 def get_client() -> OvermindClient | None:
     """Return a configured client if ``OVERMIND_API_KEY`` is set.
 
-    ``OVERMIND_API_URL`` is optional: when unset, it falls back to
-    :data:`overmind.core.constants.DEFAULT_BASE_URL` (the Overmind Cloud
-    endpoint), mirroring the behaviour of :mod:`overmind.tracing`.
-    Self-hosted deployments override the default by setting
-    ``OVERMIND_API_URL`` explicitly.
+    Always connects to :data:`overmind.core.constants.DEFAULT_BASE_URL`
+    (the Overmind Cloud endpoint).
     """
-    base_url = (os.getenv("OVERMIND_API_URL", "").strip() or DEFAULT_BASE_URL).rstrip("/")
+    base_url = DEFAULT_BASE_URL.rstrip("/")
     token = os.getenv("OVERMIND_API_KEY", "").strip()
     if not token:
         logger.debug("get_client: API not configured (OVERMIND_API_KEY not set)")
@@ -300,24 +295,8 @@ def get_client() -> OvermindClient | None:
 
 
 def is_configured() -> bool:
-    """Return True if ``OVERMIND_API_KEY`` is set.
-
-    ``OVERMIND_API_URL`` is optional — :func:`get_client` falls back to the
-    Overmind Cloud default when it is unset — so the control-plane client is
-    considered configured as soon as a bearer token is present.
-    """
+    """Return True if ``OVERMIND_API_KEY`` is set."""
     return bool(os.getenv("OVERMIND_API_KEY", "").strip())
-
-
-def get_project_id() -> str | None:
-    """Return ``OVERMIND_PROJECT_ID`` from env, or None.
-
-    Most callers should prefer :func:`resolve_project_id` which falls back
-    to a single-project lookup via the Overmind API when the env var isn't
-    set — that's the path that makes ``OVERMIND_PROJECT_ID`` optional for
-    project-scoped ``ovr_…`` keys.
-    """
-    return os.getenv("OVERMIND_PROJECT_ID", "").strip() or None
 
 
 class ProjectResolutionError(RuntimeError):
@@ -340,24 +319,12 @@ _resolved_project_id: str | None = None
 def resolve_project_id(client: OvermindClient | None = None) -> str:
     """Return the project UUID this client should write to.
 
-    Resolution order:
-
-    1. ``OVERMIND_PROJECT_ID`` env var (preferred — always wins).
-    2. ``client.projects_list()`` — when the bound credentials see exactly
-       one project, that id is used and cached in :envvar:`OVERMIND_PROJECT_ID`
-       for the rest of the process.
-    3. Otherwise raises :class:`ProjectResolutionError` with the candidate
-       projects, so the caller can render a clear "pick one" message.
-
-    Use this anywhere the previous code did ``get_project_id()`` *and* needed
-    the value to be present.  Pure-display helpers that just want to know
-    "did the user set the env var?" should keep calling :func:`get_project_id`.
+    Calls ``client.projects_list()`` and uses the single accessible project.
+    The result is cached in-process so repeated calls don't pay the network
+    cost.  Raises :class:`ProjectResolutionError` when the key has no
+    accessible projects or the API call fails.
     """
     global _resolved_project_id
-
-    env_pid = get_project_id()
-    if env_pid:
-        return env_pid
 
     if _resolved_project_id:
         return _resolved_project_id
@@ -370,10 +337,7 @@ def resolve_project_id(client: OvermindClient | None = None) -> str:
     try:
         page = client.projects_list(page_size=2)
     except Exception as exc:
-        raise ProjectResolutionError(
-            "Cannot resolve project: projects_list() call failed. "
-            "Set OVERMIND_PROJECT_ID explicitly to bypass auto-discovery."
-        ) from exc
+        raise ProjectResolutionError("Cannot resolve project: projects_list() call failed.") from exc
 
     results = list(page.results or [])
     if not results:
@@ -385,25 +349,20 @@ def resolve_project_id(client: OvermindClient | None = None) -> str:
     if len(results) == 1:
         pid = str(results[0].id)
         _resolved_project_id = pid
-        os.environ.setdefault("OVERMIND_PROJECT_ID", pid)
         logger.info(f"resolve_project_id: auto-resolved single project id={pid}")
         return pid
 
     candidates = [(str(p.id), getattr(p, "slug", "") or getattr(p, "name", "")) for p in results]
     listed = ", ".join(f"{slug or '?'}={pid}" for pid, slug in candidates)
     raise ProjectResolutionError(
-        "OVERMIND_API_KEY can access multiple projects — set OVERMIND_PROJECT_ID "
-        f"explicitly to pick one. Candidates: {listed}",
+        "OVERMIND_API_KEY can access multiple projects — use a project-scoped key "
+        f"to avoid ambiguity. Candidates: {listed}",
         candidates=candidates,
     )
 
 
 def _reset_project_id_cache() -> None:
-    """Test helper: clear the in-process project-id cache.
-
-    Re-exported under :func:`overmind.client._reset_project_id_cache` so
-    unit tests can flip the env var between cases without leaking state.
-    """
+    """Test helper: clear the in-process project-id cache."""
     global _resolved_project_id
     _resolved_project_id = None
 

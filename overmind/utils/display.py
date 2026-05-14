@@ -286,18 +286,19 @@ def select_option(
             console.print()
         return idx
 
-    menu = TerminalMenu(
-        options,
-        cursor_index=default_index,
-        menu_cursor="  ▸ ",
-        menu_cursor_style=("fg_yellow", "bold"),
-        menu_highlight_style=("fg_yellow", "bold"),
-    )
     try:
+        menu = TerminalMenu(
+            options,
+            cursor_index=default_index,
+            menu_cursor="  ▸ ",
+            menu_cursor_style=("fg_yellow", "bold"),
+            menu_highlight_style=("fg_yellow", "bold"),
+        )
         idx = menu.show()
     except OSError as exc:
-        # ``simple_term_menu`` opens ``/dev/tty`` directly and explodes
-        # with ``OSError: [Errno 6] Device not configured`` in shells that
+        # ``simple_term_menu`` opens ``/dev/tty`` directly — both during
+        # ``TerminalMenu.__init__`` and ``menu.show()`` — and raises
+        # ``OSError: [Errno 6] Device not configured`` in shells that
         # don't expose a controlling terminal (sandboxed coding-agent
         # subprocesses, Docker without ``-t``, some CI runners).  Fall
         # back to a textual prompt so the user can still complete the
@@ -358,14 +359,14 @@ def confirm_option(
         return default
 
     choices = ["Yes", "No"]
-    menu = TerminalMenu(
-        choices,
-        cursor_index=0 if default else 1,
-        menu_cursor="  ▸ ",
-        menu_cursor_style=("fg_yellow", "bold"),
-        menu_highlight_style=("fg_yellow", "bold"),
-    )
     try:
+        menu = TerminalMenu(
+            choices,
+            cursor_index=0 if default else 1,
+            menu_cursor="  ▸ ",
+            menu_cursor_style=("fg_yellow", "bold"),
+            menu_highlight_style=("fg_yellow", "bold"),
+        )
         idx = menu.show()
     except OSError as exc:
         # See ``select_option`` for the same /dev/tty fallback rationale.

@@ -61,7 +61,7 @@ class ApiBackend(StorageBackend):
         :meth:`set_job_id`).
     client:
         Pre-built :class:`OvermindClient`.  When ``None`` (default) the
-        client is built lazily from ``OVERMIND_API_URL`` / ``OVERMIND_API_KEY``.
+        client is built lazily from ``OVERMIND_API_KEY``.
     """
 
     def __init__(

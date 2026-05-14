@@ -28,14 +28,9 @@ Usage
 
 Configuration
 -------------
-``get_storage()`` requires the standard Overmind environment variables:
+``get_storage()`` requires one environment variable:
 
 * ``OVERMIND_API_KEY`` — bearer token (required).
-* ``OVERMIND_API_URL`` — backend base URL.  Optional; defaults to
-  :data:`overmind.core.constants.DEFAULT_BASE_URL` (Overmind Cloud) when
-  unset. Set this only when targeting a self-hosted backend.
-* ``OVERMIND_PROJECT_ID`` — project the agent belongs to (only required
-  when creating a new agent record).
 
 If ``OVERMIND_API_KEY`` is missing, :func:`get_storage` raises
 :class:`StorageNotConfiguredError`.
@@ -54,11 +49,7 @@ from overmind.storage.base import StorageBackend
 
 
 class StorageNotConfiguredError(RuntimeError):
-    """Raised when ``OVERMIND_API_KEY`` is not set.
-
-    ``OVERMIND_API_URL`` is optional: when unset, the control-plane client
-    falls back to :data:`overmind.core.constants.DEFAULT_BASE_URL`.
-    """
+    """Raised when ``OVERMIND_API_KEY`` is not set."""
 
 
 @dataclass
@@ -131,8 +122,7 @@ def get_storage() -> StorageBackend:
     Raises
     ------
     StorageNotConfiguredError
-        If ``OVERMIND_API_KEY`` is not set.  ``OVERMIND_API_URL`` is
-        optional and defaults to the Overmind Cloud endpoint.
+        If ``OVERMIND_API_KEY`` is not set.
     ValueError
         If no agent path can be resolved (neither bound nor in env).
     """
@@ -140,7 +130,6 @@ def get_storage() -> StorageBackend:
     if not is_configured():
         raise StorageNotConfiguredError(
             "Overmind API is not configured. Set OVERMIND_API_KEY "
-            "(and optionally OVERMIND_API_URL to override the cloud default) "
             "in .overmind/.env or the process environment before calling "
             "get_storage()."
         )
