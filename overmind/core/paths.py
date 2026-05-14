@@ -82,7 +82,7 @@ def load_agent_dotenv(agent_name: str) -> None:
 
     No-op if the file does not exist.  Agent-specific vars take precedence over
     the global ``.overmind/.env`` so credentials saved during ``overmind setup``
-    are always used when the agent is run or optimised.
+    are always used when the agent is run or optimized.
     """
     path = agent_env_path(agent_name)
     if path.is_file():

@@ -4,7 +4,7 @@ This module generates a small Python snippet that, when prepended to the
 agent wrapper, transparently intercepts external-world calls and redirects
 them through an Overmind cassette.  It lets us *run the user's code* — with
 their real imports, control flow, and LLM calls — while sandboxing the parts
-that make optimisation unreliable (browser, live HTTP, subprocesses, long
+that make optimization unreliable (browser, live HTTP, subprocesses, long
 sleeps).
 
 Three modes of operation per intercepted call:
@@ -15,7 +15,7 @@ Three modes of operation per intercepted call:
    stub (empty string, empty dict, or a short "SIMULATED" string) so the
    rest of the agent can continue.
 3. **Passthrough** — LLM calls (``litellm``, ``openai`` SDK) are always
-   passed through to the real model.  Optimisation is fundamentally about
+   passed through to the real model.  Optimization is fundamentally about
    prompts, so real LLM signal is what makes shadow mode useful in the first
    place.  LLM responses are recorded into the cassette on the way back so
    subsequent replays are deterministic.
@@ -208,7 +208,7 @@ def _overmind_box_response(raw, model):
 
 # ---------------------------------------------------------------------------
 # LLM interception — cassette-record real completions; replay when available.
-# Prompt changes naturally invalidate the cassette key, so prompt optimisation
+# Prompt changes naturally invalidate the cassette key, so prompt optimization
 # still hits the real model.  This is the one interception that gives us real
 # signal in shadow mode.
 # ---------------------------------------------------------------------------
@@ -275,7 +275,7 @@ def _ocl_install_litellm_intercept():
             # have no cassette hit, return a clearly-labelled placeholder
             # response so the agent can continue and we can still collect
             # structural signal (tool call sequence, output parsing, etc.).
-            # The trace carries source="simulated" so the optimiser knows
+            # The trace carries source="simulated" so the optimizer knows
             # this datapoint is low confidence.
             _ocl_tag(
                 "llm:" + str(model),
@@ -380,7 +380,7 @@ if _ocl_shadow and _ocl_sim_network:
 # Browser interception — only active when OVERMIND_SIMULATE_BROWSER=1.
 # ``browser_use.Agent(...).run()`` becomes a no-op returning an empty
 # history.  ``playwright.sync_api.sync_playwright`` / async counterpart raise
-# a clear message so optimisation can still proceed with a simulated output.
+# a clear message so optimization can still proceed with a simulated output.
 # ---------------------------------------------------------------------------
 
 if _ocl_shadow and _ocl_sim_browser:

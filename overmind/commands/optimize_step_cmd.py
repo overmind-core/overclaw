@@ -1,7 +1,7 @@
 """``overmind optimize-step`` — JSON-in/JSON-out pieces of the optimize loop.
 
 Designed to be invoked by a host coding agent (Cursor / Codex / Claude
-Code) running ``.cursor/skills/optimise-agent/SKILL.md``. The skill owns
+Code) running ``.cursor/skills/overmind-optimize-agent/SKILL.md``. The skill owns
 loop control, parallel candidate fan-out, and early stopping; this CLI
 owns the heavy lifting (config persistence, baseline eval, diagnosis,
 candidate eval, acceptance gates, report rendering).
@@ -144,7 +144,7 @@ def build_subparser(subparsers: argparse._SubParsersAction) -> None:
         help="Skill-driven primitives for `overmind optimize` (advanced; usually invoked by a SKILL.md, not by hand)",
         description=(
             "JSON-in/JSON-out building blocks for the host-coding-agent-driven "
-            "optimization loop (see .cursor/skills/optimise-agent/SKILL.md). "
+            "optimization loop (see .cursor/skills/overmind-optimize-agent/SKILL.md). "
             "Each subcommand emits a single JSON envelope on stdout."
         ),
     )

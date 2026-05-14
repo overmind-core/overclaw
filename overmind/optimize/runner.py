@@ -831,7 +831,7 @@ _single_dict_param = (
 # Schema-aware dispatch: prefer kwargs when the dict's keys are a subset of
 # the function's parameter names.  Gracefully falls back to positional
 # single-dict if a TypeError surfaces — this recovers from ambiguous cases
-# without the optimiser having to re-guess.
+# without the optimizer having to re-guess.
 def _ocl_invoke(fn, data):
     if not isinstance(data, dict):
         return fn(data)
@@ -1085,7 +1085,7 @@ class AgentRunner:
         launched with the Overmind shadow bootstrap active so external
         calls (LLM, HTTP, browser) are intercepted and either replayed
         from a cassette or simulated.  LLM calls with novel prompts still
-        hit the real model so optimisation signal remains meaningful.
+        hit the real model so optimization signal remains meaningful.
         """
         effective_timeout = timeout or self.config.timeout
         entry_abs = str(self.agent_dir / self.entry_file)

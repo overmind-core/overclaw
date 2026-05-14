@@ -285,7 +285,7 @@ RUN_CASE_CONFIDENCE = "overmind.run.case.confidence"
 # ``optimizer.evaluate_worktree`` — invoked from the skill-driven
 # `overmind optimize-step evaluate` flow, scores a worktree's candidate
 # agent against the training set.  These tags let the UI surface
-# per-candidate / per-iteration scores even when the optimiser is being
+# per-candidate / per-iteration scores even when the optimizer is being
 # driven from a host coding agent rather than the legacy loop.
 OPTIMIZE_WORKTREE_RUN_NAME = "overmind.optimize.worktree.run_name"
 OPTIMIZE_WORKTREE_ENTRY_PATH = "overmind.optimize.worktree.entry_path"

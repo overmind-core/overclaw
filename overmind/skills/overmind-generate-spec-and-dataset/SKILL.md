@@ -15,7 +15,7 @@ This skill replaces the two earlier ones (`overmind-generate-policy-and-eval` an
 
 > always export the environment variables OVERMIND_API_KEY and OVERMIND_API_URL if present in the `.env`
 
-After this skill finishes, run `/overmind-optimise-agent` or `overmind optimize <agent>` to start optimization.
+After this skill finishes, run `/overmind-optimize-agent` or `overmind optimize <agent>` to start optimization.
 
 ## When to use this skill
 
@@ -26,16 +26,16 @@ After this skill finishes, run `/overmind-optimise-agent` or `overmind optimize 
 ## When not to use this skill
 
 - The agent is not registered or the Overmind harness does not exist — use `/overmind-register-agent` first.
-- The user only wants the CLI optimization loop and artifacts already exist and validate — use `/overmind-optimise-agent` (do not use optimize alone to “fix” registration).
+- The user only wants the CLI optimization loop and artifacts already exist and validate — use `/overmind-optimize-agent` (do not use optimize alone to “fix” registration).
 
 ## Example (abbreviated)
 
-User: *“Generate eval spec + dataset for `hotel-agent`.”* You resolve the registered entrypoint, lock I/O keys from AST + low-confidence paths where needed, write preview `eval_spec` / policy, get save approval, write `dataset` to `_preview_dataset.json`, ask replace/append/backup for any existing `dataset.json`, smoke-check, then point to `/overmind-optimise-agent`.
+User: *“Generate eval spec + dataset for `hotel-agent`.”* You resolve the registered entrypoint, lock I/O keys from AST + low-confidence paths where needed, write preview `eval_spec` / policy, get save approval, write `dataset` to `_preview_dataset.json`, ask replace/append/backup for any existing `dataset.json`, smoke-check, then point to `/overmind-optimize-agent`.
 
 ## Operating principles
 
 - **Codebase is the source of truth**: every input field, output key, and tool comes from the registered Overmind entrypoint and the modules it imports. Do not invent fields.
-- **Entrypoint contract is fixed**: The registered Overmind entrypoint harness must stay **out of** `optimizable_paths` and treated as fixed interaction glue — same default as `/overmind-register-agent`. **`/overmind-optimise-agent` compatibility:** If an **existing** eval spec already includes the harness path (legacy misconfiguration), optimization may still touch it only when Overmind’s scope and candidate prompts allow; after such a run, **repair** the spec here so the harness returns to `exclude_paths` / `fixed_elements`.
+- **Entrypoint contract is fixed**: The registered Overmind entrypoint harness must stay **out of** `optimizable_paths` and treated as fixed interaction glue — same default as `/overmind-register-agent`. **`/overmind-optimize-agent` compatibility:** If an **existing** eval spec already includes the harness path (legacy misconfiguration), optimization may still touch it only when Overmind’s scope and candidate prompts allow; after such a run, **repair** the spec here so the harness returns to `exclude_paths` / `fixed_elements`.
 - **Evaluator-compatible types only**: output `type` must be one of `text`, `enum`, `number`, `boolean`. Never `string`, `object`, `array`, `dict`, `list`, `json`.
 - **Top-level scoring only**: nested dicts and list outputs are normalized in the entrypoint into top-level fields before reaching the evaluator.
 - **Schema agreement is mandatory**: every dataset row's `input` keys must equal the eval spec's `input_schema` keys; every `expected_output` key must appear in `output_fields`.
@@ -46,7 +46,7 @@ User: *“Generate eval spec + dataset for `hotel-agent`.”* You resolve the re
 - **Preview files over giant chat pastes**: Prefer writing preview artifacts to disk and summarizing in chat (deterministic paths, IDE-openable). Full paste is optional when the user requests it.
 - **No silent dropping**: never silently drop input fields, output fields, sibling packages, seed cases, or existing artifact logic. Preserve, repair, or explicitly report every dropped item.
 - **Smoke testing here is non-blocking but owned by this skill**: this skill may run light invocation/schema smoke checks against up to three dataset cases. Do not run full semantic evaluation here. If a smoke check reaches external APIs and fails due to credentials, auth, network, or provider configuration, classify it as an environment issue and keep structurally valid artifacts.
-- **Backend sync is mandatory (no silent skips)**: every artifact this skill writes — `eval_spec.json`, `policies.md`, and `dataset.json` — must also be pushed to the Overmind backend via `overmind.storage.get_storage()` (`save_spec` / `save_policy` / `save_dataset`) in the same step that writes the local file. The optimize loop (`/overmind-optimise-agent`) and the UI both read from the backend record, so a local-only artifact is **not** considered "saved". If `OVERMIND_API_URL` / `OVERMIND_API_KEY` are not configured, stop and tell the user to configure them in `.overmind/.env` before continuing — do not write the local files only and claim success. `OVERMIND_PROJECT_ID` is **optional** when the key is a project-scoped `ovr_` key (auto-resolved by the client); only set it when the key has access to more than one project.
+- **Backend sync is mandatory (no silent skips)**: every artifact this skill writes — `eval_spec.json`, `policies.md`, and `dataset.json` — must also be pushed to the Overmind backend via `overmind.storage.get_storage()` (`save_spec` / `save_policy` / `save_dataset`) in the same step that writes the local file. The optimize loop (`/overmind-optimize-agent`) and the UI both read from the backend record, so a local-only artifact is **not** considered "saved". If `OVERMIND_API_URL` / `OVERMIND_API_KEY` are not configured, stop and tell the user to configure them in `.overmind/.env` before continuing — do not write the local files only and claim success. `OVERMIND_PROJECT_ID` is **optional** when the key is a project-scoped `ovr_` key (auto-resolved by the client); only set it when the key has access to more than one project
 
 ## Workflow
 
@@ -236,7 +236,7 @@ After building `policies.md` content and `eval_spec` dict in memory (Steps 3–4
 
 Write canonical `policies.md` and `eval_spec.json`, **then immediately push them to the Overmind backend** via `overmind.storage.get_storage()`, then delete the preview files (unless the user asked to keep them).
 
-`save_spec` upserts the `Agent` record (creating it if needed and capturing the assigned UUID into `storage.agent_id` — persist this for Step 9 and for `/overmind-optimise-agent`). `save_policy` patches `policy_markdown` and `policy_data` on the same agent. Both calls are mandatory; treat an exception as a hard failure (report it to the user, do not pretend the artifacts are saved).
+`save_spec` upserts the `Agent` record (creating it if needed and capturing the assigned UUID into `storage.agent_id` — persist this for Step 9 and for `/overmind-optimize-agent`). `save_policy` patches `policy_markdown` and `policy_data` on the same agent. Both calls are mandatory; treat an exception as a hard failure (report it to the user, do not pretend the artifacts are saved).
 
 ```python
 import json
@@ -454,7 +454,9 @@ if not meta:
         "keys) and re-run this step. Local dataset.json is fine; the backend "
         "record is missing."
     )
-print(f"Backend sync ok — dataset_id={meta['id']} version={meta['version']} cases={meta['num_datapoints']}")
+print(
+    f"Backend sync ok — dataset_id={meta['id']} version={meta['version']} cases={meta['num_datapoints']}"
+)
 ```
 
 A failed `save_dataset` (returns `None`) is a hard failure: the optimize loop will not see the new cases. Stop, report the error, and ask the user to fix the API configuration before continuing.
@@ -482,7 +484,7 @@ Tell the user:
 - Scope summary, including confirmation that every sibling package was classified.
 - Confirmation that the entrypoint file is excluded from optimization scope.
 - **Backend sync status**: the resolved `agent_id`, `dataset_id`, `dataset_version`, and that `policy_markdown` was patched onto the Agent record. If any push failed, surface the failure here — do not bury it.
-- **Next step**: run `/overmind-optimise-agent` or `overmind optimize <agent>`.
+- **Next step**: run `/overmind-optimize-agent` or `overmind optimize <agent>`.
 
 ## Repair mode
 

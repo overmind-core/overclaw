@@ -1,8 +1,8 @@
 ______________________________________________________________________
 
-## name: overmind-optimise-agent description: "Drive the full host-agent controlled overmind optimize loop for a registered Overmind agent. Use when the user wants to optimise or optimize an agent, run iterative improvement, fan out multiple candidate edits in parallel worktrees, evaluate candidates with overmind optimize-step, accept the best improvement, stop early on stalls, and render an optimization report." metadata: version: "2.4" product: "Overmind"
+## name: overmind-optimize-agent description: "Drive the full host-agent controlled overmind optimize loop for a registered Overmind agent. Use when the user wants to optimize an agent, run iterative improvement, fan out multiple candidate edits in parallel worktrees, evaluate candidates with overmind optimize-step, accept the best improvement, stop early on stalls, and render an optimization report." metadata: version: "2.4" product: "Overmind"
 
-# Optimise an Overmind Agent
+# Optimize an Overmind Agent
 
 Use this skill to drive the `overmind optimize-step` JSON CLI from a host coding agent such as Cursor, Codex, Claude Code, or another code-editing agent. Overmind owns state, baseline evaluation, diagnosis, worktree materialisation, candidate evaluation, acceptance gates, and report rendering. The host coding agent owns loop control, **multi-agent fan-out** (several subagents across iterations and candidates), parallel candidate fan-out, per-candidate code edits, and early stopping.
 
@@ -265,7 +265,9 @@ overmind.init()
 agent_name = "<agent-name>"
 base = Path(".overmind/agents") / agent_name / "setup_spec"
 spec = json.loads((base / "eval_spec.json").read_text())
-policy_md = (base / "policies.md").read_text() if (base / "policies.md").is_file() else ""
+policy_md = (
+    (base / "policies.md").read_text() if (base / "policies.md").is_file() else ""
+)
 datapoints = json.loads((base / "dataset.json").read_text())
 
 configure_storage(agent_path=spec["agent_path"], agent_name=agent_name)
@@ -274,9 +276,8 @@ try:
 except StorageNotConfiguredError as exc:
     raise SystemExit(
         f"Overmind backend not configured ({exc}). Set OVERMIND_API_URL / "
-        "OVERMIND_API_KEY (and OVERMIND_PROJECT_ID only if the key is not "
-        "a project-scoped ovr_ key) in "
-        ".overmind/.env before running /overmind-optimise-agent."
+        "OVERMIND_API_KEY (+ OVERMIND_PROJECT_ID for new agents) in "
+        ".overmind/.env before running /overmind-optimize-agent."
     )
 
 storage.save_spec(spec)
@@ -285,7 +286,7 @@ if policy_md:
 ds_meta = storage.save_dataset(
     datapoints,
     source="local",
-    metadata={"num_cases": len(datapoints), "synced_by": "overmind-optimise-agent"},
+    metadata={"num_cases": len(datapoints), "synced_by": "overmind-optimize-agent"},
     make_active=True,
 )
 if not ds_meta:

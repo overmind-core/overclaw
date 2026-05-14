@@ -11,7 +11,7 @@ provenance / confidence.  Today we ship two backends:
 * :class:`ShadowBackend` — runs the agent in a subprocess with every
   external call (LLM, HTTP, browser) intercepted.  Real LLM calls still go
   through to the real model; everything else is replayed from a cassette or
-  simulated.  Produces lower-confidence traces but lets the optimiser keep
+  simulated.  Produces lower-confidence traces but lets the optimizer keep
   iterating on agents that cannot be run end-to-end on Overmind's
   infrastructure.
 
@@ -105,7 +105,7 @@ class ExecutionBackend(Protocol):
     name: str
 
     def prepare(self) -> None:
-        """Set up anything the backend needs once per optimisation run."""
+        """Set up anything the backend needs once per optimization run."""
 
     def run(
         self,

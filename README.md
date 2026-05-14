@@ -2,7 +2,7 @@
 
 Automatically optimize your AI agent's prompts, tool definitions, model selection, and pipeline logic through structured experimentation.
 
-**Documentation:** [Overmind guide](https://docs.overmindlab.ai/guides/overmind_doc/)
+**Documentation:** [Overmind guide](https://docs.overmindlab.ai/guides/overmind_optimizer/)
 
 ## What it does
 
@@ -127,7 +127,7 @@ follows to drive Overmind workflows without you typing CLI commands manually.
 | `/overmind-register-agent`           | [`overmind-register-agent/SKILL.md`](.cursor/skills/overmind-register-agent/SKILL.md)                     | Registers an agent in `.overmind/agents.toml` — discovers the entrypoint, derives `module:function`, runs registration, and scaffolds env vars. |
 | `/overmind-generate-dataset`         | [`overmind-generate-dataset/SKILL.md`](.cursor/skills/overmind-generate-dataset/SKILL.md)                 | Generates a synthetic `dataset.json` via persona-driven LLM generation, with schema validation and smoke-testing.                               |
 | `/overmind-generate-policy-and-eval` | [`overmind-generate-policy-and-eval/SKILL.md`](.cursor/skills/overmind-generate-policy-and-eval/SKILL.md) | Creates or repairs `setup_spec/policies.md` and `setup_spec/eval_spec.json` (input/output schemas, weights, domain rules).                      |
-| `/overmind-optimise-agent`           | [`overmind-optimise-agent/SKILL.md`](.cursor/skills/overmind-optimise-agent/SKILL.md)                     | Runs the optimization loop with the Cursor agent applying candidate edits in parallel git worktrees via `overmind optimize-step`.               |
+| `/overmind-optimize-agent`           | [`overmind-optimize-agent/SKILL.md`](.cursor/skills/overmind-optimize-agent/SKILL.md)                     | Runs the optimization loop with the Cursor agent applying candidate edits in parallel git worktrees via `overmind optimize-step`.               |
 
 ### How to use the skills
 
@@ -175,7 +175,7 @@ of domain rules, constraints, and scoring criteria.
 overmind optimize <agent-name>
 
 # or via Cursor chat (host-agent-driven loop)
-# /overmind-optimise-agent <agent-name>
+# /overmind-optimize-agent <agent-name>
 ```
 
 > Skills assume commands are run from the directory that contains the relevant
