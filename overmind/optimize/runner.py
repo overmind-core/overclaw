@@ -180,46 +180,140 @@ _PYTHON_STDLIB: frozenset[str] = (
 # ---------------------------------------------------------------------------
 
 
-def has_dep_manifest(agent_dir: Path, language: Language) -> bool:
-    """Return True if the agent directory has a dependency manifest file."""
+_PYTHON_MANIFEST_NAMES: tuple[str, ...] = (
+    "requirements.txt",
+    "pyproject.toml",
+    "setup.py",
+)
+_JS_MANIFEST_NAMES: tuple[str, ...] = ("package.json",)
+
+
+def _manifest_names_for(language: Language) -> tuple[str, ...]:
     if language == Language.PYTHON:
-        return any((agent_dir / f).is_file() for f in ("requirements.txt", "pyproject.toml", "setup.py"))
-    return (agent_dir / "package.json").is_file()
+        return _PYTHON_MANIFEST_NAMES
+    return _JS_MANIFEST_NAMES
+
+
+def find_dep_manifest_dir(agent_dir: Path, language: Language) -> Path | None:
+    """Walk upward from *agent_dir* and return the first directory containing
+    a dependency manifest for *language*.
+
+    Stops at the Overmind project root (the ancestor containing
+    ``.overmind/``) inclusive when one is found, otherwise at the
+    filesystem root. This bound matters in two ways:
+
+    * It prevents picking up unrelated manifests one level above the
+      user's project (e.g. a parent monorepo whose deps aren't
+      compatible).
+    * It mirrors :func:`_find_project_root` so dependency detection
+      and bundle resolution share the same scope.
+
+    Returns ``None`` if no manifest exists anywhere in the walk —
+    callers can then either succeed with the system interpreter
+    (zero-isolation mode) or raise :class:`MissingDependenciesError`
+    depending on whether external imports were detected.
+    """
+    names = _manifest_names_for(language)
+    start = agent_dir.resolve()
+    project_root = _find_project_root(start)
+    stop_at: Path | None = project_root
+
+    for ancestor in [start, *start.parents]:
+        if any((ancestor / name).is_file() for name in names):
+            return ancestor
+        if stop_at is not None and ancestor == stop_at:
+            return None
+    return None
+
+
+def has_dep_manifest(agent_dir: Path, language: Language) -> bool:
+    """Return True if a dependency manifest is reachable from *agent_dir*.
+
+    Walks upward to the Overmind project root so monorepo and
+    src-layout projects (with ``requirements.txt``/``pyproject.toml``
+    at the repo root and the agent file under a subdirectory) are not
+    misdiagnosed as "missing manifest". The matching directory is the
+    one :func:`_provision_python` will install from — both share
+    :func:`find_dep_manifest_dir` so the check and the provisioning
+    can't disagree.
+    """
+    return find_dep_manifest_dir(agent_dir, language) is not None
 
 
 def detect_external_imports(agent_dir: Path, entry_file: str, language: Language) -> list[str]:
-    """Scan the entry file for non-stdlib, non-relative imports.
+    """Scan the agent's full local import closure for external imports.
 
     Returns a de-duped list of top-level package names that appear to be
-    external dependencies.  Filters out:
-    - Python stdlib modules
-    - Sibling ``.py`` files in the agent directory
-    - Directories/packages in the project root (e.g. ``overmind``,
-      ``examples``, ``tests``) — these are project-local, not PyPI deps
-    - The ``overmind`` package itself (always available at runtime)
+    external dependencies. For Python this walks every ``.py`` file
+    transitively reachable from the entry (via
+    :func:`overmind.utils.code.resolve_local_files`) and consults the
+    *same* resolver that the bundler uses to decide whether a name is
+    local. Unifying on one resolver fixes two old hazards:
+
+    1. **Transitive externals.** The previous implementation only
+       parsed the entry file. If ``entry.py`` imported a local helper,
+       and the helper imported ``litellm``, the dependency was
+       invisible — the venv was provisioned without it and the agent
+       crashed mid-run with ``ModuleNotFoundError``.
+    2. **Nested locals flagged external.** The depth-1 ``iterdir()``
+       on ``project_root`` declared anything under a subdirectory
+       (``src/``, ``python_backend/``, ``apps/<name>/``) as external,
+       triggering :class:`MissingDependenciesError` for projects whose
+       layout the bundler itself fully supports.
+
+    Filters out: Python stdlib modules; the ``overmind`` SDK (always
+    available at runtime); and anything
+    :func:`overmind.utils.code._resolve_module_to_file` can resolve to
+    a ``.py`` file under *project_root*.
     """
     entry_path = agent_dir / entry_file
     if not entry_path.is_file():
         return []
 
-    code = entry_path.read_text(encoding="utf-8")
-    raw_imports = extract_imports(code, language)
-
     if language == Language.PYTHON:
-        local_modules = {p.stem for p in agent_dir.rglob("*.py") if p.stem != "__init__"}
+        from overmind.utils.code import (
+            _resolve_module_to_file,
+            discover_search_paths,
+            resolve_local_files,
+        )
 
-        project_root = _find_project_root(agent_dir)
-        if project_root:
-            for child in project_root.iterdir():
-                if child.is_dir() and not child.name.startswith("."):
-                    local_modules.add(child.name)
-                elif child.is_file() and child.suffix == ".py":
-                    local_modules.add(child.stem)
+        project_root = _find_project_root(agent_dir) or agent_dir
+        # Use the same auto-discovered search paths the bundler will use.
+        # Keeping both halves of the system on one resolver prevents the
+        # "bundle finds it but runner flags it external" split that
+        # caused MissingDependenciesError for valid layouts.
+        search_paths = discover_search_paths(project_root)
+        closure = resolve_local_files(
+            str(entry_path), str(project_root), search_paths=search_paths
+        )
 
-        local_modules.add("overmind")
+        raw_imports: list[str] = []
+        for src in closure.values():
+            raw_imports.extend(_extract_python_imports(src))
 
-        return [m for m in raw_imports if m not in _PYTHON_STDLIB and m not in local_modules]
+        # Fall back to the entry file alone if BFS produced nothing,
+        # so a syntactically broken closure still surfaces some signal.
+        if not raw_imports:
+            raw_imports = _extract_python_imports(
+                entry_path.read_text(encoding="utf-8")
+            )
 
+        externals: list[str] = []
+        for mod in dict.fromkeys(raw_imports):
+            top = mod.split(".")[0]
+            if top in _PYTHON_STDLIB or top == "overmind":
+                continue
+            if (
+                _resolve_module_to_file(
+                    mod, entry_path, project_root, search_paths=search_paths
+                )
+                is not None
+            ):
+                continue
+            externals.append(top)
+        return list(dict.fromkeys(externals))
+
+    raw_imports = extract_imports(entry_path.read_text(encoding="utf-8"), language)
     if language in (Language.JAVASCRIPT, Language.TYPESCRIPT):
         return [m for m in raw_imports if m not in (".", "..")]
 
@@ -535,44 +629,49 @@ def _provision_python(agent_dir: Path) -> Path:
     """Ensure a venv exists with the agent's deps installed.
 
     Strategy:
-    1. If deps haven't changed (hash match), skip entirely.
-    2. Try the coding agent — it reads the project files and runs
+    1. Locate the manifest directory by walking upward from *agent_dir*
+       to the Overmind project root (so monorepos / src-layouts that
+       keep ``requirements.txt`` at the repo root provision correctly).
+    2. If deps haven't changed (hash match), skip entirely.
+    3. Try the coding agent — it reads the project files and runs
        the right tool (poetry, uv, pip, pdm, etc.) automatically.
-    3. If the agent isn't available or fails, fall back to hardcoded
+    4. If the agent isn't available or fails, fall back to hardcoded
        uv/pip logic that handles the most common cases.
 
     Returns the path to the venv's Python interpreter.  When no
-    dependency files exist, returns the system interpreter that runs
-    overmind itself (backward-compatible zero-isolation mode).
+    dependency files exist anywhere up the chain, returns the system
+    interpreter that runs overmind itself (backward-compatible
+    zero-isolation mode).
     """
-    has_requirements = (agent_dir / "requirements.txt").is_file()
-    has_pyproject = (agent_dir / "pyproject.toml").is_file()
-    has_setup_py = (agent_dir / "setup.py").is_file()
+    manifest_dir = find_dep_manifest_dir(agent_dir, Language.PYTHON) or agent_dir
+    has_requirements = (manifest_dir / "requirements.txt").is_file()
+    has_pyproject = (manifest_dir / "pyproject.toml").is_file()
+    has_setup_py = (manifest_dir / "setup.py").is_file()
 
     if not (has_requirements or has_pyproject or has_setup_py):
         return Path(sys.executable)
 
-    venv_dir = agent_dir / ".venv"
+    venv_dir = manifest_dir / ".venv"
     marker = venv_dir / ".overmind_deps_hash"
-    current_hash = _hash_dep_files(agent_dir, _PYTHON_DEP_FILES)
+    current_hash = _hash_dep_files(manifest_dir, _PYTHON_DEP_FILES)
 
     if venv_dir.exists() and _read_cached_hash(marker) == current_hash:
         py = _venv_python(venv_dir)
         if py.is_file():
-            _ensure_overmind_sdk(venv_dir, agent_dir)
-            logger.debug(f"Python venv up-to-date for {agent_dir}")
+            _ensure_overmind_sdk(venv_dir, manifest_dir)
+            logger.debug(f"Python venv up-to-date for {manifest_dir}")
             return py
 
     # --- Try agent-based provisioning first ---
-    if _provision_with_agent(agent_dir, Language.PYTHON):
+    if _provision_with_agent(manifest_dir, Language.PYTHON):
         py = _venv_python(venv_dir)
         if py.is_file():
-            _ensure_overmind_sdk(venv_dir, agent_dir)
+            _ensure_overmind_sdk(venv_dir, manifest_dir)
             _write_cached_hash(marker, current_hash)
             return py
 
     # --- Fallback: hardcoded uv / pip logic ---
-    logger.info(f"Provisioning Python environment for {agent_dir} (fallback) …")
+    logger.info(f"Provisioning Python environment for {manifest_dir} (fallback) …")
 
     use_uv = bool(shutil.which("uv"))
 
@@ -580,7 +679,7 @@ def _provision_python(agent_dir: Path) -> Path:
         if has_pyproject:
             subprocess.run(
                 ["uv", "sync", "--no-dev"],
-                cwd=str(agent_dir),
+                cwd=str(manifest_dir),
                 check=True,
                 capture_output=True,
             )
@@ -588,7 +687,7 @@ def _provision_python(agent_dir: Path) -> Path:
             if not venv_dir.exists():
                 subprocess.run(
                     ["uv", "venv", str(venv_dir)],
-                    cwd=str(agent_dir),
+                    cwd=str(manifest_dir),
                     check=True,
                     capture_output=True,
                 )
@@ -599,7 +698,7 @@ def _provision_python(agent_dir: Path) -> Path:
                 pip_args += ["."]
             subprocess.run(
                 pip_args,
-                cwd=str(agent_dir),
+                cwd=str(manifest_dir),
                 check=True,
                 capture_output=True,
             )
@@ -607,7 +706,7 @@ def _provision_python(agent_dir: Path) -> Path:
         if not venv_dir.exists():
             subprocess.run(
                 [sys.executable, "-m", "venv", str(venv_dir)],
-                cwd=str(agent_dir),
+                cwd=str(manifest_dir),
                 check=True,
                 capture_output=True,
             )
@@ -615,21 +714,21 @@ def _provision_python(agent_dir: Path) -> Path:
         if has_requirements:
             subprocess.run(
                 [pip, "install", "-r", "requirements.txt"],
-                cwd=str(agent_dir),
+                cwd=str(manifest_dir),
                 check=True,
                 capture_output=True,
             )
         elif has_pyproject or has_setup_py:
             subprocess.run(
                 [pip, "install", "."],
-                cwd=str(agent_dir),
+                cwd=str(manifest_dir),
                 check=True,
                 capture_output=True,
             )
 
-    _ensure_overmind_sdk(venv_dir, agent_dir)
+    _ensure_overmind_sdk(venv_dir, manifest_dir)
     _write_cached_hash(marker, current_hash)
-    logger.info(f"Python environment ready for {agent_dir}")
+    logger.info(f"Python environment ready for {manifest_dir}")
     return _venv_python(venv_dir)
 
 
@@ -641,34 +740,37 @@ def _provision_python(agent_dir: Path) -> Path:
 def _provision_js(agent_dir: Path) -> None:
     """Install JS/TS dependencies if ``package.json`` exists and deps are stale.
 
-    Strategy mirrors Python: try agent first, fallback to ``npm install``.
+    Strategy mirrors Python: walk up to the manifest directory (so
+    monorepos with ``package.json`` at the repo root provision
+    correctly), try the coding agent first, fall back to ``npm install``.
     """
-    pkg_json = agent_dir / "package.json"
+    manifest_dir = find_dep_manifest_dir(agent_dir, Language.JAVASCRIPT) or agent_dir
+    pkg_json = manifest_dir / "package.json"
     if not pkg_json.is_file():
         return
 
-    marker = agent_dir / "node_modules" / ".overmind_deps_hash"
-    current_hash = _hash_dep_files(agent_dir, _JS_DEP_FILES)
+    marker = manifest_dir / "node_modules" / ".overmind_deps_hash"
+    current_hash = _hash_dep_files(manifest_dir, _JS_DEP_FILES)
 
-    if (agent_dir / "node_modules").is_dir() and _read_cached_hash(marker) == current_hash:
-        logger.debug(f"node_modules up-to-date for {agent_dir}")
+    if (manifest_dir / "node_modules").is_dir() and _read_cached_hash(marker) == current_hash:
+        logger.debug(f"node_modules up-to-date for {manifest_dir}")
         return
 
     # --- Try agent-based provisioning first ---
-    if _provision_with_agent(agent_dir, Language.JAVASCRIPT):
+    if _provision_with_agent(manifest_dir, Language.JAVASCRIPT):
         _write_cached_hash(marker, current_hash)
         return
 
     # --- Fallback: npm install ---
-    logger.info(f"Provisioning JS environment for {agent_dir} (fallback) …")
+    logger.info(f"Provisioning JS environment for {manifest_dir} (fallback) …")
     subprocess.run(
         ["npm", "install", "--no-audit", "--no-fund"],
-        cwd=str(agent_dir),
+        cwd=str(manifest_dir),
         check=True,
         capture_output=True,
     )
     _write_cached_hash(marker, current_hash)
-    logger.info(f"JS environment ready for {agent_dir}")
+    logger.info(f"JS environment ready for {manifest_dir}")
 
 
 # ---------------------------------------------------------------------------

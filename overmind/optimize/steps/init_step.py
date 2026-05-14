@@ -253,6 +253,7 @@ def run_init(
             "llm_judge_model": cfg.llm_judge_model,
             "optimizable_scope": list(cfg.optimizable_scope),
             "context_scope": list(cfg.context_scope),
+            "read_only_scope": list(cfg.read_only_scope),
             "exclude_scope": list(cfg.exclude_scope),
             "max_resolved_files": cfg.max_resolved_files,
             "max_total_chars": cfg.max_total_chars,

@@ -83,6 +83,7 @@ Return a JSON object with this exact structure:
   "decision_logic": "Brief description of the agent's decision-making process",
   "scope": {{
     "optimizable_paths": ["glob patterns relative to project root for files the optimizer may edit"],
+    "read_only_paths": ["glob patterns for files in the bundle that candidates MUST NOT edit (registered entrypoint harness, fixture data, runtime adapters)"],
     "context_paths": ["glob patterns for read-only context files (prompts, schemas) not in import closure"],
     "exclude_paths": ["glob patterns to skip entirely (tests, third-party vendored code, infra)"]
   }},
@@ -132,24 +133,70 @@ tool description/schema modules, orchestration around `{entrypoint_fn}()`, model
 Use tight globs (e.g. ``myagent/prompts/**/*.py``). Aim for fewer than 25 patterns; prefer \
 directories that hold prompts and agent config over the whole package tree.
 - IMPORTANT — distinguish "the agent" from "third-party libraries":
-  * If a top-level package directory sits next to `{entrypoint_fn}`'s file inside the project \
-root and is imported by the entrypoint (e.g. `import myproj` where `myproj/` is a sibling \
-folder), treat it as PART OF THE AGENT and include `myproj/**/*.py` in optimizable_paths. \
-The presence of `pyproject.toml`, `setup.py`, `LICENSE`, or `.egg-info/` at the same level \
-does NOT make it third-party — many agents are structured as installable local packages.
+  * Any local package directory imported (directly or transitively) from `{entrypoint_fn}`'s \
+file is PART OF THE AGENT, regardless of how deeply it is nested under the project root. \
+Include it in optimizable_paths using a recursive glob. The presence of `pyproject.toml`, \
+`setup.py`, `LICENSE`, or `.egg-info/` does NOT make a directory third-party — many agents \
+are structured as installable local packages.
+  * Concrete examples for the layout-to-glob translation:
+    - Flat layout: entry at `agent.py`, package at `myproj/` -> `myproj/**/*.py`.
+    - Nested layout: entry at `overmind_entrypoint.py`, package at `python-backend/airline/` \
+-> `python-backend/airline/**/*.py`.
+    - Src layout: entry at `src/myproj/cli.py`, package at `src/myproj/` -> `src/myproj/**/*.py`.
+    - Monorepo: entry at `apps/triage/main.py`, package at `apps/triage/agents/` -> \
+`apps/triage/agents/**/*.py`.
   * Only treat a directory as third-party / vendored (and exclude it) when it is clearly a \
 copied dependency the user does not own — e.g. it lives under `vendor/`, `third_party/`, \
 `site-packages/`, `node_modules/`, or carries a NOTICE/COPYING/upstream-readme indicating it \
 is an unmodified upstream snapshot.
-  * When in doubt about a sibling package, prefer INCLUDING it in optimizable_paths. The \
-register-agent / generate-policy step will surface these to the user for confirmation; a \
-silent exclude is worse than an over-broad include.
+  * When in doubt, prefer INCLUDING it in optimizable_paths. The register-agent / \
+generate-policy step will surface these to the user for confirmation; a silent exclude is \
+worse than an over-broad include.
+- read_only_paths: Files that MUST be present in the bundle (so candidates can import / \
+execute them) but MUST NOT be edited by candidates. The registered Overmind entrypoint (the \
+file containing `{entrypoint_fn}`) belongs here — it is an interaction harness, not agent \
+logic. Test fixtures, snapshot files, and runtime adapters the agent loads at startup also \
+belong here. The accept step enforces this with a byte-equality diff; mutations are rejected \
+before scoring. Listing a path in BOTH `optimizable_paths` and `read_only_paths` is a \
+configuration error.
 - context_paths: Important read-only context (eval templates, JSON schemas, README, \
-pyproject.toml) the optimizer should see but must not edit. Omit if empty.
+pyproject.toml) the optimizer should see but must not edit. Distinct from `read_only_paths`: \
+context files are advisory (steering for the analyzer prompt), whereas `read_only_paths` is \
+enforced at accept time. Omit if empty.
 - exclude_paths: Tests, benchmarks, docs, examples, scripts, docker/k8s, web servers, \
 database adapters, true third-party vendored trees, build artefacts (``*.egg-info``, \
 ``__pycache__``, ``uv.lock``, ``poetry.lock``). Be aggressive about *infra*, but never \
 exclude a sibling package that the entrypoint imports.
+- search_paths: sys.path-style directories the import resolver should treat as package \
+roots. Auto-discovery covers ``src/``, ``[tool.setuptools.package-dir]`` in \
+``pyproject.toml``, and any directory added via a static ``sys.path.insert(...)`` / \
+``sys.path.append(...)`` at the entry's module top. Declare ``search_paths`` for any \
+layout those signals miss, and ALSO declare it whenever the entry mutates ``sys.path`` — \
+the declaration is the authoritative human-readable record even when auto-detection \
+would catch it. \
+\
+The canonical cases are: \
+  * Hyphenated dir, e.g. entry at root, package at ``python-backend/airline/``, \
+entry contains ``sys.path.insert(0, Path(__file__).parent / "python-backend")`` -> \
+``"search_paths": ["python-backend"]``. \
+  * Monorepo subapp, e.g. entry at ``apps/triage/main.py``, package at \
+``apps/triage/lib/``, entry adds ``apps/triage`` to ``sys.path`` -> \
+``"search_paths": ["apps/triage"]``. \
+  * Sibling layout, e.g. entry at ``runner/entry.py``, packages at ``services/``, \
+entry adds ``services`` -> ``"search_paths": ["services"]``. \
+\
+RULE: If the entry file contains any ``sys.path.insert``, ``sys.path.append``, \
+``sys.path.extend``, or ``sys.path += [...]`` statement, you MUST emit \
+``scope.search_paths`` with the relative path(s) being added. Failing to declare it \
+leaves the bundle incomplete and silently breaks optimization on candidate worktrees.
+
+Tip for dynamic-import shims:
+- If the agent loads modules at runtime (``importlib.import_module``, plugin systems, lazy \
+proxies), the static walker can't see them. The author can opt in to a static hint by \
+declaring a module-level ``__overmind_imports__ = ["pkg.mod", ...]`` in the file that \
+performs the dynamic import. The BFS treats those names as if they appeared in a normal \
+``import`` statement. Recommend this in your output's ``notes`` when you detect dynamic \
+imports.
 
 Rules for optimizable_elements vs fixed_elements:
 - optimizable_elements: Things the optimizer CAN change to improve performance.
