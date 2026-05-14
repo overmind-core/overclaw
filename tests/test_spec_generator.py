@@ -172,6 +172,240 @@ class TestBuildSpec:
         assert "tool_config" not in spec
 
 
+class TestScopeReadOnlyDefault:
+    """The spec generator must protect the registered Overmind entrypoint
+    from being edited by candidates, even when the analyzer leaves
+    ``scope.read_only_paths`` empty. The accept step only enforces
+    what's declared in the spec; without an auto-default here, harness files
+    silently become editable."""
+
+    def test_empty_scope_gets_entrypoint_read_only(self):
+        analysis = {"_entry_rel": "overmind_entrypoint.py"}
+        spec = _build_spec(analysis, {}, {}, {}, 20)
+        assert spec["scope"]["read_only_paths"] == ["overmind_entrypoint.py"]
+
+    def test_entry_appended_when_other_read_only_paths_exist(self):
+        """LLM declared fixtures but forgot the entrypoint — we must
+        still protect it."""
+        analysis = {
+            "_entry_rel": "overmind_entrypoint.py",
+            "scope": {
+                "optimizable_paths": ["agent/**/*.py"],
+                "read_only_paths": ["tests/fixtures/*.json"],
+            },
+        }
+        spec = _build_spec(analysis, {}, {}, {}, 20)
+        ro = spec["scope"]["read_only_paths"]
+        assert "overmind_entrypoint.py" in ro
+        assert "tests/fixtures/*.json" in ro
+
+    def test_entry_in_optimizable_is_not_added_to_read_only(self):
+        """Single-file agent: the entry IS the agent. Auto-add must not
+        push it into read_only and contradict optimizable."""
+        analysis = {
+            "_entry_rel": "agent.py",
+            "scope": {"optimizable_paths": ["agent.py"]},
+        }
+        spec = _build_spec(analysis, {}, {}, {}, 20)
+        assert "read_only_paths" not in spec["scope"]
+
+    def test_entry_already_in_read_only_not_duplicated(self):
+        analysis = {
+            "_entry_rel": "overmind_entrypoint.py",
+            "scope": {
+                "optimizable_paths": ["agent/**/*.py"],
+                "read_only_paths": ["overmind_entrypoint.py"],
+            },
+        }
+        spec = _build_spec(analysis, {}, {}, {}, 20)
+        ro = spec["scope"]["read_only_paths"]
+        assert ro.count("overmind_entrypoint.py") == 1
+
+    def test_no_entry_rel_no_scope_change(self):
+        """When the analyzer step didn't stash ``_entry_rel`` (older
+        callers, fallback paths), the generator must not crash; it
+        simply skips the auto-default."""
+        analysis = {"scope": {"optimizable_paths": ["agent.py"]}}
+        spec = _build_spec(analysis, {}, {}, {}, 20)
+        assert spec["scope"] == {"optimizable_paths": ["agent.py"]}
+
+
+# ---------------------------------------------------------------------------
+# Deterministic ``search_paths`` injection from entry sys.path mutations
+# ---------------------------------------------------------------------------
+#
+# The analyzer prompt asks the LLM to emit ``search_paths`` whenever the
+# entry mutates ``sys.path``. The LLM forgets. ``_build_spec`` re-runs
+# the AST partial evaluator and injects any missing paths so the spec
+# is always self-consistent with the entry's actual runtime behaviour,
+# regardless of how good the LLM was.
+
+
+def _make_syspath_project(tmp_path: Path) -> tuple[Path, Path]:
+    """Build a tmp project with ``.overmind/`` marker, an entry that
+    mutates ``sys.path``, and the actual ``py-backend/`` dir on disk so
+    the AST evaluator validates it as a real directory."""
+    from overmind.core.constants import OVERMIND_DIR_NAME
+
+    (tmp_path / OVERMIND_DIR_NAME).mkdir(parents=True)
+    entry = tmp_path / "entry.py"
+    entry.write_text(
+        "import sys\n"
+        "from pathlib import Path\n"
+        '_BACKEND = Path(__file__).resolve().parent / "py-backend"\n'
+        'if str(_BACKEND) not in sys.path:\n'
+        '    sys.path.insert(0, str(_BACKEND))\n'
+    )
+    (tmp_path / "py-backend").mkdir()
+    return tmp_path, entry
+
+
+class TestSearchPathsInjection:
+    def test_injects_when_analyzer_omits(self, tmp_path):
+        """Spec without ``search_paths`` gets the entry-derived path
+        injected automatically — this is the failure mode that occurs
+        when the analyzer LLM forgets the declarative rule."""
+        root, entry = _make_syspath_project(tmp_path)
+        analysis = {
+            "_agent_path": str(entry),
+            "_entry_rel": "entry.py",
+            "scope": {"optimizable_paths": ["entry.py"]},
+        }
+        spec = _build_spec(analysis, {}, {}, {}, 20)
+        assert spec["scope"].get("search_paths") == ["py-backend"]
+
+    def test_noop_when_analyzer_already_declared(self, tmp_path):
+        """Idempotent: a correct spec from the LLM passes through
+        unchanged, no duplicate entries."""
+        root, entry = _make_syspath_project(tmp_path)
+        analysis = {
+            "_agent_path": str(entry),
+            "_entry_rel": "entry.py",
+            "scope": {
+                "optimizable_paths": ["entry.py"],
+                "search_paths": ["py-backend"],
+            },
+        }
+        spec = _build_spec(analysis, {}, {}, {}, 20)
+        assert spec["scope"]["search_paths"] == ["py-backend"]
+
+    def test_appends_to_divergent_declaration(self, tmp_path):
+        """If the LLM declared a *different* search path, the
+        post-process appends the detected one rather than replacing.
+        More search paths are safe; missing ones aren't."""
+        root, entry = _make_syspath_project(tmp_path)
+        # Create a second directory the LLM "thinks" is the package root
+        # so it survives the relative-to-root validation.
+        (tmp_path / "libs").mkdir()
+        analysis = {
+            "_agent_path": str(entry),
+            "_entry_rel": "entry.py",
+            "scope": {
+                "optimizable_paths": ["entry.py"],
+                "search_paths": ["libs"],
+            },
+        }
+        spec = _build_spec(analysis, {}, {}, {}, 20)
+        assert "libs" in spec["scope"]["search_paths"]
+        assert "py-backend" in spec["scope"]["search_paths"]
+
+    def test_no_syspath_mutation_no_injection(self, tmp_path):
+        """An entry without ``sys.path`` mutations leaves the scope
+        untouched. ``search_paths`` is not added as an empty key."""
+        from overmind.core.constants import OVERMIND_DIR_NAME
+
+        (tmp_path / OVERMIND_DIR_NAME).mkdir(parents=True)
+        entry = tmp_path / "entry.py"
+        entry.write_text("def run(x): return x\n")
+
+        analysis = {
+            "_agent_path": str(entry),
+            "_entry_rel": "entry.py",
+            "scope": {"optimizable_paths": ["entry.py"]},
+        }
+        spec = _build_spec(analysis, {}, {}, {}, 20)
+        assert "search_paths" not in spec["scope"]
+
+
+# ---------------------------------------------------------------------------
+# Reconcile entry placement across exclude/read_only
+# ---------------------------------------------------------------------------
+#
+# The LLM occasionally puts the entry in both ``exclude_paths`` (because
+# the docstring says "not optimization material") and the resolver then
+# refuses to ignore the entry, collapsing the bundle. ``_build_spec``
+# reconciles by moving the entry from ``exclude_paths`` into
+# ``read_only_paths`` — the correct field for "this file must be
+# present in the bundle but candidates can't edit it."
+
+
+def _trivial_entry_project(tmp_path: Path) -> tuple[Path, Path]:
+    from overmind.core.constants import OVERMIND_DIR_NAME
+
+    (tmp_path / OVERMIND_DIR_NAME).mkdir(parents=True)
+    entry = tmp_path / "entry.py"
+    entry.write_text("def run(x): return x\n")
+    return tmp_path, entry
+
+
+class TestEntryExcludeReadOnlyReconcile:
+    def test_entry_in_exclude_moves_to_read_only(self, tmp_path):
+        root, entry = _trivial_entry_project(tmp_path)
+        analysis = {
+            "_agent_path": str(entry),
+            "_entry_rel": "entry.py",
+            "scope": {
+                "optimizable_paths": ["agent_logic.py"],
+                "exclude_paths": ["entry.py", "tests/**"],
+            },
+        }
+        spec = _build_spec(analysis, {}, {}, {}, 20)
+        # Entry no longer in exclude.
+        assert "entry.py" not in spec["scope"].get("exclude_paths", [])
+        # Unrelated excludes untouched.
+        assert "tests/**" in spec["scope"]["exclude_paths"]
+        # Entry now in read_only.
+        assert "entry.py" in spec["scope"]["read_only_paths"]
+
+    def test_entry_in_optimizable_and_exclude_strips_only_exclude(
+        self, tmp_path
+    ):
+        """Single-file agent edge case: the entry IS the agent under test
+        AND the LLM also (incorrectly) put it in exclude. Strip from
+        exclude, leave in optimizable, do NOT add to read_only — the
+        candidate must be free to edit it."""
+        root, entry = _trivial_entry_project(tmp_path)
+        analysis = {
+            "_agent_path": str(entry),
+            "_entry_rel": "entry.py",
+            "scope": {
+                "optimizable_paths": ["entry.py"],
+                "exclude_paths": ["entry.py"],
+            },
+        }
+        spec = _build_spec(analysis, {}, {}, {}, 20)
+        assert "entry.py" not in spec["scope"].get("exclude_paths", [])
+        assert "entry.py" in spec["scope"]["optimizable_paths"]
+        assert "entry.py" not in spec["scope"].get("read_only_paths", [])
+
+    def test_clean_spec_unchanged(self, tmp_path):
+        """When the LLM gets it right (entry in read_only, not in
+        exclude), the post-process is a no-op for these fields."""
+        root, entry = _trivial_entry_project(tmp_path)
+        analysis = {
+            "_agent_path": str(entry),
+            "_entry_rel": "entry.py",
+            "scope": {
+                "optimizable_paths": ["agent/**/*.py"],
+                "read_only_paths": ["entry.py"],
+                "exclude_paths": ["tests/**"],
+            },
+        }
+        spec = _build_spec(analysis, {}, {}, {}, 20)
+        assert spec["scope"]["read_only_paths"] == ["entry.py"]
+        assert spec["scope"]["exclude_paths"] == ["tests/**"]
+
+
 # ---------------------------------------------------------------------------
 # save_spec
 # ---------------------------------------------------------------------------

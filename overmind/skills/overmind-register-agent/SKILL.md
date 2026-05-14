@@ -30,7 +30,7 @@ Use this skill to create a separate entrypoint file that Overmind can call to ru
 
 ## Inputs
 
-**Execution order:** For anything that touches `.overmind/.env`, follow **Workflow** (analyzer provider → model → **command block 4** bootstrap → **mandatory keys pause** → **command block 5** verify → `configured`) **before** `overmind agent register`. You may still collect other answers (entrypoint choice, paths) earlier in the thread, but do not register until the env sequence has completed.
+**Execution order:** For anything that touches `.overmind/.env`, follow **Workflow** (analyzer provider → model → **command block 4** bootstrap → **mandatory keys pause** → **command block 5** verify → `configured`) **before** `overmind agent register`. You may still collect other answers (entrypoint choice, paths) earlier in the thread, but do not register until this gate has passed.
 
 The coding agent infers technical facts from the repo; the user still **confirms** intent for each bullet below (or confirms prior message).
 
@@ -181,10 +181,12 @@ Use these command blocks to keep registration deterministic. Do not rely on inte
    - Commands:
      - `overmind agent register --help`
      - Preferred shape (when supported):
-       - `overmind agent register "<agent-name>" "<module_path>:<callable>"`
+       - `overmind agent register --non-interactive "<agent-name>" "<module_path>:<callable>"`
+     - Fallback (older builds without the flag): `OVERMIND_NONINTERACTIVE=1 overmind agent register "<agent-name>" "<module_path>:<callable>"`
    - Rules:
      - Pass both required parameters explicitly in the command invocation.
-     - Do not run any interactive prompt flow.
+     - Always pass `--non-interactive` (or set `OVERMIND_NONINTERACTIVE=1`) so the CLI never opens `/dev/tty`; this is required in sandboxed/CI shells where the arrow-key menu would crash with `OSError: Device not configured`.
+     - Pre-populate `.overmind/agents/<agent-name>/.env` with provider keys before registration so the non-interactive run can keep it as-is (the CLI will not prompt to reconfigure when the file already exists).
      - If the installed CLI requires different flag names, map to the same required values and document the exact command executed in the user update.
 
 1. **Instrumentation refresh**

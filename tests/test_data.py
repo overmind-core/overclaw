@@ -20,7 +20,6 @@ from overmind.optimize.data import (
     validate_case_against_spec,
 )
 
-
 # ---------------------------------------------------------------------------
 # load_data
 # ---------------------------------------------------------------------------
@@ -55,6 +54,63 @@ class TestLoadData:
         path = tmp_path / "data.json"
         path.write_text("[]")
         assert load_data(str(path)) == []
+
+    # ---- JSONL / NDJSON ---------------------------------------------------
+
+    def test_load_jsonl_extension(self, tmp_path):
+        path = tmp_path / "data.jsonl"
+        path.write_text(
+            '{"input": {"x": 1}, "expected_output": {"y": 2}}\n{"input": {"x": 3}, "expected_output": {"y": 4}}\n'
+        )
+        result = load_data(str(path))
+        assert result == [
+            {"input": {"x": 1}, "expected_output": {"y": 2}},
+            {"input": {"x": 3}, "expected_output": {"y": 4}},
+        ]
+
+    def test_load_ndjson_extension(self, tmp_path):
+        path = tmp_path / "data.ndjson"
+        path.write_text('{"input": {"x": 1}}\n{"input": {"x": 2}}\n')
+        assert load_data(str(path)) == [{"input": {"x": 1}}, {"input": {"x": 2}}]
+
+    def test_jsonl_skips_blank_and_comment_lines(self, tmp_path):
+        path = tmp_path / "data.jsonl"
+        path.write_text('\n# a comment line\n{"input": {"x": 1}}\n\n{"input": {"x": 2}}\n')
+        assert load_data(str(path)) == [{"input": {"x": 1}}, {"input": {"x": 2}}]
+
+    def test_jsonl_with_inputs_outputs_aliases(self, tmp_path):
+        """Real-world export shape — alias normalisation happens later in
+        ``normalize_data_fields``; here we just confirm the loader keeps
+        the keys intact."""
+        path = tmp_path / "data.jsonl"
+        path.write_text('{"inputs": {"user_message": "hi"}, "outputs": {"response_text": "hello"}}\n')
+        result = load_data(str(path))
+        assert result == [{"inputs": {"user_message": "hi"}, "outputs": {"response_text": "hello"}}]
+
+    def test_jsonl_malformed_line_raises_with_lineno(self, tmp_path):
+        path = tmp_path / "data.jsonl"
+        path.write_text('{"input": {"x": 1}}\n{this is not valid json}\n')
+        with pytest.raises(ValueError, match="line 2"):
+            load_data(str(path))
+
+    def test_jsonl_non_object_line_raises(self, tmp_path):
+        path = tmp_path / "data.jsonl"
+        path.write_text('{"input": {"x": 1}}\n[1, 2, 3]\n')
+        with pytest.raises(TypeError, match="expected a JSON object"):
+            load_data(str(path))
+
+    def test_json_file_with_jsonl_content_falls_back(self, tmp_path):
+        """An exporter that wrote one-object-per-line into a ``.json`` file
+        should still be readable (best-effort fallback)."""
+        path = tmp_path / "data.json"
+        path.write_text('{"input": {"x": 1}}\n{"input": {"x": 2}}\n')
+        assert load_data(str(path)) == [{"input": {"x": 1}}, {"input": {"x": 2}}]
+
+    def test_truly_malformed_json_still_raises(self, tmp_path):
+        path = tmp_path / "data.json"
+        path.write_text("not even close to json")
+        with pytest.raises(ValueError, match="Could not parse"):
+            load_data(str(path))
 
 
 # ---------------------------------------------------------------------------
@@ -114,9 +170,7 @@ class TestValidateCaseAgainstSpec:
         assert errors == []
 
     def test_invalid_input_type_rejected(self):
-        errors = validate_case_against_spec(
-            {"input": ["not", "a", "dict"], "expected_output": {}}, SAMPLE_SPEC
-        )
+        errors = validate_case_against_spec({"input": ["not", "a", "dict"], "expected_output": {}}, SAMPLE_SPEC)
         assert any("dict or a string" in e for e in errors)
 
     def test_missing_expected_output(self):
@@ -309,13 +363,11 @@ class TestApplyDedup:
     def test_drops_non_dict_cases(self):
         cases = ["not a dict", 42]
         out: list[dict] = []
-        added, dups = _apply_dedup(cases, {}, set(), set(), out)
+        added, _ = _apply_dedup(cases, {}, set(), set(), out)
         assert added == 0
 
     def test_strips_meta_key(self):
-        cases = [
-            {"input": {"x": "test value"}, "expected_output": {}, "_meta": "remove me"}
-        ]
+        cases = [{"input": {"x": "test value"}, "expected_output": {}, "_meta": "remove me"}]
         out: list[dict] = []
         added, _ = _apply_dedup(cases, {}, set(), set(), out)
         assert added == 1

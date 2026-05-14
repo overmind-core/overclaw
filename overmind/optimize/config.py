@@ -141,15 +141,215 @@ class Config:
     # Read-only context files (globs relative to project root), merged into the
     # bundle but never edited by the coding agent.
     context_scope: list[str] = field(default_factory=list)
+    # Read-only files (globs relative to project root) that MUST be present in
+    # the bundle / worktree but MUST NOT be modified by candidates. Enforced
+    # at accept time via a content diff against the bundle's baseline. Unlike
+    # ``context_scope`` (advisory; relies on the analyzer prompt for steering),
+    # ``read_only_scope`` is enforced — a candidate whose worktree mutates any
+    # listed file is rejected before scoring.
+    read_only_scope: list[str] = field(default_factory=list)
     # Extra path globs to exclude from BFS (merged with .overmindignore).
     exclude_scope: list[str] = field(default_factory=list)
+    # Extra sys.path-style search directories under the project root that the
+    # import resolver should treat as package roots. Supports hyphenated
+    # layouts (``python-backend/``) and explicit ``src/`` layouts whose
+    # package directories aren't direct children of the project root.
+    # When empty, :func:`overmind.utils.code.discover_search_paths`
+    # auto-discovers from ``pyproject.toml`` and an existing ``src/`` dir.
+    bundle_search_paths: list[str] = field(default_factory=list)
     # Cap how many files import-resolution collects; also bounds prompt size.
     max_resolved_files: int = 24
     max_total_chars: int = 60_000
 
 
+class SpecValidationError(ValueError):
+    """Raised when ``eval_spec.json`` is structurally invalid.
+
+    The message always includes the JSON path of the offending field
+    (``consistency_rules[2].field_a`` etc.) so authors can fix their
+    spec without trial-and-error. Inherits from :class:`ValueError` so
+    callers that already catch ``ValueError`` keep working.
+    """
+
+
+_VALID_RULE_TYPES = frozenset({"correlation", "ordering"})
+_VALID_RULE_OPERATORS = frozenset({"<=", "<", ">=", ">"})
+
+
+def _is_path_list(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(p, str) for p in value)
+
+
+def _validate_consistency_rules(rules: object) -> None:
+    """Pin the shape that :class:`SpecEvaluator` actually consumes.
+
+    The evaluator iterates and calls ``rule.get(...)`` on each entry, so
+    a list of natural-language strings (a tempting LLM output) crashes
+    with ``AttributeError: 'str' object has no attribute 'get'`` mid-run.
+    We catch that and every adjacent shape error here, with a JSON path
+    pointing at the offender so users fix once instead of debugging a
+    cryptic stack trace.
+    """
+    if rules is None:
+        return
+    if not isinstance(rules, list):
+        raise SpecValidationError(f"consistency_rules: expected a list, got {type(rules).__name__}")
+    for i, rule in enumerate(rules):
+        prefix = f"consistency_rules[{i}]"
+        if not isinstance(rule, dict):
+            raise SpecValidationError(
+                f"{prefix}: each rule must be an object with field_a/field_b "
+                f"keys; got {type(rule).__name__} "
+                f"(natural-language rules should live in policies.md, not "
+                f"consistency_rules — those describe machine-checked "
+                f"cross-field invariants)"
+            )
+        for key in ("field_a", "field_b"):
+            if key not in rule:
+                raise SpecValidationError(f"{prefix}.{key}: required string is missing")
+            if not isinstance(rule[key], str) or not rule[key]:
+                raise SpecValidationError(
+                    f"{prefix}.{key}: must be a non-empty string referring to an output_fields entry"
+                )
+        if "type" in rule and rule["type"] not in _VALID_RULE_TYPES:
+            raise SpecValidationError(
+                f"{prefix}.type: must be one of {sorted(_VALID_RULE_TYPES)}, got {rule['type']!r}"
+            )
+        if "operator" in rule and rule["operator"] not in _VALID_RULE_OPERATORS:
+            raise SpecValidationError(
+                f"{prefix}.operator: must be one of {sorted(_VALID_RULE_OPERATORS)}, got {rule['operator']!r}"
+            )
+        if "penalty" in rule and not isinstance(rule["penalty"], (int, float)):
+            raise SpecValidationError(f"{prefix}.penalty: must be numeric, got {type(rule['penalty']).__name__}")
+
+
+def _validate_scope(scope: object) -> None:
+    if scope is None:
+        return
+    if not isinstance(scope, dict):
+        raise SpecValidationError(f"scope: expected an object, got {type(scope).__name__}")
+    for key in (
+        "optimizable_paths",
+        "context_paths",
+        "read_only_paths",
+        "exclude_paths",
+        "search_paths",
+    ):
+        if key in scope and not _is_path_list(scope[key]):
+            raise SpecValidationError(f"scope.{key}: must be a list of strings")
+
+
+def _validate_output_fields(fields: object) -> None:
+    """``output_fields`` is the only structurally required block — the
+    evaluator does ``self.spec["output_fields"]`` (no .get) and would
+    raise KeyError otherwise. Catch the obvious shape problems early."""
+    if fields is None:
+        # SpecEvaluator will raise KeyError; that's the legacy behaviour and
+        # not something we want to mask. The validator is here to catch
+        # *shape* errors when the key exists.
+        return
+    if not isinstance(fields, dict):
+        raise SpecValidationError(f"output_fields: expected an object, got {type(fields).__name__}")
+    for name, cfg in fields.items():
+        if not isinstance(cfg, dict):
+            raise SpecValidationError(
+                f"output_fields.{name}: must be an object describing the field (type/description/weight/...)"
+            )
+        if "weight" in cfg and not isinstance(cfg["weight"], (int, float)):
+            raise SpecValidationError(f"output_fields.{name}.weight: must be numeric")
+        if "values" in cfg and not isinstance(cfg["values"], list):
+            raise SpecValidationError(f"output_fields.{name}.values: must be a list")
+
+
+def validate_eval_spec(spec: object) -> None:
+    """Validate the structural shape of a loaded ``eval_spec.json``.
+
+    Called from :func:`apply_eval_spec_scope` so every code path that
+    loads a spec (fast mode, interactive mode, downstream tooling) gets
+    the same gate. Raises :class:`SpecValidationError` with a JSON path
+    pointing at the offending field on the first problem found —
+    fail-fast keeps the error message focused; users can fix one thing
+    at a time without re-reading the whole list.
+    """
+    if not isinstance(spec, dict):
+        raise SpecValidationError(f"eval_spec: expected an object at the top level, got {type(spec).__name__}")
+    _validate_output_fields(spec.get("output_fields"))
+    _validate_consistency_rules(spec.get("consistency_rules"))
+    _validate_scope(spec.get("scope"))
+
+
+def _expand_scope_patterns(patterns: list[str], root: Path) -> set[str]:
+    """Expand a list of literal paths / globs into concrete relative files.
+
+    Mirrors the same logic :meth:`AgentBundle.from_entry_point` uses
+    internally, so the overlap check sees the same set the bundler
+    will materialize. Patterns that match no files survive as the
+    literal pattern string — that way overlaps between two
+    typo'd-but-equal patterns are still caught (string overlap is the
+    weakest guarantee; file overlap is the strongest).
+    """
+    expanded: set[str] = set()
+    for pattern in patterns:
+        if not pattern:
+            continue
+        abs_p = root / pattern
+        if abs_p.is_file():
+            expanded.add(pattern)
+            continue
+        matched = [p for p in root.glob(pattern) if p.is_file()]
+        if not matched:
+            expanded.add(pattern)
+            continue
+        for m in matched:
+            try:
+                expanded.add(str(m.relative_to(root)))
+            except ValueError:
+                pass
+    return expanded
+
+
+def _project_root_for(cfg: Config) -> Path | None:
+    """Best-effort project root for *cfg* without raising.
+
+    Used by file-level overlap detection. We don't want spec validation
+    to fail just because the agent path isn't fully resolvable yet
+    (e.g. in unit tests with synthetic configs).
+    """
+    if not cfg.agent_path:
+        return None
+    try:
+        from overmind.core.registry import project_root_from_agent_file
+
+        agent_path = Path(cfg.agent_path).resolve()
+        if not agent_path.exists():
+            return None
+        root_str = project_root_from_agent_file(str(agent_path))
+        return Path(root_str).resolve() if root_str else None
+    except Exception:
+        return None
+
+
 def apply_eval_spec_scope(cfg: Config, spec: dict) -> None:
-    """Fill scope-related fields from ``eval_spec.json`` when not already set."""
+    """Fill scope-related fields from ``eval_spec.json`` when not already set.
+
+    Raises
+    ------
+    SpecValidationError
+        If the spec is structurally invalid (e.g. ``consistency_rules``
+        contains plain strings instead of structured rule dicts). The
+        single chokepoint here means every loader benefits from the
+        same gate.
+    ValueError
+        If ``optimizable_paths`` and ``read_only_paths`` overlap, either
+        as literal patterns OR — when a project root is resolvable —
+        after expanding both pattern lists against the filesystem.
+        Overlap is almost certainly a configuration mistake (it
+        requests both "edit this" and "do not edit this" for the same
+        path) and silently choosing one would mask the bug. Fail fast
+        at init instead.
+    """
+    validate_eval_spec(spec)
+
     scope = spec.get("scope") or {}
     if not cfg.optimizable_scope:
         paths = scope.get("optimizable_paths")
@@ -159,10 +359,44 @@ def apply_eval_spec_scope(cfg: Config, spec: dict) -> None:
         ctx = scope.get("context_paths")
         if ctx:
             cfg.context_scope = list(ctx)
+    if not cfg.read_only_scope:
+        ro = scope.get("read_only_paths")
+        if ro:
+            cfg.read_only_scope = list(ro)
     if not cfg.exclude_scope:
         excl = scope.get("exclude_paths")
         if excl:
             cfg.exclude_scope = list(excl)
+    if not cfg.bundle_search_paths:
+        sp = scope.get("search_paths")
+        if sp:
+            cfg.bundle_search_paths = list(sp)
+
+    # Tier 1 — literal pattern overlap. Catches the obvious case even
+    # when we can't resolve the filesystem.
+    literal_overlap = set(cfg.optimizable_scope) & set(cfg.read_only_scope)
+    if literal_overlap:
+        raise ValueError(
+            "eval_spec scope error: the following paths appear in both "
+            "optimizable_paths and read_only_paths — pick one: " + ", ".join(sorted(literal_overlap))
+        )
+
+    # Tier 2 — file-level overlap after glob expansion. Catches the
+    # subtler case where the patterns differ as strings but resolve to
+    # overlapping files (e.g. ``**/*.py`` vs ``entry.py``). Skipped
+    # when no project root is resolvable (synthetic configs in tests).
+    root = _project_root_for(cfg)
+    if root is not None and cfg.optimizable_scope and cfg.read_only_scope:
+        opt_files = _expand_scope_patterns(cfg.optimizable_scope, root)
+        ro_files = _expand_scope_patterns(cfg.read_only_scope, root)
+        file_overlap = opt_files & ro_files
+        if file_overlap:
+            raise ValueError(
+                "eval_spec scope error: optimizable_paths and "
+                "read_only_paths resolve to overlapping files after glob "
+                "expansion — pick one (the patterns differ as strings, "
+                "but match the same files): " + ", ".join(sorted(file_overlap))
+            )
 
 
 def _select_backtest_models(console: Console) -> list[str]:

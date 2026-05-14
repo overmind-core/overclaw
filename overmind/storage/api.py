@@ -27,13 +27,13 @@ from typing import Any
 from uuid import UUID
 
 from overmind.client import (
+    ProjectResolutionError,
     _fire,
-    _run_async,
     create_dataset,
     fetch_dataset_datapoints,
     get_active_dataset_id,
     get_client,
-    get_project_id,
+    resolve_project_id,
     upsert_agent,
 )
 from overmind.client import (
@@ -115,10 +115,29 @@ class ApiBackend(StorageBackend):
         return get_client()
 
     def _project_id(self) -> str | None:
-        return get_project_id()
+        """Return the active project id, auto-resolving from the API key when possible.
+
+        Returns ``None`` (rather than raising) if resolution fails, so the
+        higher-level ``save_*`` methods preserve their "best-effort, never
+        crash the user's setup flow" contract.  The original error is logged.
+        """
+        client = self._client_()
+        if client is None:
+            return None
+        try:
+            return resolve_project_id(client)
+        except ProjectResolutionError as exc:
+            logger.warning(f"_project_id: could not resolve project ({exc})")
+            return None
 
     def _patch_agent(self, **fields: Any) -> bool:
-        """PATCH this agent record via ``agents_partial_update``."""
+        """PATCH this agent record via ``agents_partial_update``.
+
+        ``client.agents_partial_update`` is a **sync** SDK method — it
+        returns an :class:`Agent` model directly. The previous code wrapped
+        it in :func:`_run_async`, which silently swallowed a ``TypeError``
+        and returned ``False`` even on successful PATCHes. Call it directly.
+        """
         if not self._agent_id:
             return False
         client = self._client_()
@@ -126,7 +145,7 @@ class ApiBackend(StorageBackend):
             return False
         try:
             patch = PatchedAgentRequest(**fields)
-            _run_async(client.agents_partial_update(id=UUID(self._agent_id), patched_agent_request=patch))
+            client.agents_partial_update(id=UUID(self._agent_id), patched_agent_request=patch)
             return True
         except Exception:
             logger.exception(f"agents_partial_update failed agent_id={self._agent_id}")
@@ -172,37 +191,50 @@ class ApiBackend(StorageBackend):
         )
 
     def load_spec(self) -> dict | None:
-        """Fetch eval-spec fields via ``agents_eval_spec_retrieve``."""
+        """Fetch eval-spec fields via ``agents_eval_spec_retrieve``.
+
+        Both ``agents_eval_spec_retrieve`` and ``agents_retrieve`` are
+        synchronous SDK methods. They were previously wrapped in
+        :func:`_run_async`, which raised ``TypeError`` after the HTTP call
+        had already succeeded, so this function always returned ``None``
+        even though the data was available. Call directly.
+        """
         if not self._agent_id:
             return None
         client = self._client_()
         if not client:
             return None
         try:
-            response = _run_async(client.agents_eval_spec_retrieve(id=UUID(self._agent_id)))
+            response = client.agents_eval_spec_retrieve(id=UUID(self._agent_id))
         except Exception:
             return None
         spec: dict[str, Any] = response.to_dict()
         # Augment with policy/agent metadata that's stored on the Agent record
         # but not exposed by the eval-spec endpoint.
         with contextlib.suppress(Exception):
-            agent = _run_async(client.agents_retrieve(id=UUID(self._agent_id)))
+            agent = client.agents_retrieve(id=UUID(self._agent_id))
             if agent.policy_data:
                 spec["policy"] = agent.policy_data
         return spec
 
     def delete_spec(self) -> None:
-        """Destroy the agent record via ``agents_destroy``."""
+        """Destroy the agent record via ``agents_destroy``.
+
+        ``agents_destroy`` is synchronous. Local state (``_agent_id``) is
+        cleared **after** the remote DELETE succeeds so a transient API
+        failure doesn't leave the storage backend pointing at a stale id.
+        """
         if not self._agent_id:
             return
         client = self._client_()
         if not client:
             return
         try:
-            _run_async(client.agents_destroy(id=UUID(self._agent_id)))
-            self._agent_id = ""
+            client.agents_destroy(id=UUID(self._agent_id))
         except Exception:
             logger.exception("delete_spec: agents_destroy failed")
+            return
+        self._agent_id = ""
 
     # ------------------------------------------------------------------
     # Dataset
@@ -291,7 +323,7 @@ class ApiBackend(StorageBackend):
         if not client:
             return None
         try:
-            agent = _run_async(client.agents_retrieve(id=UUID(self._agent_id)))
+            agent = client.agents_retrieve(id=UUID(self._agent_id))
         except Exception:
             return None
         return getattr(agent, "policy_markdown", None) or None

@@ -5,8 +5,11 @@ A thin, synchronous-feeling facade over the generated
 variables:
 
 * ``OVERMIND_API_URL``     Base URL of the Overmind backend (e.g. ``http://localhost:8000``)
-* ``OVERMIND_API_KEY``     Bearer token (``ovr_core_…`` or any JWT)
-* ``OVERMIND_PROJECT_ID``  UUID of the project to associate agents with
+* ``OVERMIND_API_KEY``     Either a project-scoped key (``ovr_…``) or a user JWT.
+* ``OVERMIND_PROJECT_ID``  Optional UUID of the project to associate agents with.
+                           When the key is project-scoped and the user has access
+                           to exactly one project, this is auto-discovered via
+                           :func:`resolve_project_id`.
 
 Why this module exists
 ----------------------
@@ -117,7 +120,24 @@ def _submit_async(coro) -> Future:
 
 
 def _run_async(coro, timeout: float = 30.0) -> Any:
-    """Submit a coroutine to the background loop and wait for its result."""
+    """Submit a coroutine to the background loop and wait for its result.
+
+    Strictly rejects non-coroutine arguments. The generated OpenAPI SDK is
+    fully **synchronous** — calling ``_run_async(client.agents_partial_update(...))``
+    silently fires the HTTP request, then raises ``TypeError`` from inside
+    ``asyncio.run_coroutine_threadsafe``, where every existing call site has
+    a bare ``except Exception:`` that swallows it and reports failure to the
+    caller. The result is "remote write succeeded, local state thinks it
+    failed" — the worst possible debug experience. Failing loudly with a
+    typed error here means future "let me wrap this in ``_run_async``"
+    attempts blow up in CI rather than in production.
+    """
+    if not asyncio.iscoroutine(coro):
+        raise TypeError(
+            f"_run_async expected a coroutine, got {type(coro).__name__}. "
+            "The generated SDK is synchronous — call the method directly "
+            "instead of wrapping it in _run_async()."
+        )
     return asyncio.run_coroutine_threadsafe(coro, _get_bg_loop()).result(timeout=timeout)
 
 
@@ -167,14 +187,25 @@ class OvermindClient(
     ProjectsApi,
     TracesApi,
 ):
-    """Synchronous facade over the generated OpenAPI client.
+    """Convenience facade over the generated OpenAPI client.
 
-    The base classes expose every endpoint as an ``async`` method.  This
-    subclass adds blocking helpers for the operations the CLI calls most
-    often — ``resolve_agent``, ``upsert_dataset``, ``patch_job`` — so
-    call sites stay readable.  Async methods inherited from the parents
-    remain available; route them through :func:`_run_async` when you
-    need to invoke them directly.
+    The base classes (``AgentsApi``, ``ProjectsApi``, …) expose every
+    endpoint as a **synchronous** method — they return decoded model
+    objects (``Agent``, ``PaginatedProjectList``, …) directly. Call them
+    in the obvious way::
+
+        agent = client.agents_retrieve(id=agent_id)
+        page  = client.projects_list(page_size=2)
+
+    Do **not** wrap SDK calls in :func:`_run_async`. The generated client
+    is sync; :func:`_run_async` is reserved for the few coroutines this
+    module still defines internally (background trace flushing etc.).
+    Wrapping a sync call in :func:`_run_async` will raise ``TypeError``
+    by construction — see that function's docstring for the why.
+
+    This subclass adds higher-level helpers (``resolve_agent``,
+    ``upsert_dataset``, ``patch_job``…) for the operations the CLI calls
+    most often, so call sites stay readable.
     """
 
     # ------------------------------------------------------------------
@@ -253,10 +284,18 @@ def get_client() -> OvermindClient | None:
     if not token:
         logger.debug("get_client: API not configured (OVERMIND_API_KEY not set)")
         return None
-    cfg = Configuration(host=base_url, api_key=token)
-    cfg.access_token = token
-    cfg.proxy_headers = {"X-Api-Key": token}
-    logger.debug(f"get_client: built OvermindClient for host={base_url}")
+
+    cfg = Configuration(host=base_url)
+    if token.startswith("ovr_"):
+        # Project-scoped API key: send ONLY as X-Api-Key so the backend
+        # routes through the key-auth middleware (project derived from
+        # the key) and never falls back to the user-JWT path.
+        cfg.api_key = {"ApiKeyAuth": token}
+        logger.debug(f"get_client: using ApiKeyAuth (ovr_* key) for host={base_url}")
+    else:
+        # Plain JWT / cookie / dev token: legacy Bearer path.
+        cfg.access_token = token
+        logger.debug(f"get_client: using BearerAuth (user JWT) for host={base_url}")
     return OvermindClient(api_client=ApiClient(configuration=cfg))
 
 
@@ -271,8 +310,102 @@ def is_configured() -> bool:
 
 
 def get_project_id() -> str | None:
-    """Return ``OVERMIND_PROJECT_ID`` from env, or None."""
+    """Return ``OVERMIND_PROJECT_ID`` from env, or None.
+
+    Most callers should prefer :func:`resolve_project_id` which falls back
+    to a single-project lookup via the Overmind API when the env var isn't
+    set — that's the path that makes ``OVERMIND_PROJECT_ID`` optional for
+    project-scoped ``ovr_…`` keys.
+    """
     return os.getenv("OVERMIND_PROJECT_ID", "").strip() or None
+
+
+class ProjectResolutionError(RuntimeError):
+    """Raised when the project id can't be determined from env or the API.
+
+    Carries a list of accessible project ids/slugs (when the failure was
+    "multiple projects, ambiguous") so callers / skills can surface a
+    helpful error without having to re-query the API.
+    """
+
+    def __init__(self, message: str, *, candidates: list[tuple[str, str]] | None = None) -> None:
+        super().__init__(message)
+        self.candidates = candidates or []
+
+
+# Process-wide cache so repeated calls don't pay the projects_list cost.
+_resolved_project_id: str | None = None
+
+
+def resolve_project_id(client: OvermindClient | None = None) -> str:
+    """Return the project UUID this client should write to.
+
+    Resolution order:
+
+    1. ``OVERMIND_PROJECT_ID`` env var (preferred — always wins).
+    2. ``client.projects_list()`` — when the bound credentials see exactly
+       one project, that id is used and cached in :envvar:`OVERMIND_PROJECT_ID`
+       for the rest of the process.
+    3. Otherwise raises :class:`ProjectResolutionError` with the candidate
+       projects, so the caller can render a clear "pick one" message.
+
+    Use this anywhere the previous code did ``get_project_id()`` *and* needed
+    the value to be present.  Pure-display helpers that just want to know
+    "did the user set the env var?" should keep calling :func:`get_project_id`.
+    """
+    global _resolved_project_id
+
+    env_pid = get_project_id()
+    if env_pid:
+        return env_pid
+
+    if _resolved_project_id:
+        return _resolved_project_id
+
+    if client is None:
+        client = get_client()
+    if client is None:
+        raise ProjectResolutionError("Cannot resolve project: OVERMIND_API_KEY is not set.")
+
+    try:
+        page = client.projects_list(page_size=2)
+    except Exception as exc:
+        raise ProjectResolutionError(
+            "Cannot resolve project: projects_list() call failed. "
+            "Set OVERMIND_PROJECT_ID explicitly to bypass auto-discovery."
+        ) from exc
+
+    results = list(page.results or [])
+    if not results:
+        raise ProjectResolutionError(
+            "The configured OVERMIND_API_KEY has no accessible projects. "
+            "Generate a project-scoped key from the Overmind console and try again."
+        )
+
+    if len(results) == 1:
+        pid = str(results[0].id)
+        _resolved_project_id = pid
+        os.environ.setdefault("OVERMIND_PROJECT_ID", pid)
+        logger.info(f"resolve_project_id: auto-resolved single project id={pid}")
+        return pid
+
+    candidates = [(str(p.id), getattr(p, "slug", "") or getattr(p, "name", "")) for p in results]
+    listed = ", ".join(f"{slug or '?'}={pid}" for pid, slug in candidates)
+    raise ProjectResolutionError(
+        "OVERMIND_API_KEY can access multiple projects — set OVERMIND_PROJECT_ID "
+        f"explicitly to pick one. Candidates: {listed}",
+        candidates=candidates,
+    )
+
+
+def _reset_project_id_cache() -> None:
+    """Test helper: clear the in-process project-id cache.
+
+    Re-exported under :func:`overmind.client._reset_project_id_cache` so
+    unit tests can flip the env var between cases without leaking state.
+    """
+    global _resolved_project_id
+    _resolved_project_id = None
 
 
 # ---------------------------------------------------------------------------

@@ -149,6 +149,16 @@ def analyze_agent(
     analysis["_agent_code"] = code
     analysis["_agent_code_section"] = agent_code_section
     analysis["_entrypoint_fn"] = entrypoint_fn
+    # Stash the project-relative entry path so the spec generator can
+    # default ``scope.read_only_paths`` to the entrypoint when the
+    # analyzer leaves it empty. Without this, harness files like the
+    # registered Overmind entrypoint would slip through the accept
+    # step's read-only enforcement and remain silently editable.
+    try:
+        pr2 = project_root_from_agent_file(agent_path) or project_root()
+        analysis["_entry_rel"] = str(Path(agent_path).resolve().relative_to(Path(pr2).resolve()))
+    except Exception:
+        analysis["_entry_rel"] = Path(agent_path).name
 
     set_tag(attrs.SETUP_AGENT_DESCRIPTION, analysis.get("description", ""))
     set_tag(attrs.SETUP_INPUT_SCHEMA, analysis.get("input_schema", {}))
@@ -308,7 +318,9 @@ def _display_analysis(analysis: dict, console: Console):
         console.print(Rule("[bold]Suggested optimizer scope[/bold]", style="dim"))
         for key, label in (
             ("optimizable_paths", "Optimizable (editable)"),
+            ("read_only_paths", "Read-only (in bundle, not editable)"),
             ("context_paths", "Context (read-only)"),
+            ("search_paths", "Search paths (sys.path-style)"),
             ("exclude_paths", "Exclude"),
         ):
             paths = scope.get(key) or []

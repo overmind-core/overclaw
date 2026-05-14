@@ -68,6 +68,95 @@ def _load_candidate_results(path: str) -> list[dict]:
     return raw
 
 
+def _read_only_cache_key(read_only_scope: list[str]) -> str:
+    """Stable key for the cached read-only baseline.
+
+    JSON-serialising the sorted scope list keeps the key resilient to
+    insertion order while still detecting genuine config changes (e.g.
+    a user adds a new fixture to ``read_only_paths`` mid-run).
+    """
+    return json.dumps(sorted(read_only_scope))
+
+
+def _load_or_build_read_only_baseline(state: SkillRunState, cfg) -> tuple[dict[str, str], set[str]]:
+    """Return ``(baseline_files, read_only_paths)`` for the accept gate.
+
+    Reads from :attr:`SkillRunState.read_only_baseline` when the cache
+    key matches the current ``read_only_scope``. Otherwise builds the
+    bundle once, stuffs the captured baseline content into state, and
+    saves. Subsequent iterations skip the BFS entirely.
+
+    Bundle-build failures degrade to "no baseline" rather than crash —
+    the accept step still runs (we just can't enforce read-only on
+    this iteration). That matches the prior behaviour of the inline
+    rebuild and keeps the optimizer running on transient I/O hiccups.
+    """
+    current_key = _read_only_cache_key(list(cfg.read_only_scope))
+    if state.read_only_baseline and state.read_only_baseline_key == current_key:
+        return (
+            dict(state.read_only_baseline),
+            set(state.read_only_baseline.keys()),
+        )
+
+    try:
+        optimizer = Optimizer(cfg)
+        optimizer._bundle = optimizer._build_bundle()
+        if optimizer._bundle is None:
+            return {}, set()
+        ro_paths = set(optimizer._bundle.read_only_files)
+        baseline = {rel: src for rel, src in optimizer._bundle.original_files.items() if rel in ro_paths}
+    except Exception as exc:
+        logger.warning(f"accept: bundle rebuild failed; skipping read-only check: {exc}")
+        return {}, set()
+
+    # Persist for next iteration — invalidated automatically when the
+    # scope list changes (cache_key check above).
+    state.read_only_baseline = baseline
+    state.read_only_baseline_key = current_key
+    state.save()
+    return baseline, ro_paths
+
+
+def _candidate_violates_read_only(
+    candidate_dir: str,
+    read_only_paths: set[str],
+    baseline_files: dict[str, str],
+) -> list[str]:
+    """Return the read-only files a candidate worktree modified vs. baseline.
+
+    An empty list means the candidate is clean. A non-empty list contains
+    every read-only file that was modified, deleted, or unreadable. The
+    comparison is strict byte-equality against the bundle's captured
+    baseline content; this catches even whitespace-only edits, which is
+    intentional — read-only means read-only.
+
+    Files that are in ``read_only_paths`` but absent from
+    ``baseline_files`` are skipped (we can't know what the baseline looked
+    like) rather than reported as violations, so a misconfigured spec
+    can't false-positive-reject every candidate.
+    """
+    if not read_only_paths or not baseline_files:
+        return []
+    violated: list[str] = []
+    wt = Path(candidate_dir)
+    for rel in sorted(read_only_paths):
+        baseline_src = baseline_files.get(rel)
+        if baseline_src is None:
+            continue
+        wt_file = wt / rel
+        if not wt_file.is_file():
+            violated.append(rel)
+            continue
+        try:
+            wt_src = wt_file.read_text(encoding="utf-8")
+        except Exception:
+            violated.append(rel)
+            continue
+        if wt_src != baseline_src:
+            violated.append(rel)
+    return violated
+
+
 @observe_safe(span_name="overmind.optimize.accept", type=SpanType.WORKFLOW)
 def run_accept(
     state: SkillRunState,
@@ -136,11 +225,82 @@ def run_accept(
             "stall_count": state.stall_count,
         }
 
+    cfg = state.to_config()
+
+    # ---- Read-only enforcement -----------------------------------------
+    # Before picking a winner by score, drop any candidate whose worktree
+    # mutated a file declared as ``read_only_paths`` in the eval spec.
+    # This is the only gate that holds the line for harness files like the
+    # registered entrypoint: PROMPT.md guidance + analyzer steering are
+    # advisory; this is enforcement.
+    #
+    # Cache the baseline content on ``SkillRunState`` so we
+    # rebuild the bundle at most once per run, not once per iteration.
+    # The cache key is the serialized read_only_scope list; if the user
+    # edits their spec mid-run (rare), the key changes and we rebuild.
+    read_only_violations: list[dict] = []
+    if cfg.read_only_scope:
+        baseline_files, read_only_paths = _load_or_build_read_only_baseline(state, cfg)
+
+        if read_only_paths:
+            clean: list[dict] = []
+            for cand in scored:
+                violated = _candidate_violates_read_only(cand["candidate_dir"], read_only_paths, baseline_files)
+                if violated:
+                    logger.warning(f"Rejecting candidate {cand['candidate_id']}: modified read_only files: {violated}")
+                    read_only_violations.append({
+                        "candidate_id": cand["candidate_id"],
+                        "candidate_dir": cand["candidate_dir"],
+                        "avg_total": cand["avg_total"],
+                        "files": violated,
+                    })
+                else:
+                    clean.append(cand)
+            scored = clean
+
+    if not scored:
+        # Every candidate violated the read-only invariant. Treat this as
+        # a stall (similar to all_crashed) but surface a distinct decision
+        # so the host skill can hint the user that the diagnosis prompt
+        # needs tightening, not that the agents crashed.
+        state.bump_stall()
+        state.failed_attempts.append({
+            "iteration": iteration,
+            "reason": "read_only_violation",
+            "violations": read_only_violations,
+        })
+        state.record_iteration({
+            "iteration": f"iter_{iteration:03d}",
+            "score": state.best_score,
+            "status": "reject",
+            "description": (
+                "All candidates modified read_only files: "
+                + ", ".join(f"{v['candidate_id']}->{v['files']}" for v in read_only_violations)
+            ),
+        })
+        state.save()
+
+        early_stop = cfg.early_stopping_patience > 0 and state.stall_count >= cfg.early_stopping_patience
+        if early_stop:
+            state.early_stopping_triggered = True
+            state.save()
+
+        _prune_git_worktrees([c["candidate_dir"] for c in candidates if c.get("candidate_dir")])
+
+        return {
+            "status": "ok",
+            "step": "accept",
+            "iteration": iteration,
+            "decision": "read_only_violation",
+            "violations": read_only_violations,
+            "best_score": state.best_score,
+            "stall_count": state.stall_count,
+            "early_stop": early_stop,
+        }
+
     scored.sort(key=lambda c: -c["avg_total"])
     winner = scored[0]
     delta = winner["avg_total"] - state.best_score
-
-    cfg = state.to_config()
 
     if winner["avg_total"] > state.best_score:
         # Promote: write working_path, update state, reset stall
@@ -287,7 +447,7 @@ def run_accept(
             float(state.best_score - (state.baseline_score or state.best_score)),
         )
 
-    return {
+    envelope: dict[str, Any] = {
         "status": "ok",
         "step": "accept",
         "iteration": iteration,
@@ -302,3 +462,8 @@ def run_accept(
         "stall_count": state.stall_count,
         "early_stop": early_stop,
     }
+    if read_only_violations:
+        # Surface skipped-over candidates so the host coding agent can
+        # tighten its diagnosis prompt or detect a runaway sub-agent.
+        envelope["read_only_violations"] = read_only_violations
+    return envelope

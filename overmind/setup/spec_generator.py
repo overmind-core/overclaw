@@ -1,10 +1,15 @@
 """Generate evaluation spec from analysis and (optionally) user preferences."""
 
 import json
+import logging
 from pathlib import Path
 
 from overmind import SpanType
+from overmind.core.registry import project_root, project_root_from_agent_file
 from overmind.tracing import observe_safe
+from overmind.utils.code import _detect_entry_search_paths
+
+logger = logging.getLogger(__name__)
 
 IMPORTANCE_MULTIPLIERS = {"critical": 3, "important": 2, "minor": 1}
 
@@ -167,8 +172,88 @@ def _build_spec(
     if analysis.get("_entrypoint_fn"):
         spec["entrypoint_fn"] = analysis["_entrypoint_fn"]
 
-    if analysis.get("scope"):
-        spec["scope"] = analysis["scope"]
+    scope = dict(analysis.get("scope") or {})
+    entry_rel = analysis.get("_entry_rel")
+    agent_path = analysis.get("_agent_path") or ""
+
+    if entry_rel:
+        # The accept-step enforcement only protects files listed in
+        # ``scope.read_only_paths``. The registered Overmind entrypoint
+        # is an interaction harness, not agent logic, and must never be
+        # edited by optimization candidates — even when the analyzer
+        # forgets to declare it. We only auto-add when the entry isn't
+        # already covered by ``optimizable_paths`` (single-file agents
+        # where the entry IS the agent under test).
+        opt_paths = list(scope.get("optimizable_paths") or [])
+        ro_paths = list(scope.get("read_only_paths") or [])
+        excl_paths = list(scope.get("exclude_paths") or [])
+
+        # An entry that the LLM put in ``exclude_paths`` would collapse
+        # the bundle: ``resolve_local_files`` refuses to ignore the
+        # entry and raises ``BundleConfigError``. The entry MUST be
+        # reachable for BFS; if the analyzer intended "don't edit it,"
+        # that's what ``read_only_paths`` is for. Move the declaration
+        # to the right field and warn so the user sees what happened.
+        if entry_rel in excl_paths:
+            excl_paths = [p for p in excl_paths if p != entry_rel]
+            scope["exclude_paths"] = excl_paths
+            logger.warning(
+                "spec_generator: moved %r from exclude_paths to read_only_paths (entry must be reachable for BFS)",
+                entry_rel,
+            )
+            if entry_rel not in opt_paths and entry_rel not in ro_paths:
+                ro_paths.append(entry_rel)
+                scope["read_only_paths"] = ro_paths
+        elif entry_rel not in opt_paths and entry_rel not in ro_paths:
+            ro_paths.append(entry_rel)
+            scope["read_only_paths"] = ro_paths
+
+    # Deterministic ``search_paths`` injection from the entry's own
+    # ``sys.path`` mutations. The analyzer prompt asks the LLM to emit
+    # this declaratively, but we cannot rely on the LLM remembering —
+    # and getting it wrong silently fragments the bundle. We run the
+    # same AST partial-evaluator the resolver uses at runtime and
+    # append any missing entries. Existing user declarations are
+    # always preserved.
+    if agent_path:
+        try:
+            entry_path = Path(agent_path).resolve()
+            pr = project_root_from_agent_file(agent_path) or project_root()
+            root = Path(pr).resolve()
+            detected = _detect_entry_search_paths(entry_path, root)
+        except Exception:
+            detected = []
+
+        if detected:
+            declared = list(scope.get("search_paths") or [])
+            declared_resolved = set()
+            for raw in declared:
+                cand = Path(raw)
+                if not cand.is_absolute():
+                    cand = root / cand
+                try:
+                    declared_resolved.add(cand.resolve())
+                except OSError:
+                    continue
+            injected: list[str] = []
+            for path in detected:
+                if path in declared_resolved:
+                    continue
+                try:
+                    rel = str(path.relative_to(root))
+                except ValueError:
+                    continue
+                declared.append(rel)
+                injected.append(rel)
+            if injected:
+                scope["search_paths"] = declared
+                logger.info(
+                    "spec_generator: injected scope.search_paths=%s from entry sys.path mutation",
+                    injected,
+                )
+
+    if scope:
+        spec["scope"] = scope
 
     if tool_config:
         spec["tool_config"] = tool_config

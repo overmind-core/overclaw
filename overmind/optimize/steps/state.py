@@ -72,6 +72,17 @@ class SkillRunState:
     failed_attempts: list[dict] = field(default_factory=list)
     successful_changes: list[dict] = field(default_factory=list)
 
+    # ---- Read-only baseline cache ----
+    # ``{rel_path: source_text}`` for every file declared as
+    # ``scope.read_only_paths``. Populated lazily on the first ``accept``
+    # step (when the bundle is first built) and reused on subsequent
+    # iterations so we don't re-run the BFS just to recover content the
+    # user has already promised won't change. Cleared when
+    # ``config.read_only_scope`` shifts (the cache key includes the
+    # serialized scope list under ``read_only_baseline_key``).
+    read_only_baseline: dict[str, str] = field(default_factory=dict)
+    read_only_baseline_key: str = ""
+
     # Stable identifier for the optimize ``Job`` row this run belongs to.
     # Generated once at ``init`` and stamped on every subsequent step's
     # OTel span as ``overmind.job.id`` as a secondary coalescing key
