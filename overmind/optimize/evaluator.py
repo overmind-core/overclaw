@@ -264,7 +264,7 @@ class SpecEvaluator:
         dict is annotated with ``_confidence`` (0.0–1.0) and
         ``_source_summary`` (count-by-source dict).  These keys are never
         aggregated into ``total`` — they are pure metadata consumed by the
-        optimiser's acceptance gate.  Callers that don't pass source tags
+        optimizer's acceptance gate.  Callers that don't pass source tags
         see the exact same return shape as before.
         """
         output_is_dict = isinstance(output, dict)

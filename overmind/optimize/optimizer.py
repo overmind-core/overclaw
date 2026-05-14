@@ -1379,7 +1379,7 @@ class Optimizer:
     #
     # These public methods carve ``Optimizer.run()`` into pieces a host
     # coding agent can drive via ``overmind optimize-step`` (see
-    # ``overmind/optimize/steps/`` and ``.cursor/skills/optimise-agent``).
+    # ``overmind/optimize/steps/`` and ``.cursor/skills/overmind-optimize-agent``).
     # They reuse all of the existing private helpers, so behaviour is
     # identical to running the full ``run()`` end-to-end.
     # ------------------------------------------------------------------
@@ -2767,7 +2767,7 @@ class Optimizer:
     def _shadow_fallback_enabled(self) -> bool:
         """Global switch for the subprocess → shadow fallback.
 
-        Defaults to ``True`` so the optimiser transparently recovers from
+        Defaults to ``True`` so the optimizer transparently recovers from
         runtime failures.  Users can disable via ``config.enable_shadow``
         or the ``OVERMIND_DISABLE_SHADOW`` environment variable.
         """
@@ -3010,7 +3010,7 @@ class Optimizer:
         When *provenance_by_idx* is provided (populated by the shadow
         backend), each :class:`ParsedTrace` is decorated with per-call
         source tags and the per-case score gains ``_confidence`` /
-        ``_source_summary`` metadata so the optimiser can reason about how
+        ``_source_summary`` metadata so the optimizer can reason about how
         trustworthy the signal is.
         """
         provenance_by_idx = provenance_by_idx or {}

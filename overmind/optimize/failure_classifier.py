@@ -2,7 +2,7 @@
 
 When an agent run fails, the optimizer needs to decide whether the failure is
 *recoverable* (try a different backend, re-run with a guard) or *fatal* (stop
-optimising and report to the user).  Historically the optimizer treated every
+optimizing and report to the user).  Historically the optimizer treated every
 failure as an opaque error string and kept iterating, wasting budget on what
 were really environment problems.
 
@@ -98,7 +98,7 @@ _PATTERNS: list[tuple[FailureMode, re.Pattern[str], str, str, bool]] = [
         "Agent failed because an LLM provider API key was missing or invalid.",
         "Add the required API key to the agent's .env file or environment. "
         "Overmind will also try shadow execution with cassette replay — if "
-        "the LLM call was recorded on a prior successful run, optimisation "
+        "the LLM call was recorded on a prior successful run, optimization "
         "can still proceed without a live key.",
         True,
     ),
