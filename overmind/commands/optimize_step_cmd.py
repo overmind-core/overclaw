@@ -206,7 +206,7 @@ def bootstrap_optimize_step(args: argparse.Namespace) -> None:
     agent = getattr(args, "agent", None)
     if not (isinstance(agent, str) and agent):
         agent = resolve_agent_name_from_state(getattr(args, "state", None))
-    setattr(args, "resolved_agent_name", agent if isinstance(agent, str) and agent else None)
+    args.resolved_agent_name = agent if isinstance(agent, str) and agent else None
 
 
 # ----------------------------------------------------------------------

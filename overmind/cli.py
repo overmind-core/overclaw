@@ -21,6 +21,7 @@ import argparse
 import logging
 import os
 import sys
+
 from dotenv import load_dotenv
 from opentelemetry import context
 from opentelemetry import trace as _otel_trace

@@ -8,8 +8,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from overmind.core.constants import OVERMIND_DIR_NAME
-from overmind.core.paths import agent_setup_spec_dir
 from overmind.commands.setup_cmd import (
     _build_eval_spec_stub,
     _clear_existing_eval_spec,
@@ -24,6 +22,8 @@ from overmind.commands.setup_cmd import (
     _smoke_test_agent,
     _validate_agent_entrypoint,
 )
+from overmind.core.constants import OVERMIND_DIR_NAME
+from overmind.core.paths import agent_setup_spec_dir
 
 
 class TestValidateAgentEntrypoint:
@@ -62,6 +62,32 @@ class TestPathHelpers:
         assert str(result).endswith("dataset.json")
 
 class TestClearExistingEvalSpec:
+    """Exercise the *local-filesystem* clearing branch.
+
+    ``_clear_existing_eval_spec`` first tries the Overmind API storage
+    backend (``get_storage()``) and only falls through to the on-disk
+    ``shutil.rmtree(spec_dir)`` branch when the backend isn't configured.
+    A previous test in the suite may have left ``OVERMIND_API_KEY`` /
+    ``OVERMIND_AGENT_PATH`` set in ``os.environ`` (or a bound storage
+    contextvar), which would silently steer this test's call into the
+    API branch and leave the on-disk file untouched — and the assertion
+    fails non-deterministically depending on test order.
+
+    Forcing ``get_storage`` to raise (which ``_clear_existing_eval_spec``
+    swallows via ``contextlib.suppress``) pins these tests to the
+    local-filesystem branch regardless of process state.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _force_local_branch(self):
+        from overmind.storage import StorageNotConfiguredError
+
+        with patch(
+            "overmind.commands.setup_cmd.get_storage",
+            side_effect=StorageNotConfiguredError("test: forcing local branch"),
+        ):
+            yield
+
     def test_no_dir(self, overmind_tmp_project: Path):
         console = MagicMock()
         _clear_existing_eval_spec("nope", console)

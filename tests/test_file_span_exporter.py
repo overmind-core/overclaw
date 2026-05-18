@@ -42,12 +42,11 @@ def test_file_exporter_writes_overmind_scope(tmp_path: Path):
     provider = _new_provider(trace_path)
     tracer = provider.get_tracer("overmind")
 
-    with tracer.start_as_current_span("entry"):
-        with tracer.start_as_current_span("my_tool") as child:
-            child.set_attribute("name", "my_tool")
-            child.set_attribute("type", "function")
-            child.set_attribute("inputs", json.dumps({"x": 1}))
-            child.set_attribute("outputs", json.dumps({"y": 2}))
+    with tracer.start_as_current_span("entry"), tracer.start_as_current_span("my_tool") as child:
+        child.set_attribute("name", "my_tool")
+        child.set_attribute("type", "function")
+        child.set_attribute("inputs", json.dumps({"x": 1}))
+        child.set_attribute("outputs", json.dumps({"y": 2}))
 
     provider.force_flush()
     provider.shutdown()
@@ -72,10 +71,9 @@ def test_file_exporter_handles_missing_dir(tmp_path: Path):
     provider = _new_provider(nested)
     tracer = provider.get_tracer("overmind")
 
-    with tracer.start_as_current_span("entry"):
-        with tracer.start_as_current_span("tool_a") as child:
-            child.set_attribute("name", "tool_a")
-            child.set_attribute("type", "function")
+    with tracer.start_as_current_span("entry"), tracer.start_as_current_span("tool_a") as child:
+        child.set_attribute("name", "tool_a")
+        child.set_attribute("type", "function")
 
     provider.force_flush()
     provider.shutdown()

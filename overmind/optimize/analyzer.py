@@ -20,9 +20,10 @@ import logging
 import os
 import random
 import re
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from overmind import SpanType, attrs, set_tag
 from overmind.prompts.analyzer import (
@@ -85,7 +86,7 @@ class DiagnosisContext:
     temperature: float = 0.7
     iteration_seed: int = 42
     policy_context: str = ""
-    bundle: "AgentBundle | None" = None
+    bundle: AgentBundle | None = None
     cluster_context: str = ""
     component_weights_context: str = ""
 
@@ -288,7 +289,10 @@ def _budget_tokens_for(model: str | None) -> int:
             if isinstance(mit, int) and mit > 0:
                 return max(8_000, int(mit * 0.85))
         except Exception:
-            pass
+            # litellm doesn't know this model (custom provider, typo, or
+            # offline catalog).  Fall through to the default budget — a
+            # mis-sized prompt is a degraded experience, not a crash.
+            _log.debug("litellm.get_model_info(%r) failed; using default prompt budget", model, exc_info=True)
     return _PROMPT_BUDGET_TOKENS_DEFAULT
 
 
@@ -317,7 +321,7 @@ def _summarize_value_shape(
         [1, 2, 3, 4, 5]                     -> "[5: 1, 2, 3, …+2]"
         42                                  -> "42"
     """
-    if v is None or isinstance(v, bool) or isinstance(v, (int, float)):
+    if v is None or isinstance(v, bool | int | float):
         try:
             return json.dumps(v)
         except (TypeError, ValueError):

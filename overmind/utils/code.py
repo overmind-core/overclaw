@@ -379,9 +379,6 @@ def _intermediate_init_files(leaf_path: Path, project_root: Path) -> list[Path]:
 from overmind.code.syspath_eval import (
     detect_entry_search_paths as _detect_entry_search_paths,
 )
-from overmind.code.syspath_eval import (
-    eval_path_expr as _eval_path_expr,
-)
 
 
 def _collect_import_targets(source: str) -> list[str]:

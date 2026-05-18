@@ -66,7 +66,6 @@ from overmind.core.paths import (
     agent_instrumented_dir,
     agent_setup_spec_dir,
     load_overmind_dotenv,
-    overmind_env_path,
 )
 from overmind.core.registry import (
     project_root_from_agent_file,

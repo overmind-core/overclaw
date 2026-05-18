@@ -5,14 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 from overmind.setup.spec_generator import (
     IMPORTANCE_MULTIPLIERS,
     _build_spec,
     generate_spec_from_proposal,
     save_spec,
 )
-
 
 # ---------------------------------------------------------------------------
 # IMPORTANCE_MULTIPLIERS

@@ -4,13 +4,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-
 from overmind.optimize.data_analyzer import (
     _display_analysis,
     _fallback_analysis,
     validate_seed_data,
 )
-
 
 # ---------------------------------------------------------------------------
 # validate_seed_data

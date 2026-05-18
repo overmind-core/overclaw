@@ -40,9 +40,8 @@ class TestAtomicWriteText:
         target.write_text("ORIGINAL")
 
         # Simulate a crash between writing the temp file and the rename.
-        with patch("pathlib.Path.replace", side_effect=OSError("simulated crash")):
-            with pytest.raises(OSError):
-                atomic_write_text(target, "PARTIAL")
+        with patch("pathlib.Path.replace", side_effect=OSError("simulated crash")), pytest.raises(OSError):
+            atomic_write_text(target, "PARTIAL")
 
         # Original target survives untouched; the partial lives in a sibling .tmp.
         assert target.read_text() == "ORIGINAL"

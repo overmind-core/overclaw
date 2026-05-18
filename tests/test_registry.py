@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from overmind.utils.code import AgentBundle
 from overmind.core.constants import OVERMIND_DIR_NAME
 from overmind.core.registry import (
     _entries_to_toml_array,
@@ -25,7 +24,7 @@ from overmind.core.registry import (
     save_agent,
     validate_entrypoint,
 )
-
+from overmind.utils.code import AgentBundle
 
 # ---------------------------------------------------------------------------
 # parse_entrypoint

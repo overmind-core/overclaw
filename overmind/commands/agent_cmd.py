@@ -58,7 +58,7 @@ def _sync_agent_id_to_registry(
     backend record only affects UI visibility, not local registration.
     """
     try:
-        from overmind.storage import configure_storage, get_storage, StorageNotConfiguredError
+        from overmind.storage import StorageNotConfiguredError, configure_storage, get_storage
     except Exception:  # pragma: no cover - defensive import guard
         return None
 

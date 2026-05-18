@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from overmind.optimize.analyzer import (
     _build_fingerprints,
     _detect_agent_model,
@@ -20,7 +19,6 @@ from overmind.optimize.analyzer import (
     _matches_fingerprint,
     _measure_system_prompt,
 )
-
 
 # ---------------------------------------------------------------------------
 # _measure_system_prompt

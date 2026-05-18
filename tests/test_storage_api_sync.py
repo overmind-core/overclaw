@@ -30,7 +30,6 @@ import pytest
 from overmind import client as client_mod
 from overmind.storage.api import ApiBackend
 
-
 AGENT_UUID = "33333333-3333-3333-3333-333333333333"
 
 

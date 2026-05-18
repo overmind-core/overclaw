@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-
 from overmind.optimize.analyzer import (
     _run_codegen,
     _run_diagnosis,

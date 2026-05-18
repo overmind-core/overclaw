@@ -33,7 +33,6 @@ from overmind.optimize.steps.accept_step import (
 )
 from overmind.optimize.steps.state import SkillRunState
 
-
 # ---------------------------------------------------------------------------
 # _candidate_violates_read_only — unit tests
 # ---------------------------------------------------------------------------

@@ -82,21 +82,31 @@ def run_evaluate(
                 if rel and rel not in entry_candidates:
                     entry_candidates.append(rel)
             except ValueError:
-                pass
+                # ``agent_path`` lives outside the resolved project root —
+                # fall through to the basename fallback so we still try
+                # something reasonable.
+                logger.debug(
+                    "agent_path %s is not under project root %s; "
+                    "trying basename fallback",
+                    agent_path_abs,
+                    root_resolved,
+                )
     except Exception:
-        pass
+        # Filesystem / registry probe failed (missing path, permission
+        # error, registry race).  The basename fallback below still gives
+        # us a workable candidate; the explicit ``missing_entry_file``
+        # branch will surface the real reason if nothing matches.
+        logger.debug("entry-file resolution from project root failed", exc_info=True)
 
     base_name = Path(cfg.agent_path).name
     if base_name not in entry_candidates:
         entry_candidates.append(base_name)
 
     entry_path: Path | None = None
-    entry_file: str = entry_candidates[0]
     for rel in entry_candidates:
         candidate_path = worktree / rel
         if candidate_path.is_file():
             entry_path = candidate_path
-            entry_file = rel
             break
 
     if entry_path is None:

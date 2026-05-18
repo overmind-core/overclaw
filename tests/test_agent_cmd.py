@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from overmind.core.constants import OVERMIND_DIR_NAME
 from overmind.commands.agent_cmd import (
     _confirm_duplicate_entrypoint,
     _other_agents_with_entrypoint,
@@ -16,7 +15,7 @@ from overmind.commands.agent_cmd import (
     cmd_show,
     cmd_update,
 )
-
+from overmind.core.constants import OVERMIND_DIR_NAME
 
 # ---------------------------------------------------------------------------
 # _other_agents_with_entrypoint

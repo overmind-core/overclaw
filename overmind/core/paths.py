@@ -75,7 +75,7 @@ def load_overmind_dotenv() -> None:
         load_dotenv(path)
 
 
-def load_agent_dotenv(agent_name: str) -> None:  # noqa: ARG001 — kept for backwards-compat
+def load_agent_dotenv(agent_name: str) -> None:
     """Deprecated no-op.
 
     Overmind no longer maintains a per-agent ``.env`` under
@@ -85,4 +85,4 @@ def load_agent_dotenv(agent_name: str) -> None:  # noqa: ARG001 — kept for bac
     keep working until they are removed; new code should call
     :func:`load_overmind_dotenv` directly.
     """
-    return None
+    return

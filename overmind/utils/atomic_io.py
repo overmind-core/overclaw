@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-__all__ = ["atomic_write_text", "atomic_write_json"]
+__all__ = ["atomic_write_json", "atomic_write_text"]
 
 
 def atomic_write_text(path: str | Path, data: str, *, encoding: str = "utf-8") -> Path:

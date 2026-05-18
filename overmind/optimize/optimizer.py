@@ -76,9 +76,17 @@ from overmind.optimize.failure_registry import (
 )
 from overmind.optimize.pipeline.scoring import (
     compute_complexity_penalty as _scoring_compute_complexity_penalty,
+)
+from overmind.optimize.pipeline.scoring import (
     count_conditional_branches as _scoring_count_conditional_branches,
+)
+from overmind.optimize.pipeline.scoring import (
     count_function_defs as _scoring_count_function_defs,
+)
+from overmind.optimize.pipeline.scoring import (
     detect_data_leakage as _scoring_detect_data_leakage,
+)
+from overmind.optimize.pipeline.scoring import (
     prompt_size as _scoring_prompt_size,
 )
 from overmind.optimize.run_state import RunState, RunSummary

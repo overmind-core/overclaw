@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
 from overmind.setup.policy_generator import (
     _default_policy_data,
     _extract_markdown_and_json,
