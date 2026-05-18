@@ -134,9 +134,7 @@ def smoke_test_agent(
         parts = [result.error] if result.error else []
         if result.stderr and result.stderr.strip() not in (result.error or ""):
             parts.append(result.stderr[-2000:])
-        logger.warning(
-            f"smoke_test: agent={agent_path} failed rc={result.returncode} err={(result.error or '')[:300]}"
-        )
+        logger.warning(f"smoke_test: agent={agent_path} failed rc={result.returncode} err={(result.error or '')[:300]}")
         return False, "\n".join(parts) or "Unknown error"
 
     except Exception as exc:
@@ -171,22 +169,16 @@ def run_beginning_smoke_test(
         )
         return
 
-    console.print(
-        f"  [dim]Using seed data from [cyan]{rel(existing_json[0])}[/cyan] for smoke test…[/dim]"
-    )
+    console.print(f"  [dim]Using seed data from [cyan]{rel(existing_json[0])}[/cyan] for smoke test…[/dim]")
 
     try:
         cases = load_data(str(existing_json[0]))
     except Exception:
-        console.print(
-            f"  [dim]Could not read [cyan]{existing_json[0].name}[/cyan] — skipping smoke test.[/dim]"
-        )
+        console.print(f"  [dim]Could not read [cyan]{existing_json[0].name}[/cyan] — skipping smoke test.[/dim]")
         return
 
     if not cases:
-        console.print(
-            f"  [dim][cyan]{existing_json[0].name}[/cyan] is empty — skipping pre-setup smoke test.[/dim]"
-        )
+        console.print(f"  [dim][cyan]{existing_json[0].name}[/cyan] is empty — skipping pre-setup smoke test.[/dim]")
         return
 
     consistent, common_fields, bad_indices = check_consistent_fields(cases)
@@ -213,9 +205,7 @@ def run_beginning_smoke_test(
 
     first_input = cases[0].get("input", cases[0])
     with make_spinner_progress(console, transient=True) as progress:
-        progress.add_task(
-            f"  Smoke-testing agent using {existing_json[0].name} ({len(cases)} case(s))…"
-        )
+        progress.add_task(f"  Smoke-testing agent using {existing_json[0].name} ({len(cases)} case(s))…")
         success, error = smoke_test_agent(
             run_path,
             fn_name,
@@ -284,9 +274,7 @@ def run_end_smoke_test(
         )
 
     if success:
-        console.print(
-            "  [bold green]✓[/bold green]  Agent smoke test passed — ready for optimization.\n"
-        )
+        console.print("  [bold green]✓[/bold green]  Agent smoke test passed — ready for optimization.\n")
     else:
         console.print(
             Panel(

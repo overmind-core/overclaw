@@ -124,16 +124,12 @@ def _finalize_completed_step(state: SkillRunState, report_path: str) -> None:
     job_id = state.job_id or ""
     agent_id = (state.config or {}).get("agent_id") or ""
     if not job_id or not agent_id:
-        logger.debug(
-            "report: state missing job_id/agent_id; skipping terminal PATCH"
-        )
+        logger.debug("report: state missing job_id/agent_id; skipping terminal PATCH")
         return
     try:
         from overmind.client import ApiReporter
 
-        reporter = ApiReporter.attach_to_job(
-            agent_id=str(agent_id), job_id=str(job_id)
-        )
+        reporter = ApiReporter.attach_to_job(agent_id=str(agent_id), job_id=str(job_id))
     except Exception:
         logger.debug(
             "report: ApiReporter.attach_to_job raised; no terminal PATCH",
@@ -158,13 +154,9 @@ def _finalize_completed_step(state: SkillRunState, report_path: str) -> None:
     best_agent_code: str | None = None
     try:
         if state.best_code_path and Path(state.best_code_path).is_file():
-            best_agent_code = Path(state.best_code_path).read_text(
-                encoding="utf-8"
-            )
+            best_agent_code = Path(state.best_code_path).read_text(encoding="utf-8")
     except Exception:
-        logger.debug(
-            "report: failed to read best_code_path for PATCH", exc_info=True
-        )
+        logger.debug("report: failed to read best_code_path for PATCH", exc_info=True)
 
     try:
         reporter.on_complete(

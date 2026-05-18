@@ -136,10 +136,7 @@ def _normalize_for_json(obj: Any, *, _depth: int = 0) -> Any:
     if isinstance(obj, (str, int, float, bool, type(None))):
         return obj
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
-        return {
-            f.name: _normalize_for_json(getattr(obj, f.name), _depth=_depth + 1)
-            for f in dataclasses.fields(obj)
-        }
+        return {f.name: _normalize_for_json(getattr(obj, f.name), _depth=_depth + 1) for f in dataclasses.fields(obj)}
     if _should_skip_value(obj):
         return f"<{type(obj).__name__}>"
     if isinstance(obj, dict):
@@ -167,11 +164,7 @@ def _normalize_for_json(obj: Any, *, _depth: int = 0) -> Any:
             items = vars(obj).items()
         except TypeError:
             return str(obj)
-        return {
-            k: _normalize_for_json(v, _depth=_depth + 1)
-            for k, v in items
-            if not k.startswith("_")
-        }
+        return {k: _normalize_for_json(v, _depth=_depth + 1) for k, v in items if not k.startswith("_")}
     return str(obj)
 
 
@@ -413,6 +406,7 @@ def init(
     # silently replacing the wrapper's exporter.
     if os.environ.get("OVERMIND_TRACE_FILE") and not (overmind_api_key or os.environ.get("OVERMIND_API_KEY")):
         from overmind import __version__ as _SDK_VERSION
+
         logger.debug(
             "Overmind SDK init() skipped: OVERMIND_TRACE_FILE is set and no "
             "OVERMIND_API_KEY available; reusing the local file-exporter "

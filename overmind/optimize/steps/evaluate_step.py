@@ -86,8 +86,7 @@ def run_evaluate(
                 # fall through to the basename fallback so we still try
                 # something reasonable.
                 logger.debug(
-                    "agent_path %s is not under project root %s; "
-                    "trying basename fallback",
+                    "agent_path %s is not under project root %s; trying basename fallback",
                     agent_path_abs,
                     root_resolved,
                 )

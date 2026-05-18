@@ -284,6 +284,7 @@ def _budget_tokens_for(model: str | None) -> int:
     if model:
         try:
             import litellm  # type: ignore
+
             info = litellm.get_model_info(model) or {}
             mit = info.get("max_input_tokens") or info.get("max_tokens")
             if isinstance(mit, int) and mit > 0:
@@ -412,8 +413,7 @@ def _format_tool_call_full(tc: dict, *, value_chars: int = 240) -> str:
     if isinstance(args, dict) and args:
         per_kv = max(40, value_chars // max(len(args), 1))
         args_inner = ", ".join(
-            f"{k}={_summarize_value_shape(v, max_str_chars=per_kv)}"
-            for k, v in sorted(args.items())
+            f"{k}={_summarize_value_shape(v, max_str_chars=per_kv)}" for k, v in sorted(args.items())
         )
         args_str = "{" + args_inner + "}"
     else:
@@ -499,6 +499,7 @@ def _render_within_budget(
         last_size = len(prompt)
         if os.environ.get("OVERMIND_ANALYZER_DEBUG_PROMPT"):
             import sys as _sys
+
             _sys.stderr.write(
                 f"[overmind/analyzer] _render_within_budget: "
                 f"max_cases={n} size={last_size:,} budget={budget_chars:,} "
@@ -512,14 +513,18 @@ def _render_within_budget(
                     f"budget {budget_chars:,}) to fit the analyzer model's context._"
                 )
                 _log.info(
-                    "analyzer prompt sized to fit: %s chars at max_cases=%d "
-                    "(budget=%d, model=%s)",
-                    f"{last_size:,}", n, budget_chars, model or "<unspecified>",
+                    "analyzer prompt sized to fit: %s chars at max_cases=%d (budget=%d, model=%s)",
+                    f"{last_size:,}",
+                    n,
+                    budget_chars,
+                    model or "<unspecified>",
                 )
                 return prompt + notice
             _log.debug(
                 "analyzer prompt: %s chars at max_cases=%d (budget=%d)",
-                f"{last_size:,}", n, budget_chars,
+                f"{last_size:,}",
+                n,
+                budget_chars,
             )
             return prompt
     # Final attempt: even 1 case overflowed.  Return the smallest with a
@@ -529,9 +534,10 @@ def _render_within_budget(
     # failure and degrade gracefully.
     prompt = builder(1)
     _log.warning(
-        "analyzer prompt still %s chars at max_cases=1 (budget %d); "
-        "model=%s — diagnosis quality may be reduced.",
-        f"{len(prompt):,}", budget_chars, model or "<unspecified>",
+        "analyzer prompt still %s chars at max_cases=1 (budget %d); model=%s — diagnosis quality may be reduced.",
+        f"{len(prompt):,}",
+        budget_chars,
+        model or "<unspecified>",
     )
     notice = (
         f"\n\n> _WARNING: prompt-size guard could not fit any case fully — "
@@ -717,7 +723,14 @@ def _arg_value_max_chars() -> int:
 
 def _arg_distribution_line_max_chars() -> int:
     try:
-        return max(80, int(os.environ.get("OVERMIND_ANALYZER_ARG_DISTRIBUTION_LINE_MAX_CHARS", _ARG_DISTRIBUTION_LINE_MAX_CHARS_DEFAULT)))
+        return max(
+            80,
+            int(
+                os.environ.get(
+                    "OVERMIND_ANALYZER_ARG_DISTRIBUTION_LINE_MAX_CHARS", _ARG_DISTRIBUTION_LINE_MAX_CHARS_DEFAULT
+                )
+            ),
+        )
     except (TypeError, ValueError):
         return _ARG_DISTRIBUTION_LINE_MAX_CHARS_DEFAULT
 
@@ -1232,6 +1245,7 @@ def _run_diagnosis(
         tu_section = _format_tool_usage_analysis(ctx.case_results)
         if os.environ.get("OVERMIND_ANALYZER_DEBUG_PROMPT"):
             import sys as _sys
+
             _sys.stderr.write(
                 f"[overmind/analyzer] sections @max_cases={_max_cases}: "
                 f"agent_code={len(ac_section):,} "
@@ -1266,10 +1280,7 @@ def _run_diagnosis(
         if ctx.component_weights_context:
             p += COMPONENT_IMPACT_SECTION.format(component_lines=ctx.component_weights_context)
         if focus_area:
-            labels = {
-                k: v.format(entrypoint_fn=ctx.entrypoint_fn) if "{" in v else v
-                for k, v in FOCUS_LABELS.items()
-            }
+            labels = {k: v.format(entrypoint_fn=ctx.entrypoint_fn) if "{" in v else v for k, v in FOCUS_LABELS.items()}
             focus_desc = labels.get(focus_area, focus_area)
             p += DIAGNOSIS_FOCUS_DIRECTIVE.format(
                 focus_area=focus_area,
@@ -1328,8 +1339,11 @@ def _run_diagnosis(
                 _log.warning(
                     "analyzer prompt rejected by model (attempt %d, model=%s): "
                     "%s — halving char budget %d → %d and retrying.",
-                    attempt + 1, ctx.model, str(exc)[:200],
-                    budget_chars, new_budget,
+                    attempt + 1,
+                    ctx.model,
+                    str(exc)[:200],
+                    budget_chars,
+                    new_budget,
                 )
                 budget_chars = new_budget
                 continue
@@ -1340,7 +1354,10 @@ def _run_diagnosis(
         _LAST_DIAGNOSIS_ERROR = f"{type(last_exc).__name__}: {last_exc}"
         _log.warning(
             "diagnosis LLM call failed model=%s focus=%s error=%s: %s",
-            ctx.model, focus_area, type(last_exc).__name__, str(last_exc)[:300],
+            ctx.model,
+            focus_area,
+            type(last_exc).__name__,
+            str(last_exc)[:300],
         )
     return None
 
@@ -2373,5 +2390,3 @@ def generate_candidates(
             }
         ]
     return all_results
-
-

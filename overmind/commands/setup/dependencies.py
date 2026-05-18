@@ -58,9 +58,7 @@ def check_agent_dependencies(
         return
 
     if has_dep_manifest(check_dir, language):
-        console.print(
-            f"  [bold green]\u2713[/bold green] Found dependency manifest in [dim]{rel(check_dir)}[/dim]"
-        )
+        console.print(f"  [bold green]\u2713[/bold green] Found dependency manifest in [dim]{rel(check_dir)}[/dim]")
         return
 
     inst_entry = check_dir / entry_file if instrumented_dir is not None else p
@@ -91,9 +89,7 @@ def check_agent_dependencies(
     )
 
     if fast:
-        console.print(
-            f"  [red]Create a [bold]{manifest_name}[/bold] in your project and re-run setup.[/red]\n"
-        )
+        console.print(f"  [red]Create a [bold]{manifest_name}[/bold] in your project and re-run setup.[/red]\n")
         raise SystemExit(1)
 
     choice = select_option(

@@ -72,9 +72,7 @@ def _build_reporter_from_state_path(state_path: str | None):
     cfg = data.get("config") or {}
     agent_id = cfg.get("agent_id") or data.get("agent_id") or ""
     if not job_id or not agent_id:
-        logger.debug(
-            "optimize-step: state missing job_id/agent_id; no terminal PATCH"
-        )
+        logger.debug("optimize-step: state missing job_id/agent_id; no terminal PATCH")
         return None
     try:
         from overmind.client import ApiReporter
@@ -82,8 +80,7 @@ def _build_reporter_from_state_path(state_path: str | None):
         return ApiReporter.attach_to_job(agent_id=str(agent_id), job_id=str(job_id))
     except Exception:
         logger.debug(
-            "optimize-step: ApiReporter.attach_to_job raised; "
-            "no terminal PATCH will be sent",
+            "optimize-step: ApiReporter.attach_to_job raised; no terminal PATCH will be sent",
             exc_info=True,
         )
         return None
@@ -430,18 +427,12 @@ def main(args: argparse.Namespace) -> int:
     try:
         return func(args)
     except KeyboardInterrupt:
-        logger.warning(
-            f"optimize-step {step}: interrupted by user (KeyboardInterrupt)"
-        )
-        _finalize_failed_step(
-            state_path, reason="Interrupted by user (KeyboardInterrupt)"
-        )
+        logger.warning(f"optimize-step {step}: interrupted by user (KeyboardInterrupt)")
+        _finalize_failed_step(state_path, reason="Interrupted by user (KeyboardInterrupt)")
         raise
     except BaseException as exc:
         logger.exception(f"optimize-step {step} failed")
-        reason = (
-            f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
-        )
+        reason = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
         _finalize_failed_step(state_path, reason=reason)
         return _emit({
             "status": "error",

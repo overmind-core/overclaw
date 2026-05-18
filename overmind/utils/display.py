@@ -266,13 +266,7 @@ def render_criteria_table(
         detail = _criteria_detail(ftype, fc)
 
         if colorize_importance:
-            imp_style = (
-                "red"
-                if importance == "critical"
-                else "yellow"
-                if importance == "important"
-                else "dim"
-            )
+            imp_style = "red" if importance == "critical" else "yellow" if importance == "important" else "dim"
             importance_cell = f"[{imp_style}]{importance}[/{imp_style}]"
         else:
             importance_cell = importance

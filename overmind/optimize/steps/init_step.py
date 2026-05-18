@@ -110,9 +110,7 @@ def _resolve_agent_id(
         try:
             storage = get_storage()
         except StorageNotConfiguredError:
-            logger.debug(
-                "init: storage not configured; agent_id will be None"
-            )
+            logger.debug("init: storage not configured; agent_id will be None")
             return None
         resolved = storage.get_agent_id()
         if not resolved:
@@ -142,29 +140,19 @@ def _resolve_agent_id(
                 # file-stem form (``overmind_entrypoint:run``) that
                 # subsequent ``resolve_agent`` calls might not find.
                 existing_entry = next(
-                    (
-                        e
-                        for e in _read_registry_entries()
-                        if e.get("name") == agent_name
-                    ),
+                    (e for e in _read_registry_entries() if e.get("name") == agent_name),
                     None,
                 )
                 entrypoint_spec = (existing_entry or {}).get("entrypoint")
                 if not entrypoint_spec:
                     entrypoint_spec = (
-                        f"{Path(agent_path).stem}:{fn_name}"
-                        if Path(agent_path).suffix == ".py"
-                        else agent_path
+                        f"{Path(agent_path).stem}:{fn_name}" if Path(agent_path).suffix == ".py" else agent_path
                     )
                 save_agent(agent_name, entrypoint_spec, id=resolved)
-                logger.info(
-                    f"init: persisted agent_id={resolved} into agents.toml "
-                    f"for agent={agent_name}"
-                )
+                logger.info(f"init: persisted agent_id={resolved} into agents.toml for agent={agent_name}")
             except Exception:
                 logger.debug(
-                    "init: save_agent persistence failed; agent_id resolved "
-                    "in-process only",
+                    "init: save_agent persistence failed; agent_id resolved in-process only",
                     exc_info=True,
                 )
         return resolved or None

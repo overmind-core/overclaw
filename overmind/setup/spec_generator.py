@@ -209,8 +209,7 @@ def _build_spec(
                     existing.add(p)
             scope["read_only_paths"] = ro_paths
             logger.info(
-                "spec_generator: collapsed %d analyzer-emitted context_paths "
-                "into read_only_paths",
+                "spec_generator: collapsed %d analyzer-emitted context_paths into read_only_paths",
                 len(legacy_context),
             )
         legacy_excludes = scope.pop("exclude_paths", None)

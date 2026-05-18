@@ -162,9 +162,7 @@ def build_agent_bundle(config: Config) -> AgentBundle | None:
         logger.warning(f"Bundle construction failed: {exc}", exc_info=True)
         return None
 
-    auto_promoted = _auto_promote_legacy_excluded_runtime_deps(
-        bundle, legacy_excludes
-    )
+    auto_promoted = _auto_promote_legacy_excluded_runtime_deps(bundle, legacy_excludes)
     for rel, matched_glob in auto_promoted:
         logger.warning(
             "Runtime dependency %r is matched by deprecated scope."

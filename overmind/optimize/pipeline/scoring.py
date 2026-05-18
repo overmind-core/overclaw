@@ -64,9 +64,7 @@ def prompt_size(code: str) -> int:
 
 def count_conditional_branches(code: str) -> int:
     """Count ``if`` / ``elif`` branches as a proxy for post-processing complexity."""
-    return sum(
-        1 for line in code.splitlines() if line.strip().startswith(("if ", "elif ", "if(", "elif("))
-    )
+    return sum(1 for line in code.splitlines() if line.strip().startswith(("if ", "elif ", "if(", "elif(")))
 
 
 def count_function_defs(code: str) -> int:
@@ -108,12 +106,7 @@ def detect_data_leakage(
             if not isinstance(val, str):
                 continue
             normalised = val.strip().lower()
-            if (
-                len(normalised) < 6
-                or normalised in _LEAKAGE_IGNORE
-                or normalised in known
-                or normalised in seen
-            ):
+            if len(normalised) < 6 or normalised in _LEAKAGE_IGNORE or normalised in known or normalised in seen:
                 continue
             if val in new_code_text:
                 leaked += 1

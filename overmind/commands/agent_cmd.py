@@ -451,8 +451,7 @@ def cmd_register(name: str, entrypoint: str) -> None:
             f"Agent '[bold]{name}[/bold]' registered.\n"
             f"  [dim]Entrypoint:[/dim] {entrypoint}\n"
             f"  [dim]File:[/dim]      {file_path}\n"
-            f"  [dim]Function:[/dim]  {fn}\n"
-            + (f"  [dim]Agent ID:[/dim]  {agent_id}\n" if agent_id else "")
+            f"  [dim]Function:[/dim]  {fn}\n" + (f"  [dim]Agent ID:[/dim]  {agent_id}\n" if agent_id else "")
         )
         if agent_id:
             set_tag(attrs.AGENT_ID, agent_id)
@@ -504,8 +503,7 @@ def cmd_register(name: str, entrypoint: str) -> None:
         f"Agent '[bold]{name}[/bold]' registered.\n"
         f"  [dim]Entrypoint:[/dim] {entrypoint}\n"
         f"  [dim]File:[/dim]      {file_path}\n"
-        f"  [dim]Function:[/dim]  {fn}\n"
-        + (f"  [dim]Agent ID:[/dim]  {agent_id}\n" if agent_id else "")
+        f"  [dim]Function:[/dim]  {fn}\n" + (f"  [dim]Agent ID:[/dim]  {agent_id}\n" if agent_id else "")
     )
     _print_post_register_next_step(console, name)
 

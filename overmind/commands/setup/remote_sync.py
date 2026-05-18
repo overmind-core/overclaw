@@ -72,13 +72,9 @@ def ensure_remote_agent_id(
                 entrypoint = (load_registry().get(agent_name, {}) or {}).get("entrypoint")
                 if entrypoint:
                     save_agent(agent_name, entrypoint, id=new_id)
-                console.print(
-                    "  [dim]Remote agent created and id stored in agents.toml.[/dim]"
-                )
+                console.print("  [dim]Remote agent created and id stored in agents.toml.[/dim]")
                 return new_id
-        console.print(
-            f"  [yellow]Warning:[/yellow] Could not create agent in Overmind. [dim]({exc})[/dim]"
-        )
+        console.print(f"  [yellow]Warning:[/yellow] Could not create agent in Overmind. [dim]({exc})[/dim]")
         return None
 
 
@@ -147,6 +143,4 @@ def sync_setup_artifacts(agent_name: str, agent_path: str, console: Console) -> 
 
     if synced:
         flush_pending_api_updates(timeout=20.0)
-        console.print(
-            f"  [dim]Synced setup artifacts to Overmind ({', '.join(synced)}).[/dim]"
-        )
+        console.print(f"  [dim]Synced setup artifacts to Overmind ({', '.join(synced)}).[/dim]")

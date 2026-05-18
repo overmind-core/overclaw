@@ -158,18 +158,12 @@ def main(
         _root_span.set_attribute(attrs.OPTIMIZE_AGENT_PATH, config.agent_path or "")
         _root_span.set_attribute(attrs.OPTIMIZE_ENTRYPOINT_FN, config.entrypoint_fn or "")
         _root_span.set_attribute(attrs.OPTIMIZE_ITERATIONS, int(config.iterations))
-        _root_span.set_attribute(
-            attrs.OPTIMIZE_CANDIDATES_PER_ITERATION, int(config.candidates_per_iteration)
-        )
+        _root_span.set_attribute(attrs.OPTIMIZE_CANDIDATES_PER_ITERATION, int(config.candidates_per_iteration))
         _root_span.set_attribute(attrs.OPTIMIZE_ANALYZER_MODEL, config.analyzer_model or "")
-        _root_span.set_attribute(
-            attrs.OPTIMIZE_LLM_JUDGE_MODEL, config.llm_judge_model or "disabled"
-        )
+        _root_span.set_attribute(attrs.OPTIMIZE_LLM_JUDGE_MODEL, config.llm_judge_model or "disabled")
         _root_span.set_attribute(attrs.OPTIMIZE_PARALLEL, bool(config.parallel))
         _root_span.set_attribute(attrs.OPTIMIZE_MAX_WORKERS, int(config.max_workers))
-        _root_span.set_attribute(
-            attrs.OPTIMIZE_EARLY_STOPPING_PATIENCE, int(config.early_stopping_patience)
-        )
+        _root_span.set_attribute(attrs.OPTIMIZE_EARLY_STOPPING_PATIENCE, int(config.early_stopping_patience))
         _root_span.set_attribute(attrs.OPTIMIZE_EVAL_SPEC_PATH, config.eval_spec_path or "")
         _root_span.set_attribute(attrs.OPTIMIZE_DATA_PATH, config.data_path or "")
         _root_span.set_attribute(attrs.OPTIMIZE_RUN_STATUS, "running")

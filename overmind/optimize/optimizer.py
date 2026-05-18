@@ -2936,9 +2936,7 @@ class Optimizer:
                     results.append(parse_trace_file(case_file))
                     continue
                 except Exception as exc:
-                    self._logger.warning(
-                        f"_load_case_traces: failed to parse {case_file}: {exc}"
-                    )
+                    self._logger.warning(f"_load_case_traces: failed to parse {case_file}: {exc}")
             results.append(ParsedTrace())
         return results
 
