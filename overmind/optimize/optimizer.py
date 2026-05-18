@@ -2505,13 +2505,32 @@ class Optimizer:
         cross-package imports work correctly.  For paths inside the
         instrumented tree, the instrumented directory is used as
         ``agent_dir`` (it mirrors the original project layout).
+
+        For paths inside an experiments worktree
+        (``.../experiments/<worktree>/...``), the worktree itself is
+        used as ``agent_dir``.  Each candidate / baseline worktree is a
+        self-contained snapshot of the agent project, so using the
+        worktree as the import root ensures ``from agent import …``-
+        style sibling imports inside a harness resolve to the
+        worktree's local files instead of silently shadowing them with
+        the project-root baseline.
         """
         p = Path(agent_path).resolve()
 
         inst_dir = agent_instrumented_dir(self.config.agent_name).resolve()
+        exp_dir = agent_experiments_dir(self.config.agent_name).resolve()
         if _is_subpath(p, inst_dir):
             agent_dir = inst_dir
             entry_file = str(p.relative_to(inst_dir))
+        elif _is_subpath(p, exp_dir):
+            rel_parts = p.relative_to(exp_dir).parts
+            if len(rel_parts) >= 2:
+                worktree = exp_dir / rel_parts[0]
+                agent_dir = worktree
+                entry_file = str(p.relative_to(worktree))
+            else:
+                agent_dir = p.parent
+                entry_file = p.name
         else:
             pr = project_root_from_agent_file(agent_path)
             if pr is not None:
