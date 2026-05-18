@@ -1,14 +1,27 @@
-"""Tests for overmind.optimize.cassette — record/replay store."""
+"""Tests for the surviving public surface of ``overmind.optimize.cassette``.
+
+The module previously exposed a full in-Python record/replay API
+(``Cassette.record``, ``Cassette.replay``, ``NullCassette``, ``__len__``,
+etc.) that production code never called — every real cassette read/write
+happens inside the subprocess via :mod:`overmind.optimize.shadow_runtime`.
+That dead API was deleted; the remaining surface is:
+
+* :func:`make_key` — stable content-addressable key, also used by the
+  subprocess shadow runtime so its output is identical to keys computed
+  out-of-process for diagnostics.
+* :class:`CassetteEntry` — on-disk row schema; the shadow runtime emits
+  rows in this shape.
+* :class:`Cassette` / :func:`open_cassette` — path-holder threaded
+  through ``ExecutionBackend`` instances.
+"""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from overmind.optimize.cassette import (
     Cassette,
     CassetteEntry,
-    NullCassette,
     make_key,
     open_cassette,
 )
@@ -16,28 +29,18 @@ from overmind.optimize.cassette import (
 
 class TestMakeKey:
     def test_same_inputs_same_key(self):
-        k1 = make_key(
-            "llm", "gpt-4o", {"messages": [{"role": "user", "content": "hi"}]}
-        )
-        k2 = make_key(
-            "llm", "gpt-4o", {"messages": [{"role": "user", "content": "hi"}]}
-        )
+        k1 = make_key("llm", "gpt-4o", {"messages": [{"role": "user", "content": "hi"}]})
+        k2 = make_key("llm", "gpt-4o", {"messages": [{"role": "user", "content": "hi"}]})
         assert k1 == k2
 
     def test_different_kind_different_key(self):
-        k1 = make_key("llm", "gpt-4o", {})
-        k2 = make_key("tool", "gpt-4o", {})
-        assert k1 != k2
+        assert make_key("llm", "gpt-4o", {}) != make_key("tool", "gpt-4o", {})
 
     def test_different_identifier_different_key(self):
-        k1 = make_key("llm", "gpt-4o", {})
-        k2 = make_key("llm", "claude", {})
-        assert k1 != k2
+        assert make_key("llm", "gpt-4o", {}) != make_key("llm", "claude", {})
 
     def test_dict_ordering_is_canonical(self):
-        k1 = make_key("llm", "x", {"b": 2, "a": 1})
-        k2 = make_key("llm", "x", {"a": 1, "b": 2})
-        assert k1 == k2
+        assert make_key("llm", "x", {"b": 2, "a": 1}) == make_key("llm", "x", {"a": 1, "b": 2})
 
     def test_nested_dict_stability(self):
         k1 = make_key("llm", "x", {"m": [{"role": "u", "content": "hi"}]})
@@ -45,103 +48,8 @@ class TestMakeKey:
         assert k1 == k2
 
 
-class TestCassetteRecordReplay:
-    def test_record_then_replay(self, tmp_path: Path):
-        cass = Cassette(tmp_path / "cass.jsonl")
-        cass.record(
-            kind="llm",
-            identifier="gpt-4o",
-            payload={"messages": [{"role": "user", "content": "hi"}]},
-            result={"choices": [{"message": {"content": "hello!"}}]},
-        )
-        got = cass.replay(
-            kind="llm",
-            identifier="gpt-4o",
-            payload={"messages": [{"role": "user", "content": "hi"}]},
-        )
-        assert got is not None
-        assert got.result["choices"][0]["message"]["content"] == "hello!"
-
-    def test_miss_returns_none(self, tmp_path: Path):
-        cass = Cassette(tmp_path / "cass.jsonl")
-        assert cass.replay("llm", "x", {"foo": "bar"}) is None
-
-    def test_has_shortcut(self, tmp_path: Path):
-        cass = Cassette(tmp_path / "cass.jsonl")
-        cass.record(kind="tool", identifier="search", payload={"q": "x"}, result={})
-        assert cass.has("tool", "search", {"q": "x"}) is True
-        assert cass.has("tool", "search", {"q": "y"}) is False
-
-    def test_persistence_across_instances(self, tmp_path: Path):
-        path = tmp_path / "cass.jsonl"
-        a = Cassette(path)
-        a.record(kind="llm", identifier="m", payload={"k": 1}, result={"v": 2})
-        # New instance reads the file on first access.
-        b = Cassette(path)
-        got = b.replay("llm", "m", {"k": 1})
-        assert got is not None
-        assert got.result == {"v": 2}
-
-    def test_overwrite_same_key(self, tmp_path: Path):
-        cass = Cassette(tmp_path / "cass.jsonl")
-        cass.record(kind="llm", identifier="m", payload={"p": 1}, result={"v": 1})
-        cass.record(kind="llm", identifier="m", payload={"p": 1}, result={"v": 2})
-        got = cass.replay("llm", "m", {"p": 1})
-        assert got is not None
-        assert got.result == {"v": 2}
-
-    def test_count_by_kind(self, tmp_path: Path):
-        cass = Cassette(tmp_path / "cass.jsonl")
-        cass.record(kind="llm", identifier="m", payload={"p": 1}, result={})
-        cass.record(kind="llm", identifier="m", payload={"p": 2}, result={})
-        cass.record(kind="http", identifier="u", payload={"p": 1}, result={})
-        by_kind = cass.count_by_kind()
-        assert by_kind == {"llm": 2, "http": 1}
-
-
-class TestCassetteRobustness:
-    def test_missing_file_is_empty(self, tmp_path: Path):
-        cass = Cassette(tmp_path / "does_not_exist.jsonl")
-        assert len(cass) == 0
-        assert cass.replay("llm", "m", {}) is None
-
-    def test_malformed_line_is_skipped(self, tmp_path: Path):
-        path = tmp_path / "cass.jsonl"
-        # One broken line + one good line
-        broken = "not-json\n"
-        good = (
-            json.dumps(
-                {
-                    "kind": "llm",
-                    "identifier": "m",
-                    "key": make_key("llm", "m", {"p": 1}),
-                    "payload": {"p": 1},
-                    "result": {"v": 1},
-                    "metadata": {},
-                    "version": 1,
-                }
-            )
-            + "\n"
-        )
-        path.write_text(broken + good, encoding="utf-8")
-        cass = Cassette(path)
-        assert cass.replay("llm", "m", {"p": 1}) is not None
-
-
-class TestNullCassette:
-    def test_never_replays(self):
-        cass = NullCassette()
-        cass.record(kind="llm", identifier="m", payload={}, result={"v": 1})
-        assert cass.replay("llm", "m", {}) is None
-        assert len(cass) == 0
-
-    def test_open_cassette_with_none(self):
-        cass = open_cassette(None)
-        assert isinstance(cass, NullCassette)
-
-
 class TestCassetteEntry:
-    def test_roundtrip_asdict(self):
+    def test_default_version(self):
         entry = CassetteEntry(
             kind="llm",
             identifier="m",
@@ -150,9 +58,49 @@ class TestCassetteEntry:
             result={"y": 2},
         )
         assert entry.version == 1
-        # asdict round-trip
+        assert entry.metadata == {}
+
+    def test_asdict_roundtrip(self):
         from dataclasses import asdict
 
+        entry = CassetteEntry(
+            kind="llm",
+            identifier="m",
+            key="abc",
+            payload={"x": 1},
+            result={"y": 2},
+            metadata={"latency": 0.5},
+        )
         d = asdict(entry)
-        back = CassetteEntry(**d)
-        assert back == entry
+        assert CassetteEntry(**d) == entry
+
+
+class TestCassettePathHolder:
+    def test_open_cassette_with_path(self, tmp_path: Path):
+        cass = open_cassette(tmp_path / "c.jsonl")
+        assert isinstance(cass, Cassette)
+        assert cass.path == tmp_path / "c.jsonl"
+
+    def test_open_cassette_with_none(self):
+        cass = open_cassette(None)
+        assert isinstance(cass, Cassette)
+        assert cass.path is None
+
+    def test_open_cassette_with_empty_string(self):
+        cass = open_cassette("")
+        assert isinstance(cass, Cassette)
+        assert cass.path is None
+
+    def test_string_path_is_coerced(self, tmp_path: Path):
+        cass = open_cassette(str(tmp_path / "c.jsonl"))
+        assert cass.path == tmp_path / "c.jsonl"
+
+    def test_pathless_cassette_is_truthy(self):
+        """No ``__len__`` means an empty cassette is truthy by default.
+
+        This guards against re-introducing the historical bug where a
+        truthiness check on ``Cassette`` would silently swap in a no-op
+        instance because the (now-deleted) ``__len__`` returned 0.
+        """
+        cass = open_cassette(None)
+        assert bool(cass) is True

@@ -11,9 +11,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-import litellm
-
-from overmind.utils.llm import completion_kwargs_for_model
+from overmind.utils.llm import llm_completion
 
 logger = logging.getLogger("overmind.coding_agent.providers")
 
@@ -49,19 +47,21 @@ class LiteLLMProvider:
         tools: list[dict[str, Any]] | None = None,
         temperature: float | None = None,
     ) -> ChatResponse:
-        base_kwargs: dict[str, Any] = {}
+        # Route through ``llm_completion`` so each coding-agent step gets
+        # its own ``gen_ai.*`` LLM span (model, latency, tokens, provider).
+        # Without this wrapper the coding agent's calls were invisible to
+        # the optimizer's trace UI.
+        extra_kwargs: dict[str, Any] = {}
         if temperature is not None:
-            base_kwargs["temperature"] = temperature
-
-        kwargs = completion_kwargs_for_model(self.model, **base_kwargs)
-        kwargs["model"] = self.model
-        kwargs["messages"] = messages
-
-        if tools:
-            kwargs["tools"] = tools
+            extra_kwargs["temperature"] = temperature
 
         try:
-            resp = litellm.completion(**kwargs)
+            resp = llm_completion(
+                model=self.model,
+                messages=messages,
+                tools=tools or None,
+                **extra_kwargs,
+            )
         except Exception:
             logger.exception("LiteLLM completion failed")
             raise

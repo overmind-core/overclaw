@@ -24,9 +24,9 @@ Use this skill to create a separate entrypoint file that Overmind can call to ru
 - **Entrypoint is fixed and invisible to optimization**: The entrypoint file exists only to let Overmind invoke the agent. It must never be treated as agent logic to optimize.
 - **Snapshot safety**: The entrypoint file and every local file it imports must live under the project root and be included in the instrumented snapshot. Do not import local files from outside the project root.
 - **Re-instrument on entrypoint changes**: If the entrypoint file changes after registration, refresh the instrumented copy even when the agent name and callable string are unchanged.
-- **Minimal edits**: Only modify Overmind registration artifacts, the separate entrypoint file, and the agent-specific environment placeholder file.
+- **Minimal edits**: Only modify Overmind registration artifacts and the separate entrypoint file.
 - **Clean temporary files**: If you create helper files to execute registration logic, delete them after success or after a terminal failure.
-- **Environment load order (for debugging smoke failures)**: Overmind loads `.overmind/.env` first, then `.overmind/agents/<name>/.env` with **override**. A placeholder or wrong value in the per-agent file wins over a correct project-level value. When writing agent `.env` placeholders, do not set `OVERMIND_API_KEY=<set-me>` if the user relies on a valid key only in `.overmind/.env` unless they will fill the agent file before smoke.
+- **Environment**: Overmind loads a **single** env file — `.overmind/.env` — at the project root. There is no per-agent `.env`; provider keys, the analyzer model, and any agent runtime variables live in the project file. (Historically `.overmind/agents/<name>/.env` was loaded with `override=True`, which caused placeholders to silently win over real project values — that path has been removed.)
 
 ## Inputs
 
@@ -186,7 +186,7 @@ Use these command blocks to keep registration deterministic. Do not rely on inte
    - Rules:
      - Pass both required parameters explicitly in the command invocation.
      - Always pass `--non-interactive` (or set `OVERMIND_NONINTERACTIVE=1`) so the CLI never opens `/dev/tty`; this is required in sandboxed/CI shells where the arrow-key menu would crash with `OSError: Device not configured`.
-     - Pre-populate `.overmind/agents/<agent-name>/.env` with provider keys before registration so the non-interactive run can keep it as-is (the CLI will not prompt to reconfigure when the file already exists).
+     - Provider keys live in `.overmind/.env` (configured by `overmind init`); register does not prompt for or write per-agent env files.
      - If the installed CLI requires different flag names, map to the same required values and document the exact command executed in the user update.
 
 1. **Instrumentation refresh**
@@ -422,13 +422,9 @@ Before finalizing registration, inspect imports in the entrypoint file. For ever
 
 Do not create an entrypoint file that imports local code unavailable to Overmind at runtime.
 
-### Create the environment placeholder file
+### Agent runtime environment
 
-After successful registration, create or update `.overmind/agents/<name>/.env` with placeholder values for **agent runtime** keys (provider keys the harness needs). Preserve existing non-placeholder lines. Do not overwrite real-looking secret values.
-
-- **Never** add `OVERMIND_API_KEY` to `.overmind/agents/<name>/.env` unless the user explicitly asked to store it there. Omit the key entirely so the value from `.overmind/.env` or the shell is not overridden by a placeholder (per-agent `.env` uses `override=True` when loaded).
-
-If the provider is “No LLM / manual” and no environment variables were discovered, skip creating the file.
+Agent runtime variables (provider API keys, base URLs, etc.) live in **the project `.overmind/.env`** alongside the Overmind/analyzer keys configured by `overmind init`. There is no per-agent `.env`; do not create or write to `.overmind/agents/<name>/.env`. If the harness needs a new key the user has not configured, ask them to add it to `.overmind/.env` before running `overmind agent validate`.
 
 ### Smoke-check the entrypoint contract
 
@@ -449,7 +445,7 @@ After registration and instrumentation refresh, always run the CLI validate step
   `overmind agent validate "<agent-name>" --data "<user-path>"`
   (directory of JSON cases is allowed if the CLI supports it.)
 
-- If the user had **no** dataset file: the coding agent **writes** a temporary JSON file under the project root or `.overmind/agents/<agent-name>/` (e.g. `_register_validate_stub.json`) containing **one object** whose keys are exactly the entrypoint keyword parameters, using **type-appropriate safe dummy values** derived from the locked schema (empty string, `0`, `false`, short enum literal, etc.). Then run:
+- If the user had **no** dataset file: the coding agent **writes** a temporary JSON file under the project root (e.g. `_register_validate_stub.json`) containing **one object** whose keys are exactly the entrypoint keyword parameters, using **type-appropriate safe dummy values** derived from the locked schema (empty string, `0`, `false`, short enum literal, etc.). Then run:
   `overmind agent validate "<agent-name>" --data "<path-to-that-json>"`
   Delete the stub file after success or after a terminal failure (unless the user asks to keep it).
 
@@ -469,7 +465,6 @@ Before responding, verify:
 - **Command block 4** ran so `.overmind/.env` was created/updated with placeholders, then the **mandatory keys pause** (`AskQuestion`: *Fill in your Overmind API key and your analyzer model provider key(s)…* / **Yes — continue**) ran **without skipping**, and **command block 5** printed `configured` before registration.
 - The instrumented snapshot has been refreshed after any entrypoint file change.
 - Every local import used by the entrypoint file is inside the project root and included in instrumentation.
-- The environment placeholder file exists only when needed.
 - Temporary helper files have been removed.
 - If a dataset file was used: it was read and field names reconciled before the entrypoint was written; signature and return keys match the locked schema.
 - If no dataset file: the user explicitly approved the codebase-derived schema before the entrypoint was written.
@@ -485,10 +480,9 @@ Tell the user:
 - Whether instrumentation was refreshed.
 - Which analyzer model/provider was selected for init.
 - That `.overmind/.env` was bootstrapped with placeholders, they completed the **mandatory keys** step (Overmind API key + provider key(s)), and verification passed before registration.
-- Whether an `.env` placeholder file was created or updated.
 - Whether `overmind agent validate --data` used the user’s dataset file or a **temporary stub JSON** the agent generated from the locked schema (stub path deleted afterward unless the user opted in to keep it).
 - Which dataset file was used (if any) and whether any field name conflicts between the dataset and the codebase were found and resolved.
-- That they should fill in placeholders in `.overmind/agents/<name>/.env` before running the agent (and that per-agent `.env` overrides project `.env` for duplicate keys).
+- That all agent runtime keys live in `.overmind/.env` (there is no per-agent `.env`); they should fill in any remaining placeholders there before running the agent.
 - The next recommended step: run `/overmind-generate-spec-and-dataset` for the agent.
 
 Do not mention temporary helper files, registry internals, or implementation details unless the user asks.

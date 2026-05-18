@@ -16,6 +16,7 @@ from pathlib import Path
 
 from overmind import attrs, set_tag
 from overmind.optimize.failure_registry import FailureRegistry
+from overmind.utils.atomic_io import atomic_write_json
 
 _log = logging.getLogger("overmind.optimize.run_state")
 
@@ -156,13 +157,7 @@ class RunState:
         return state
 
     def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(
-            json.dumps(self.to_dict(), indent=2, default=str),
-            encoding="utf-8",
-        )
-        tmp.replace(self.path)
+        atomic_write_json(self.path, self.to_dict())
         _log.info(f"Saved run state to {self.path}")
 
         set_tag(attrs.RUN_STATE_TOTAL_RUNS, len(self.run_history))

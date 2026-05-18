@@ -41,6 +41,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.table import Table
 from rich.text import Text
 from simple_term_menu import TerminalMenu
 
@@ -187,6 +188,99 @@ def make_spinner_progress(console: Console, *, transient: bool = False) -> Progr
         console=console,
         transient=transient,
     )
+
+
+def _criteria_detail(ftype: str, fc: dict) -> str:
+    """Return the human-readable scoring detail for a single eval field."""
+    if ftype == "enum":
+        return "partial credit" if fc.get("partial_credit", True) else "exact match only"
+    if ftype == "number":
+        return f"tolerance \u00b1{fc.get('tolerance', 10)}"
+    if ftype == "text":
+        return "check non-empty" if fc.get("eval_mode", "non_empty") == "non_empty" else "skip"
+    return "exact match"
+
+
+def render_criteria_table(
+    console: Console,
+    criteria: dict,
+    output_schema: dict,
+    *,
+    title: str = "Proposed Evaluation Criteria",
+    colorize_importance: bool = False,
+    show_lines: bool = False,
+    padding: tuple[int, int] | None = None,
+    min_widths: bool = False,
+) -> None:
+    """Render the standard "field / importance / scoring detail" Rich table.
+
+    Centralises the Rich table that previously had three near-identical copies
+    in :mod:`overmind.setup.agent_analyzer`, :mod:`overmind.setup.questionnaire`,
+    and :mod:`overmind.commands.setup_cmd`.
+
+    Parameters
+    ----------
+    console:
+        The Rich console to print to.  A blank line is printed first so the
+        table is visually separated from preceding output.
+    criteria:
+        ``analysis["proposed_criteria"]`` (or refined equivalent).
+    output_schema:
+        ``analysis["output_schema"]`` — used to look up the field type for
+        each row so the scoring detail can be rendered consistently.
+    title:
+        Override the default ``"Proposed Evaluation Criteria"`` title.
+    colorize_importance:
+        When ``True``, importance text is colourised (red/yellow/dim).
+    show_lines:
+        Forwarded to :class:`rich.table.Table`.
+    padding:
+        Forwarded to :class:`rich.table.Table` when supplied.
+    min_widths:
+        When ``True``, apply the wider column widths used by the analyzer's
+        proposal table.
+    """
+    fields_criteria = criteria.get("fields", {})
+    if not fields_criteria:
+        return
+
+    table_kwargs: dict[str, object] = {"title": title, "border_style": "green"}
+    if show_lines:
+        table_kwargs["show_lines"] = True
+    if padding is not None:
+        table_kwargs["padding"] = padding
+    table = Table(**table_kwargs)
+
+    if min_widths:
+        table.add_column("Field", style="bold", min_width=12)
+        table.add_column("Importance", min_width=10)
+        table.add_column("Scoring Detail", ratio=1)
+    else:
+        table.add_column("Field", style="bold")
+        table.add_column("Importance")
+        table.add_column("Scoring Detail")
+
+    for field_name, fc in fields_criteria.items():
+        importance = fc.get("importance", "important")
+        ftype = output_schema.get(field_name, {}).get("type", "text")
+        detail = _criteria_detail(ftype, fc)
+
+        if colorize_importance:
+            imp_style = "red" if importance == "critical" else "yellow" if importance == "important" else "dim"
+            importance_cell = f"[{imp_style}]{importance}[/{imp_style}]"
+        else:
+            importance_cell = importance
+
+        table.add_row(field_name, importance_cell, detail)
+
+    sw = criteria.get("structure_weight", 20)
+    table.add_row(
+        "[dim]structure[/dim]",
+        "[dim]\u2014[/dim]",
+        f"[dim]{sw} pts for completeness[/dim]",
+    )
+    console.print()
+    console.print(table)
 
 
 def _clamp_default_index(default_index: int, n: int) -> int:

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import contextvars
 import difflib
-import importlib.util
 import json
 import logging
 import os
@@ -75,13 +74,30 @@ from overmind.optimize.failure_registry import (
     FailureRegistry,
     format_clusters_for_diagnosis,
 )
+from overmind.optimize.pipeline.scoring import (
+    compute_complexity_penalty as _scoring_compute_complexity_penalty,
+)
+from overmind.optimize.pipeline.scoring import (
+    count_conditional_branches as _scoring_count_conditional_branches,
+)
+from overmind.optimize.pipeline.scoring import (
+    count_function_defs as _scoring_count_function_defs,
+)
+from overmind.optimize.pipeline.scoring import (
+    detect_data_leakage as _scoring_detect_data_leakage,
+)
+from overmind.optimize.pipeline.scoring import (
+    prompt_size as _scoring_prompt_size,
+)
 from overmind.optimize.run_state import RunState, RunSummary
 from overmind.optimize.runner import AgentRunner, Language, RunnerConfig
 from overmind.optimize.trace_reader import (
     ParsedTrace,
     attach_shadow_provenance,
+    parse_trace_file,
 )
 from overmind.tracing import force_flush_traces, observe_safe
+from overmind.utils.atomic_io import atomic_write_json
 from overmind.utils.code import AgentBundle
 from overmind.utils.display import BRAND, confirm_option, make_spinner_progress, rel
 from overmind.utils.instrument import deinstrument_source
@@ -1447,28 +1463,23 @@ class Optimizer:
         # Persist baseline eval items so later iterations can recover them
         # without re-running the agent.
         items_path = self.output_dir / "_baseline_items.json"
-        items_path.write_text(
-            json.dumps(
-                {
-                    "avg_total": baseline_eval["avg_total"],
-                    "evaluation": baseline_eval,
-                    "case_results": Optimizer._build_case_results(baseline_items, train_set),
-                },
-                default=str,
-            )
+        atomic_write_json(
+            items_path,
+            {
+                "avg_total": baseline_eval["avg_total"],
+                "evaluation": baseline_eval,
+                "case_results": Optimizer._build_case_results(baseline_items, train_set),
+            },
+            indent=None,
         )
 
         # Cache train/holdout to disk so subsequent step CLIs work on the
         # same split without re-shuffling.
         split_path = self.output_dir / "_split.json"
-        split_path.write_text(
-            json.dumps(
-                {
-                    "train": train_set,
-                    "holdout": holdout_set,
-                },
-                default=str,
-            )
+        atomic_write_json(
+            split_path,
+            {"train": train_set, "holdout": holdout_set},
+            indent=None,
         )
 
         return {
@@ -1671,16 +1682,14 @@ class Optimizer:
         working_path = self.output_dir / f"agent_working{_ext}"
         working_path.write_text(new_code)
 
-        latest_path = self.output_dir / "_latest_items.json"
-        latest_path.write_text(
-            json.dumps(
-                {
-                    "avg_total": winner_eval["avg_total"],
-                    "evaluation": winner_eval,
-                    "case_results": winner_case_results,
-                },
-                default=str,
-            )
+        atomic_write_json(
+            self.output_dir / "_latest_items.json",
+            {
+                "avg_total": winner_eval["avg_total"],
+                "evaluation": winner_eval,
+                "case_results": winner_case_results,
+            },
+            indent=None,
         )
 
     @observe_safe("optimizer.render_report_only", SpanType.WORKFLOW)
@@ -1835,154 +1844,46 @@ class Optimizer:
     ) -> float:
         """Penalize candidates with excessive prompt, code, or logic growth.
 
-        Four dimensions (all use quadratic ramps so small overshoots get
-        tiny penalties while large overshoots are still meaningful):
-
-        1. SYSTEM_PROMPT bloat (vs original baseline)
-        2. Total code size growth (vs original baseline, size-adaptive threshold)
-        3. New conditional branches (vs original baseline)
-        4. Hardcoded expected-output literals (data leakage from training set)
-
-        When *raw_score* is provided the total penalty is capped at 60% of
-        the raw improvement over the current best, ensuring genuine
-        improvements always yield at least partial net gain.
+        Thin wrapper around :func:`overmind.optimize.pipeline.scoring.compute_complexity_penalty`
+        that supplies state from ``self`` (baseline code, best code/score,
+        config thresholds, eval-spec vocabulary).
         """
-        penalty = 0.0
+        return _scoring_compute_complexity_penalty(
+            candidate_code,
+            baseline_code=self._baseline_code,
+            best_code=self.best_code,
+            best_score=self.best_score,
+            train_set=train_set,
+            raw_score=raw_score,
+            max_code_growth_ratio=getattr(self.config, "max_code_growth_ratio", 2.5),
+            known_domain_values=self._domain_vocabulary(),
+        )
 
-        # 1. Prompt bloat (vs original baseline, threshold 2.0x)
-        baseline_prompt = self._get_prompt_size(self._baseline_code or self.best_code)
-        cand_prompt = self._get_prompt_size(candidate_code)
-        if baseline_prompt > 0:
-            prompt_ratio = cand_prompt / baseline_prompt
-            if prompt_ratio > 2.0:
-                overshoot = prompt_ratio - 2.0
-                penalty += min(3.0, overshoot**2 * 2.0)
-
-        # 2. Total code growth (vs original baseline, size-adaptive)
-        if self._baseline_code:
-            baseline_lines = len(self._baseline_code.splitlines())
-            candidate_lines = len(candidate_code.splitlines())
-            if baseline_lines > 0:
-                max_ratio = getattr(self.config, "max_code_growth_ratio", 2.5)
-                if baseline_lines < 150:
-                    max_ratio += 1.0
-                elif baseline_lines < 300:
-                    max_ratio += 0.5
-                code_ratio = candidate_lines / baseline_lines
-                if code_ratio > max_ratio:
-                    overshoot = code_ratio - max_ratio
-                    penalty += min(5.0, overshoot**2 * 1.5)
-
-        # 3. New conditional branches (vs original baseline, size-adaptive)
-        new_branches = 0
-        if self._baseline_code:
-            baseline_branches = self._count_conditional_branches(self._baseline_code)
-            candidate_branches = self._count_conditional_branches(candidate_code)
-            new_branches = candidate_branches - baseline_branches
-            branch_threshold = max(8, baseline_branches // 3)
-            if new_branches > branch_threshold:
-                overshoot = new_branches - branch_threshold
-                penalty += min(4.0, overshoot**2 * 0.03)
-
-        # 4. Conditional-to-structural ratio: many new branches without new
-        # functions is a strong overfitting signal.
-        if self._baseline_code and new_branches > 5:
-            baseline_funcs = self._count_function_defs(self._baseline_code)
-            candidate_funcs = self._count_function_defs(candidate_code)
-            new_funcs = candidate_funcs - baseline_funcs
-            if new_funcs <= 0:
-                penalty += min(2.0, (new_branches - 5) * 0.15)
-
-        # 5. Hardcoded expected-output literals from training data
-        if train_set and self._baseline_code:
-            leakage = self._detect_data_leakage(candidate_code, train_set)
-            if leakage > 0:
-                penalty += min(5.0, leakage * 1.5)
-
-        # Cap penalty at 60% of the raw improvement so genuine gains always
-        # produce at least partial net progress.
-        if raw_score is not None and penalty > 0:
-            raw_improvement = raw_score - self.best_score
-            if raw_improvement > 0:
-                max_allowed = raw_improvement * 0.6
-                penalty = min(penalty, max_allowed)
-
-        return penalty
+    def _domain_vocabulary(self) -> set[str]:
+        """Collect enum values from the eval spec used for leakage exclusions."""
+        vocab: set[str] = set()
+        for field_cfg in self.evaluator.spec.get("output_fields", {}).values():
+            for v in field_cfg.get("values", []):
+                vocab.add(str(v).strip().lower())
+        return vocab
 
     @observe_safe("optimizer.detect_data_leakage")
     def _detect_data_leakage(self, candidate_code: str, train_set: list[dict]) -> int:
-        """Count expected-output literals that appear in new code but not the baseline.
+        """Count expected-output literals leaked from training data into the candidate.
 
-        Excludes known enum values from the eval spec (these are domain
-        vocabulary the agent *should* reference, not leakage) and raises the
-        minimum string length to 6 to avoid false positives on short generic
-        words like "warm", "high", "cold".
+        Thin wrapper around :func:`overmind.optimize.pipeline.scoring.detect_data_leakage`.
         """
-        new_lines = set(candidate_code.splitlines()) - set(self._baseline_code.splitlines())
-        new_code_text = "\n".join(new_lines)
-        if not new_code_text.strip():
-            return 0
-
-        IGNORE_VALUES = {
-            "",
-            "true",
-            "false",
-            "none",
-            "null",
-            "yes",
-            "no",
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "10",
-            "100",
-        }
-
-        known_domain_values: set[str] = set()
-        for field_cfg in self.evaluator.spec.get("output_fields", {}).values():
-            for v in field_cfg.get("values", []):
-                known_domain_values.add(str(v).strip().lower())
-
-        leaked = 0
-        seen_values: set[str] = set()
-        for case in train_set:
-            expected = case.get("expected_output", case.get("expected", {}))
-            if not isinstance(expected, dict):
-                continue
-            for val in expected.values():
-                s = str(val).strip()
-                if len(s) < 6 or s.lower() in IGNORE_VALUES:
-                    continue
-                if s.lower() in known_domain_values:
-                    continue
-                if s in seen_values:
-                    continue
-                if s in new_code_text:
-                    leaked += 1
-                    seen_values.add(s)
-        return leaked
-
-    @staticmethod
-    def _get_prompt_size(code: str) -> int:
-        m = re.search(
-            r'SYSTEM_PROMPT\s*=\s*(?:"""|\'\'\')(.*?)(?:"""|\'\'\')',
-            code,
-            re.DOTALL,
+        return _scoring_detect_data_leakage(
+            candidate_code,
+            self._baseline_code or "",
+            train_set,
+            known_domain_values=self._domain_vocabulary(),
         )
-        return len(m.group(1)) if m else 0
 
-    @staticmethod
-    def _count_conditional_branches(code: str) -> int:
-        """Count if/elif branches as a proxy for post-processing complexity."""
-        return sum(1 for line in code.splitlines() if line.strip().startswith(("if ", "elif ", "if(", "elif(")))
-
-    @staticmethod
-    def _count_function_defs(code: str) -> int:
-        """Count top-level and nested function/method definitions."""
-        return sum(1 for line in code.splitlines() if line.strip().startswith(("def ", "async def ")))
+    # Legacy attribute aliases so any in-tree callers (and tests) still resolve.
+    _get_prompt_size = staticmethod(_scoring_prompt_size)
+    _count_conditional_branches = staticmethod(_scoring_count_conditional_branches)
+    _count_function_defs = staticmethod(_scoring_count_function_defs)
 
     # ------------------------------------------------------------------
     # Dataset splitting
@@ -2499,24 +2400,21 @@ class Optimizer:
     def _resolve_bundle_candidate(self, bundle_updates: dict) -> dict | None:
         """Resolve bundle updates into modified files.
 
-        Supports two formats:
-        - ``file_updates``: whole-file replacements (preferred)
-        - ``piece_updates``: legacy line-range splice (fallback)
+        Only the whole-file ``file_updates`` format is supported — the
+        legacy piece-ID splice path was deleted in the client cleanup.
 
         Returns ``{"entry_code": str, "files": {rel_path: source}}`` or
-        ``None`` if validation fails.
+        ``None`` if validation fails or the candidate did not produce
+        any file updates.
         """
         if not self._bundle:
             return None
 
         file_updates = bundle_updates.get("file_updates")
-        if file_updates:
-            modified = self._bundle.apply_file_updates(file_updates)
-        else:
-            piece_updates = bundle_updates.get("piece_updates", {})
-            new_pieces = bundle_updates.get("new_pieces", [])
-            modified = self._bundle.apply_updates(piece_updates, new_pieces)
+        if not file_updates:
+            return None
 
+        modified = self._bundle.apply_file_updates(file_updates)
         if modified is None:
             return None
 
@@ -2615,13 +2513,32 @@ class Optimizer:
         cross-package imports work correctly.  For paths inside the
         instrumented tree, the instrumented directory is used as
         ``agent_dir`` (it mirrors the original project layout).
+
+        For paths inside an experiments worktree
+        (``.../experiments/<worktree>/...``), the worktree itself is
+        used as ``agent_dir``.  Each candidate / baseline worktree is a
+        self-contained snapshot of the agent project, so using the
+        worktree as the import root ensures ``from agent import …``-
+        style sibling imports inside a harness resolve to the
+        worktree's local files instead of silently shadowing them with
+        the project-root baseline.
         """
         p = Path(agent_path).resolve()
 
         inst_dir = agent_instrumented_dir(self.config.agent_name).resolve()
+        exp_dir = agent_experiments_dir(self.config.agent_name).resolve()
         if _is_subpath(p, inst_dir):
             agent_dir = inst_dir
             entry_file = str(p.relative_to(inst_dir))
+        elif _is_subpath(p, exp_dir):
+            rel_parts = p.relative_to(exp_dir).parts
+            if len(rel_parts) >= 2:
+                worktree = exp_dir / rel_parts[0]
+                agent_dir = worktree
+                entry_file = str(p.relative_to(worktree))
+            else:
+                agent_dir = p.parent
+                entry_file = p.name
         else:
             pr = project_root_from_agent_file(agent_path)
             if pr is not None:
@@ -2664,14 +2581,6 @@ class Optimizer:
             self.console.print(f"  [bold red]Failed to provision agent environment:[/bold red]\n  [dim]{stderr}[/dim]")
             raise
 
-    @staticmethod
-    def _load_agent_module(path: str):
-        """Legacy in-process module loader (kept for Python-only validation)."""
-        spec = importlib.util.spec_from_file_location("_agent_mod", path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
-
     @observe_safe("optimizer.run_agent_on_dataset")
     def _run_agent_on_dataset(
         self,
@@ -2682,11 +2591,18 @@ class Optimizer:
         runner = self._build_runner(agent_path, self.config.entrypoint_fn)
         runner.ensure_environment()
 
-        # All traces flow through OTel to the remote backend — no local
-        # ``OVERMIND_TRACE_FILE`` is written.  Backends still accept a
-        # ``trace_file`` arg for their shadow / record modes; we always
-        # pass ``None`` so they fall back to the OTel-only path.
-        trace_path: Path | None = None
+        # Per-run trace directory. Each case's subprocess writes its OTel
+        # spans to ``trace_dir / case_<idx>.jsonl`` via the local
+        # ``JsonlFileSpanExporter`` installed by the wrapper bootstrap when
+        # ``OVERMIND_TRACE_FILE`` is set. The parent reads those files back
+        # in :meth:`_build_eval_results` so tool / LLM traces are available
+        # to :class:`SpecEvaluator` (Tool Usage, llm token counts, etc.)
+        # without any backend roundtrip. Set to ``None`` to disable local
+        # capture (shadow/cassette modes do this themselves).
+        trace_dir: Path | None = self.traces_dir / run_name
+        if trace_dir is not None:
+            trace_dir.mkdir(parents=True, exist_ok=True)
+        trace_path = trace_dir  # legacy alias used by some logging paths
 
         cassette_path = self._cassette_path_for(run_name)
         shadow_prov_dir = self._shadow_prov_dir_for(run_name)
@@ -2924,6 +2840,11 @@ class Optimizer:
         non-retryable failure (missing API key, import error, …).  The
         returned :class:`BackendOutput` carries provenance tags and a
         :class:`Confidence` that the evaluator/optimizer can inspect.
+
+        *trace_path* is the run-level trace directory (``traces_dir/<run>/``);
+        we derive a per-case file ``case_<idx>.jsonl`` under it so concurrent
+        worker subprocesses never share an append target. Pass ``None`` to
+        disable local trace capture entirely.
         """
         # Stamp per-case context up front so the span carries it even if
         # the run raises before we get to the "after" tags below.
@@ -2937,6 +2858,10 @@ class Optimizer:
             input_chars = len(str(input_data))
         set_tag(attrs.RUN_CASE_INPUT_CHARS, int(input_chars))
 
+        case_trace_file: Path | None = None
+        if trace_path is not None:
+            case_trace_file = trace_path / f"case_{idx:04d}.jsonl"
+
         if plan is None or len(plan) == 0:
             raise RuntimeError("BackendPlan missing — cannot run case")
 
@@ -2946,7 +2871,7 @@ class Optimizer:
         for i, backend in enumerate(plan):
             backend.prepare()
             backends_tried.append(backend.name)
-            out = backend.run(input_data, trace_file=trace_path)
+            out = backend.run(input_data, trace_file=case_trace_file)
             last_output = out
             if out.success:
                 if i > 0:
@@ -2991,6 +2916,30 @@ class Optimizer:
             except Exception:
                 self._logger.debug("run_case: failed to serialise confidence", exc_info=True)
 
+    def _load_case_traces(self, trace_dir: Path | None, n_cases: int) -> list[ParsedTrace]:
+        """Read back per-case ``ParsedTrace``s from the run's trace directory.
+
+        Each ``trace_dir / case_<idx>.jsonl`` was written by the agent
+        subprocess (via :class:`JsonlFileSpanExporter` installed in the
+        wrapper bootstrap when ``OVERMIND_TRACE_FILE`` was set). Missing
+        or unreadable files yield an empty :class:`ParsedTrace` so the
+        caller always gets a list of length *n_cases*.
+        """
+        if trace_dir is None:
+            return [ParsedTrace() for _ in range(n_cases)]
+
+        results: list[ParsedTrace] = []
+        for idx in range(n_cases):
+            case_file = Path(trace_dir) / f"case_{idx:04d}.jsonl"
+            if case_file.exists():
+                try:
+                    results.append(parse_trace_file(case_file))
+                    continue
+                except Exception as exc:
+                    self._logger.warning(f"_load_case_traces: failed to parse {case_file}: {exc}")
+            results.append(ParsedTrace())
+        return results
+
     @observe_safe("optimizer.build_eval_results")
     def _build_eval_results(
         self,
@@ -3002,10 +2951,12 @@ class Optimizer:
     ) -> tuple[dict, list[ParsedTrace], list[dict]]:
         """Build per-case eval items from agent outputs and shadow provenance.
 
-        Traces from the agent subprocess are streamed straight to the
-        remote backend via OTel — we no longer read any local trace
-        file here, so ``trace_path`` is kept only for backward
-        compatibility and is otherwise ignored.
+        When *trace_path* is a directory, each case's per-process trace
+        file (``trace_path / case_<idx>.jsonl``) is parsed back into a
+        :class:`ParsedTrace` so :class:`SpecEvaluator` sees the actual
+        ``tool_trace`` for Tool Usage scoring and the LLM token counts.
+        Missing or empty files yield an empty :class:`ParsedTrace` and
+        the evaluator falls back to its "dimension unscorable" path.
 
         When *provenance_by_idx* is provided (populated by the shadow
         backend), each :class:`ParsedTrace` is decorated with per-call
@@ -3018,7 +2969,7 @@ class Optimizer:
         traces: list[ParsedTrace] = []
         eval_items: list[dict] = []
 
-        per_line_traces: list[ParsedTrace] = [ParsedTrace() for _ in range(len(dataset))]
+        per_line_traces: list[ParsedTrace] = self._load_case_traces(trace_path, len(dataset))
 
         # Attach shadow provenance tags in bulk — keeps ParsedTrace and
         # tool_trace rows in sync with what actually ran.

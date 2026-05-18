@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from overmind.cli import _build_parser, main
-
 
 # ---------------------------------------------------------------------------
 # Parser construction
@@ -209,7 +209,6 @@ class TestMainDispatch:
     def _stub_cli_side_effects(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("overmind.cli.require_overmind_initialized", lambda: None)
         monkeypatch.setattr("overmind.cli.load_overmind_dotenv", lambda: None)
-        monkeypatch.setattr("overmind.cli.load_agent_dotenv", lambda _name: None)
         monkeypatch.setattr("overmind.cli.setup_logging", lambda: "/dev/null")
         os.environ["OVERMIND_API_KEY"] = "test"
 
@@ -280,12 +279,17 @@ class TestMainDispatch:
 
     def test_setup_dispatches(self):
         with patch("overmind.cli._build_parser") as mock_parser:
-            mock_args = MagicMock()
-            mock_args.command = "setup"
-            mock_args.agent = "my-agent"
-            mock_args.fast = True
-            mock_args.policy = None
-            mock_args.data = None
+            mock_args = argparse.Namespace(
+                command="setup",
+                agent="my-agent",
+                fast=True,
+                policy=None,
+                data=None,
+                scope_globs=None,
+                max_files=None,
+                max_chars=None,
+                non_interactive=False,
+            )
             mock_parser.return_value.parse_args.return_value = mock_args
             with patch("overmind.cli._setup") as mock_fn:
                 main()
@@ -301,10 +305,15 @@ class TestMainDispatch:
 
     def test_optimize_dispatches(self):
         with patch("overmind.cli._build_parser") as mock_parser:
-            mock_args = MagicMock()
-            mock_args.command = "optimize"
-            mock_args.agent = "my-agent"
-            mock_args.fast = False
+            mock_args = argparse.Namespace(
+                command="optimize",
+                agent="my-agent",
+                fast=False,
+                scope_globs=None,
+                max_files=None,
+                max_chars=None,
+                non_interactive=False,
+            )
             mock_parser.return_value.parse_args.return_value = mock_args
             with patch("overmind.cli._optimize") as mock_fn:
                 main()

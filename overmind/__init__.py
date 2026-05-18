@@ -10,7 +10,6 @@ __version__ = "0.1.48"
 
 from opentelemetry.overmind.prompt import PromptString
 
-from .exceptions import OvermindAPIError, OvermindAuthenticationError, OvermindError
 from .tracing import (
     SpanType,
     capture_exception,
@@ -27,9 +26,6 @@ from .tracing import (
 )
 
 __all__ = [
-    "OvermindAPIError",
-    "OvermindAuthenticationError",
-    "OvermindError",
     "PromptString",
     "SpanType",
     "capture_exception",

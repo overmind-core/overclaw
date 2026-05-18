@@ -21,7 +21,6 @@ import argparse
 import logging
 import os
 import sys
-from unittest.mock import MagicMock
 
 from dotenv import load_dotenv
 from opentelemetry import context
@@ -47,7 +46,7 @@ from overmind.commands.optimize_step_cmd import main as _optimize_step
 from overmind.commands.setup_cmd import main as _setup
 from overmind.core.constants import OVERMIND_DIR_NAME, overmind_rel
 from overmind.core.logging import setup_logging
-from overmind.core.paths import load_agent_dotenv, load_overmind_dotenv
+from overmind.core.paths import load_overmind_dotenv
 from overmind.core.registry import require_overmind_initialized
 from overmind.tracing import force_flush_traces
 
@@ -55,25 +54,11 @@ _FMT = argparse.RawDescriptionHelpFormatter
 
 
 def _bundle_cli_kwargs(args: object) -> dict:
-    """Return scope / bundle cap kwargs for setup & optimize (test-safe).
-
-    When the CLI is exercised via ``MagicMock`` parse results (unit tests),
-    unspecified attributes auto-resolve to nested mocks — coerce those to
-    ``None`` so downstream commands receive real optional values.
-    """
-    scope_globs = getattr(args, "scope_globs", None)
-    max_files = getattr(args, "max_files", None)
-    max_chars = getattr(args, "max_chars", None)
-    if isinstance(scope_globs, MagicMock):
-        scope_globs = None
-    if isinstance(max_files, MagicMock):
-        max_files = None
-    if isinstance(max_chars, MagicMock):
-        max_chars = None
+    """Return scope / bundle cap kwargs for setup & optimize."""
     return {
-        "scope_globs": scope_globs,
-        "max_files": max_files,
-        "max_chars": max_chars,
+        "scope_globs": getattr(args, "scope_globs", None),
+        "max_files": getattr(args, "max_files", None),
+        "max_chars": getattr(args, "max_chars", None),
     }
 
 
@@ -462,37 +447,6 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _resolve_agent_name_for_env(args: argparse.Namespace) -> str | None:
-    """Best-effort agent-name lookup so we can load the per-agent ``.env``.
-
-    Agent-scoped subcommands carry the name in different places:
-
-    - ``agent``/``setup``/``optimize``/``doctor``/``sync``: ``args.name`` or
-      ``args.agent`` directly.
-    - ``optimize-step init``: ``args.agent``.
-    - Other ``optimize-step`` subcommands: persisted in
-      ``skill_state.json`` (read via ``--state``).
-
-    Returns ``None`` when no agent context is in scope (e.g. ``init``).
-    """
-    name = getattr(args, "name", None) or getattr(args, "agent", None)
-    if isinstance(name, str) and name:
-        return name
-    state = getattr(args, "state", None)
-    if isinstance(state, str) and state:
-        try:
-            import json
-            from pathlib import Path
-
-            data = json.loads(Path(state).read_text())
-            agent = data.get("agent_name") or (data.get("config") or {}).get("agent_name")
-            if isinstance(agent, str) and agent:
-                return agent
-        except Exception:
-            return None
-    return None
-
-
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -512,55 +466,12 @@ def main() -> None:
 
     load_dotenv(".env")
     load_dotenv(".overmind/.env", override=True)
-    # Per-agent ``.env`` (``.overmind/agents/<name>/.env``) holds the
-    # provider keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, …) that the
-    # analyzer / codegen LLM calls need. Without this, ``optimize-step``
-    # subcommands silently lose API keys and the analyzer fails with a
-    # litellm AuthenticationError that gets swallowed deep in the loop.
-    _agent_name = _resolve_agent_name_for_env(args)
-    if _agent_name:
-        load_agent_dotenv(_agent_name)
-    # ``optimize-step`` is invoked non-interactively by a host coding agent
-    # via SKILL.md.  Avoid prompting for OVERMIND_API_KEY when none is set —
-    # initialise with a placeholder so spans/tags work locally even without
-    # a real OTLP endpoint.
-    if args.command == "optimize-step" and not os.getenv("OVERMIND_API_KEY"):
-        os.environ["OVERMIND_API_KEY"] = "skill-local-no-export"
+    # All pre-``overmind.init()`` patches for the skill loop live in the
+    # command module so this dispatcher stays focused on routing.
+    if args.command == "optimize-step":
+        from overmind.commands.optimize_step_cmd import bootstrap_optimize_step
 
-    # Distributed tracing across optimize-step CLI invocations: read the
-    # W3C traceparent persisted by ``optimize-step init`` and export it
-    # into the environment BEFORE ``overmind.init()`` runs.  The SDK's
-    # :func:`_attach_remote_parent_if_present` picks it up so every span
-    # this step emits becomes a child of the workflow root span emitted
-    # at init time — single trace_id, single Job row in the UI, regardless
-    # of how many separate shells the host coding agent spawns to drive
-    # the loop.  ``init`` skips this (it owns root span creation), and
-    # any pre-set ``TRACEPARENT`` from an enclosing tracer wins over the
-    # state-file value.
-    if (
-        args.command == "optimize-step"
-        and getattr(args, "step", None) != "init"
-        and not os.getenv("TRACEPARENT")
-        and not os.getenv("OTEL_TRACEPARENT")
-    ):
-        state_path = getattr(args, "state", None)
-        if isinstance(state_path, str) and state_path:
-            try:
-                import json as _json
-                from pathlib import Path as _Path
-
-                _state = _json.loads(_Path(state_path).read_text())
-                _tp = _state.get("traceparent")
-                if isinstance(_tp, str) and _tp:
-                    os.environ["TRACEPARENT"] = _tp
-            except Exception:
-                # Bad / missing state file falls through to legacy
-                # ``overmind.job.id``-based coalescing in OTLP ingest.
-                logging.getLogger("overmind.cli").debug(
-                    "optimize-step: could not read traceparent from %s",
-                    state_path,
-                    exc_info=True,
-                )
+        bootstrap_optimize_step(args)
 
     # Wire up logging as early as possible so every module that gets
     # imported next (commands, optimizer, coding agent, …) can emit debug

@@ -7,7 +7,6 @@ dependencies.
 Supports both single-file and multi-file agents via ``AgentBundle``.
 """
 
-import json
 import logging
 from pathlib import Path
 
@@ -22,9 +21,10 @@ from overmind.core.registry import project_root, project_root_from_agent_file
 from overmind.prompts.agent_analyzer import ANALYSIS_PROMPT
 from overmind.tracing import observe_safe
 from overmind.utils.code import AgentBundle
-from overmind.utils.display import BRAND, make_spinner_progress
+from overmind.utils.display import BRAND, make_spinner_progress, render_criteria_table
 from overmind.utils.ignore import build_ignore_predicate
 from overmind.utils.llm import llm_completion
+from overmind.utils.llm_parse import LLMParseError, parse_json_object
 
 logger = logging.getLogger(__name__)
 
@@ -127,18 +127,13 @@ def analyze_agent(
         content = response.choices[0].message.content
 
         try:
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            if start >= 0 and end > start:
-                analysis = json.loads(content[start:end])
-            else:
-                raise ValueError("No JSON object found in LLM response")
-        except (json.JSONDecodeError, ValueError) as exc:
+            analysis = parse_json_object(content)
+        except LLMParseError as exc:
             logger.exception("Failed to parse analyzer response")
             console.print(f"[red]Failed to parse analysis: {exc}[/red]")
             console.print("[dim]Raw response:[/dim]")
-            console.print(content[:500])
-            raise SystemExit(1)
+            console.print((exc.content or "")[:500])
+            raise SystemExit(1) from exc
 
         info["fields"] = list(analysis.get("output_schema", {}).keys())
         info["criteria_fields"] = list(analysis.get("proposed_criteria", {}).get("fields", {}).keys())
@@ -216,45 +211,15 @@ def _display_analysis(analysis: dict, console: Console):
     console.print(schema_table)
 
     # ---- Proposed evaluation criteria ----
-    criteria = analysis.get("proposed_criteria", {})
-    fields_criteria = criteria.get("fields", {})
-    if fields_criteria:
-        console.print()
-        criteria_table = Table(
-            title="Proposed Evaluation Criteria",
-            border_style="green",
-            show_lines=True,
-            padding=(0, 1),
-        )
-        criteria_table.add_column("Field", style="bold", min_width=12)
-        criteria_table.add_column("Importance", min_width=10)
-        criteria_table.add_column("Scoring Detail", ratio=1)
-
-        for field_name, fc in fields_criteria.items():
-            importance = fc.get("importance", "important")
-            imp_style = "red" if importance == "critical" else "yellow" if importance == "important" else "dim"
-            output_schema = analysis.get("output_schema", {})
-            ftype = output_schema.get(field_name, {}).get("type", "text")
-
-            if ftype == "enum":
-                detail = "partial credit" if fc.get("partial_credit", True) else "exact match only"
-            elif ftype == "number":
-                detail = f"tolerance \u00b1{fc.get('tolerance', 10)}"
-            elif ftype == "text":
-                mode = fc.get("eval_mode", "non_empty")
-                detail = "check non-empty" if mode == "non_empty" else "skip"
-            else:
-                detail = "exact match"
-
-            criteria_table.add_row(field_name, f"[{imp_style}]{importance}[/{imp_style}]", detail)
-
-        sw = criteria.get("structure_weight", 20)
-        criteria_table.add_row(
-            "[dim]structure[/dim]",
-            "[dim]\u2014[/dim]",
-            f"[dim]{sw} pts for completeness[/dim]",
-        )
-        console.print(criteria_table)
+    render_criteria_table(
+        console,
+        analysis.get("proposed_criteria", {}),
+        analysis.get("output_schema", {}),
+        colorize_importance=True,
+        show_lines=True,
+        padding=(0, 1),
+        min_widths=True,
+    )
 
     # ---- Tool analysis ----
     tool_analysis = analysis.get("tool_analysis", {})
@@ -319,9 +284,7 @@ def _display_analysis(analysis: dict, console: Console):
         for key, label in (
             ("optimizable_paths", "Optimizable (editable)"),
             ("read_only_paths", "Read-only (in bundle, not editable)"),
-            ("context_paths", "Context (read-only)"),
             ("search_paths", "Search paths (sys.path-style)"),
-            ("exclude_paths", "Exclude"),
         ):
             paths = scope.get(key) or []
             if not paths:

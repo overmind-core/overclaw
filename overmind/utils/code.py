@@ -32,9 +32,11 @@ import ast
 import sys
 import textwrap
 from collections import deque
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from overmind.utils.ignore import IgnorePredicate
 
 # ---------------------------------------------------------------------------
 # Code piece representation (internal analytics — not used in prompts)
@@ -61,12 +63,13 @@ class BundleConfigError(ValueError):
     broken bundle.
 
     Currently fires when the entry file matches an ignore pattern
-    (``exclude_paths`` / ``.overmindignore``). Without this guard the
-    BFS bails on the first file, the bundle silently collapses to
-    single-file mode, and the user spends an afternoon wondering why
-    candidate worktrees only contain ``overmind_entrypoint.py``.
-    Inheriting from :class:`ValueError` preserves call-site error
-    handling for code that already catches ``ValueError``.
+    (``.overmindignore`` or one of Overmind's hard-coded env-level
+    skips). Without this guard the BFS bails on the first file, the
+    bundle silently collapses to single-file mode, and the user spends
+    an afternoon wondering why candidate worktrees only contain
+    ``overmind_entrypoint.py``. Inheriting from :class:`ValueError`
+    preserves call-site error handling for code that already catches
+    ``ValueError``.
     """
 
 
@@ -373,243 +376,9 @@ def _intermediate_init_files(leaf_path: Path, project_root: Path) -> list[Path]:
     return results
 
 
-def _eval_path_expr(
-    node: ast.AST,
-    *,
-    file: Path,
-    constants: dict[str, Path],
-) -> Path | None:
-    """Best-effort partial evaluation of a path expression.
-
-    Recognises the small grammar agents typically use to compute a
-    ``sys.path`` entry at module load time. The whitelist intentionally
-    excludes anything that requires runtime state (variables not
-    pre-bound at module top, function calls into user code, env
-    lookups). Returning ``None`` is always the safe failure — silent
-    paths are dropped, not guessed at.
-
-    Supported forms:
-
-    * String literals.
-    * ``__file__`` (substituted with the path of the file being
-      analysed) and ``Path(__file__)``.
-    * Attribute chains ``.parent`` and ``.parents[N]`` on a Path.
-    * Path division ``<base> / "name"``, chained arbitrarily.
-    * ``os.path.join(<base>, "name", ...)``, ``os.path.dirname(<base>)``,
-      ``os.path.abspath(<base>)``.
-    * ``str(<expr>)`` and ``Path(<expr>)`` unwrap.
-    * Bare names previously assigned at module scope via this same
-      grammar (passed in via ``constants``).
-    """
-    if isinstance(node, ast.Constant):
-        if isinstance(node.value, str):
-            cand = Path(node.value)
-            return cand if cand.is_absolute() else (file.parent / cand)
-        return None
-
-    if isinstance(node, ast.Name):
-        if node.id == "__file__":
-            return file
-        return constants.get(node.id)
-
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
-        left = _eval_path_expr(node.left, file=file, constants=constants)
-        if left is None:
-            return None
-        right = node.right
-        if isinstance(right, ast.Constant) and isinstance(right.value, str):
-            return left / right.value
-        return None
-
-    if isinstance(node, ast.Attribute) and node.attr == "parent":
-        base = _eval_path_expr(node.value, file=file, constants=constants)
-        return base.parent if base is not None else None
-
-    if isinstance(node, ast.Subscript):
-        # ``<expr>.parents[N]``
-        target = node.value
-        if isinstance(target, ast.Attribute) and target.attr == "parents":
-            base = _eval_path_expr(target.value, file=file, constants=constants)
-            if base is None:
-                return None
-            slice_node = node.slice
-            if isinstance(slice_node, ast.Constant) and isinstance(slice_node.value, int):
-                try:
-                    return base.parents[slice_node.value]
-                except IndexError:
-                    return None
-        return None
-
-    if isinstance(node, ast.Call):
-        func = node.func
-        # ``Path(<expr>)`` and ``str(<expr>)`` are transparent wrappers.
-        if isinstance(func, ast.Name) and func.id in ("Path", "str"):
-            if not node.args:
-                return None
-            return _eval_path_expr(node.args[0], file=file, constants=constants)
-        # ``<expr>.resolve()`` and ``<expr>.absolute()`` collapse to the base.
-        if isinstance(func, ast.Attribute) and func.attr in ("resolve", "absolute"):
-            return _eval_path_expr(func.value, file=file, constants=constants)
-        # ``os.path.{join,dirname,abspath,realpath}(...)``.
-        if (
-            isinstance(func, ast.Attribute)
-            and isinstance(func.value, ast.Attribute)
-            and isinstance(func.value.value, ast.Name)
-            and func.value.value.id == "os"
-            and func.value.attr == "path"
-        ):
-            if not node.args:
-                return None
-            if func.attr == "join":
-                base = _eval_path_expr(node.args[0], file=file, constants=constants)
-                if base is None:
-                    return None
-                for seg in node.args[1:]:
-                    if not (isinstance(seg, ast.Constant) and isinstance(seg.value, str)):
-                        return None
-                    base = base / seg.value
-                return base
-            if func.attr == "dirname":
-                base = _eval_path_expr(node.args[0], file=file, constants=constants)
-                return base.parent if base is not None else None
-            if func.attr in ("abspath", "realpath"):
-                return _eval_path_expr(node.args[0], file=file, constants=constants)
-        return None
-
-    return None
-
-
-def _detect_entry_search_paths(entry_path: Path, project_root: Path) -> list[Path]:
-    """Best-effort static detection of ``sys.path``-style mutations in *entry_path*.
-
-    Many agents bridge non-standard layouts (hyphenated package roots,
-    sibling-package monorepos, projects without ``src/`` or
-    ``pyproject.toml``) by mutating ``sys.path`` at module top, then
-    importing local code statically. The bundle BFS would otherwise
-    treat those imports as external (PyPI) modules and the analyzer
-    LLM is reduced to guessing layout from docstrings. We detect the
-    same intent the Python runtime sees by parsing the entry, building
-    a tiny constant folder over a whitelisted grammar (see
-    :func:`_eval_path_expr`), and evaluating the path argument of every
-    ``sys.path.insert``, ``sys.path.append``, ``sys.path.extend`` and
-    ``sys.path += [...]`` statement reachable at module load.
-
-    The walk follows top-level statements and recurses into ``if`` /
-    ``try`` bodies (where conditional ``if str(p) not in sys.path:``
-    and ``try: ... except ImportError: pass`` wrappers commonly live);
-    function and class bodies are intentionally skipped because they
-    don't run at import time.
-
-    Returned paths are absolute, resolved, deduped (insertion-ordered),
-    must live strictly under *project_root* (never escape the bundle
-    boundary), and must point at existing directories. Any failure to
-    read or parse the entry yields ``[]``; we never raise.
-    """
-    try:
-        source = entry_path.read_text(encoding="utf-8")
-    except OSError:
-        return []
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return []
-
-    entry = entry_path.resolve()
-    root = project_root.resolve()
-    constants: dict[str, Path] = {}
-    discovered: list[Path] = []
-    seen: set[Path] = set()
-
-    def _record(value: Path | None) -> None:
-        if value is None:
-            return
-        try:
-            resolved = value.resolve()
-        except OSError:
-            return
-        if not resolved.is_dir():
-            return
-        try:
-            resolved.relative_to(root)
-        except ValueError:
-            return
-        if resolved == root or resolved in seen:
-            return
-        seen.add(resolved)
-        discovered.append(resolved)
-
-    def _handle_syspath_call(call: ast.Call) -> None:
-        func = call.func
-        if not (
-            isinstance(func, ast.Attribute)
-            and isinstance(func.value, ast.Attribute)
-            and isinstance(func.value.value, ast.Name)
-            and func.value.value.id == "sys"
-            and func.value.attr == "path"
-        ):
-            return
-        if func.attr == "insert" and len(call.args) >= 2:
-            arg = call.args[1]
-            _record(_eval_path_expr(arg, file=entry, constants=constants))
-        elif func.attr == "append" and len(call.args) >= 1:
-            _record(_eval_path_expr(call.args[0], file=entry, constants=constants))
-        elif func.attr == "extend" and call.args and isinstance(call.args[0], ast.List):
-            for elt in call.args[0].elts:
-                _record(_eval_path_expr(elt, file=entry, constants=constants))
-
-    def _is_syspath_target(target: ast.AST) -> bool:
-        return (
-            isinstance(target, ast.Attribute)
-            and isinstance(target.value, ast.Name)
-            and target.value.id == "sys"
-            and target.attr == "path"
-        )
-
-    def _walk(stmts: list[ast.stmt]) -> None:
-        for node in stmts:
-            if isinstance(node, ast.Assign):
-                # Module-level constants assigned via the supported grammar
-                # become resolvable names for downstream sys.path.* calls.
-                value = _eval_path_expr(node.value, file=entry, constants=constants)
-                if value is not None:
-                    for target in node.targets:
-                        if isinstance(target, ast.Name):
-                            constants[target.id] = value
-                # ``sys.path = [...] + sys.path`` style: scan the RHS list.
-                if any(_is_syspath_target(t) for t in node.targets):
-                    _scan_list_for_paths(node.value)
-                continue
-            if isinstance(node, ast.AugAssign) and _is_syspath_target(node.target):
-                # ``sys.path += [<expr>, ...]``
-                _scan_list_for_paths(node.value)
-                continue
-            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
-                _handle_syspath_call(node.value)
-                continue
-            if isinstance(node, ast.If):
-                _walk(node.body)
-                _walk(node.orelse)
-                continue
-            if isinstance(node, ast.Try):
-                _walk(node.body)
-                for handler in node.handlers:
-                    _walk(handler.body)
-                _walk(node.orelse)
-                _walk(node.finalbody)
-                continue
-
-    def _scan_list_for_paths(expr: ast.AST) -> None:
-        # Pull path-like elements out of list/tuple literals; ignore the
-        # rest (e.g. ``sys.path`` itself in concatenations).
-        if isinstance(expr, (ast.List, ast.Tuple)):
-            for elt in expr.elts:
-                _record(_eval_path_expr(elt, file=entry, constants=constants))
-        elif isinstance(expr, ast.BinOp) and isinstance(expr.op, ast.Add):
-            _scan_list_for_paths(expr.left)
-            _scan_list_for_paths(expr.right)
-
-    _walk(tree.body)
-    return discovered
+from overmind.code.syspath_eval import (
+    detect_entry_search_paths as _detect_entry_search_paths,
+)
 
 
 def _collect_import_targets(source: str) -> list[str]:
@@ -650,6 +419,17 @@ def _collect_import_targets(source: str) -> list[str]:
         elif isinstance(node, ast.ImportFrom):
             if node.module:
                 targets.append(node.module)
+                # Also surface ``from PKG import NAME`` as a submodule
+                # candidate (``PKG.NAME``). When NAME is a re-exported
+                # function/class this resolves to nothing and is dropped
+                # silently; when NAME is a real submodule it lets the BFS
+                # follow ``from langextract import visualization`` style
+                # imports without which the worktree ships an incomplete
+                # package and candidates fail at import time.
+                if not (node.level and node.level > 0):
+                    for alias in node.names:
+                        if alias.name and alias.name != "*":
+                            targets.append(f"{node.module}.{alias.name}")
             elif node.level and node.level > 0 and node.names:
                 for alias in node.names:
                     targets.append(alias.name)
@@ -723,7 +503,7 @@ def resolve_local_files(
     *,
     max_depth: int = 6,
     max_files: int | None = None,
-    should_ignore_rel: Callable[[str], bool] | None = None,
+    should_ignore_rel: IgnorePredicate | None = None,
     search_paths: Sequence[str | Path] | None = None,
 ) -> dict[str, str]:
     """Resolve project-local files reachable from *entry_path* (breadth-first).
@@ -803,10 +583,10 @@ def resolve_local_files(
     if should_ignore_rel and should_ignore_rel(entry_rel):
         raise BundleConfigError(
             f"Entry file {entry_rel!r} is matched by an ignore pattern "
-            f"(scope.exclude_paths or .overmindignore). The entry must be "
-            f"reachable so the dependency BFS can walk from it; if the entry "
-            f"is the optimization harness and should not be edited, list it "
-            f"in scope.read_only_paths instead."
+            f"(.overmindignore or one of Overmind's env-level skips). The "
+            f"entry must be reachable so the dependency BFS can walk from "
+            f"it; if the entry is the optimization harness and should not "
+            f"be edited, list it in scope.read_only_paths instead."
         )
 
     queue.append((entry, 0))
@@ -1058,8 +838,7 @@ class AgentBundle:
         read_only_paths: Sequence[str] | None = None,
         max_total_chars: int = 150_000,
         max_resolved_files: int | None = None,
-        should_ignore_rel: Callable[[str], bool] | None = None,
-        prefetched_files: Mapping[str, str] | None = None,
+        should_ignore_rel: IgnorePredicate | None = None,
         search_paths: Sequence[str | Path] | None = None,
     ) -> AgentBundle:
         """Build a bundle by resolving all local dependencies from *entry_path*.
@@ -1092,9 +871,6 @@ class AgentBundle:
             entry point (breadth-first). ``None`` means no limit.
         should_ignore_rel:
             Skip matching paths during BFS (see :func:`resolve_local_files`).
-        prefetched_files:
-            Extra ``{rel_path: source}`` merged after BFS (e.g. read-only context
-            files from scope globs). Ignored paths are dropped.
         search_paths:
             Extra sys.path-style directories under *project_root* the
             resolver should treat as package roots. Forwarded to
@@ -1113,13 +889,6 @@ class AgentBundle:
             should_ignore_rel=should_ignore_rel,
             search_paths=search_paths,
         )
-
-        if prefetched_files:
-            for rel, src in prefetched_files.items():
-                rel = rel.replace("\\", "/")
-                if should_ignore_rel and should_ignore_rel(rel):
-                    continue
-                local_files.setdefault(rel, src)
 
         if optimizable_paths is None:
             opt_set = set(local_files.keys())
@@ -1214,35 +983,6 @@ class AgentBundle:
 
         bundle._assign_ids()
 
-        return bundle
-
-    @classmethod
-    def from_single_file(
-        cls,
-        entry_path: str,
-        project_root: str,
-        entrypoint_fn: str,
-    ) -> AgentBundle:
-        """Backward-compatible constructor for single-file agents.
-
-        Extracts pieces from the entry file only.
-        """
-        root = Path(project_root).resolve()
-        entry = Path(entry_path).resolve()
-        entry_rel = str(entry.relative_to(root))
-        source = entry.read_text(encoding="utf-8")
-
-        pieces = extract_pieces(entry_rel, source, optimizable=True)
-
-        bundle = cls(
-            entry_file=entry_rel,
-            entry_function=entrypoint_fn,
-            original_files={entry_rel: source},
-            project_root=project_root,
-            optimizable_files={entry_rel},
-            pieces=pieces,
-        )
-        bundle._assign_ids()
         return bundle
 
     # --- ID assignment --------------------------------------------------
@@ -1369,80 +1109,6 @@ class AgentBundle:
             result.update(updates)
         return result
 
-    # --- Legacy splice-based update application -------------------------
-
-    def apply_updates(
-        self,
-        updates: dict[str, str],
-        new_pieces: list[tuple[str, str]] | None = None,
-    ) -> dict[str, str] | None:
-        """Apply piece-level updates to the original files.
-
-        Legacy method kept for backward compatibility.  Prefer
-        ``apply_file_updates`` for the whole-file approach.
-
-        Parameters
-        ----------
-        updates:
-            Mapping of ``{piece_id: new_source_code}``.
-        new_pieces:
-            Optional list of ``(target_file_rel_path, source_code)`` for
-            newly created symbols.
-
-        Returns
-        -------
-        dict or None
-            ``{relative_path: updated_source}`` for files that changed, or
-            ``None`` if a splice produced invalid Python.
-        """
-        modified: dict[str, str] = {}
-        pieces_by_file: dict[str, list[tuple[CodePiece, str]]] = {}
-
-        for pid, new_code in updates.items():
-            piece = self.piece_by_id(pid)
-            if piece is None:
-                continue
-            if not piece.optimizable:
-                continue
-            pieces_by_file.setdefault(piece.file_path, []).append((piece, new_code))
-
-        for rel_path, piece_updates in pieces_by_file.items():
-            source = self.original_files.get(rel_path)
-            if source is None:
-                continue
-
-            piece_updates.sort(key=lambda x: x[0].line_start, reverse=True)
-            for piece, new_code in piece_updates:
-                source = splice_piece(source, piece, new_code)
-
-            modified[rel_path] = source
-
-        if new_pieces:
-            for target_file, new_code in new_pieces:
-                if target_file in modified:
-                    modified[target_file] = append_piece(modified[target_file], new_code)
-                elif target_file in self.original_files:
-                    modified[target_file] = append_piece(self.original_files[target_file], new_code)
-
-        for rel_path, source in modified.items():
-            if rel_path.endswith(".py"):
-                try:
-                    ast.parse(source)
-                except SyntaxError:
-                    return None
-
-        return modified
-
-    # --- Backward compatibility -----------------------------------------
-
-    def to_single_file_code(self) -> str:
-        """If this is a single-file bundle, return entry file source.
-
-        Falls back gracefully for use in places that still expect a
-        single code string.
-        """
-        return self.original_files.get(self.entry_file, "")
-
     def is_multi_file(self) -> bool:
         """Return True if the bundle spans more than one file."""
         return len(self.original_files) > 1
@@ -1450,68 +1116,6 @@ class AgentBundle:
     def optimizable_file_count(self) -> int:
         """Count distinct files that have optimizable pieces."""
         return len(self.optimizable_files & set(self.original_files.keys()))
-
-
-# ---------------------------------------------------------------------------
-# Splice helpers (kept for legacy apply_updates path)
-# ---------------------------------------------------------------------------
-
-
-def _normalize_indent(code: str, target_indent: int) -> str:
-    """Re-indent *code* so its base indentation matches *target_indent* spaces."""
-    code_lines = code.splitlines(keepends=True)
-    if not code_lines:
-        return code
-
-    current_indent = 0
-    for line in code_lines:
-        stripped = line.lstrip()
-        if stripped and not stripped.startswith("#"):
-            current_indent = len(line) - len(stripped)
-            break
-
-    if current_indent == target_indent:
-        return code
-
-    delta = target_indent - current_indent
-    result_lines: list[str] = []
-    for line in code_lines:
-        if not line.strip():
-            result_lines.append(line)
-            continue
-        if delta > 0:
-            result_lines.append(" " * delta + line)
-        else:
-            remove = min(abs(delta), len(line) - len(line.lstrip()))
-            result_lines.append(line[remove:])
-
-    return "".join(result_lines)
-
-
-def splice_piece(
-    source: str,
-    piece: CodePiece,
-    new_code: str,
-) -> str:
-    """Replace *piece* in *source* with *new_code*, preserving surrounding code."""
-    lines = source.splitlines(keepends=True)
-    normalized = _normalize_indent(new_code, piece.base_indent)
-    if not normalized.endswith("\n"):
-        normalized += "\n"
-
-    before = lines[: piece.line_start - 1]
-    after = lines[piece.line_end :]
-
-    return "".join(before) + normalized + "".join(after)
-
-
-def append_piece(source: str, new_code: str) -> str:
-    """Append *new_code* to the end of *source* with proper spacing."""
-    if not source.endswith("\n"):
-        source += "\n"
-    if not source.endswith("\n\n"):
-        source += "\n"
-    return source + new_code.rstrip("\n") + "\n"
 
 
 # ---------------------------------------------------------------------------

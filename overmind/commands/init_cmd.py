@@ -197,6 +197,7 @@ def _collect_analyzer_model(console: Console, env: dict[str, str]) -> str:
         env_default=normalize_to_litellm_model_id(raw) if raw else None,
         default_model=DEFAULT_ANALYZER_MODEL,
         no_catalog_prompt="  Enter analyzer model (provider/model)",
+        env=env,
     )
     _collect_missing_key_for_model(console, chosen, env)
     return chosen
@@ -236,6 +237,7 @@ def _collect_synthetic_datagen_model(console: Console, env: dict[str, str]) -> s
         env_default=normalize_to_litellm_model_id(raw) if raw else None,
         default_model=DEFAULT_DATAGEN_MODEL,
         no_catalog_prompt="  Enter model for synthetic data (provider/model)",
+        env=env,
     )
     _collect_missing_key_for_model(console, chosen, env)
     return chosen

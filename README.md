@@ -363,7 +363,12 @@ Other paths under `.overmind/` (not all exist until you run commands):
 
 For large repositories, the optimizer resolves a **bounded** import closure (defaults: 24 files, 60k characters) and skips common paths (`tests/`, `docs/`, `.overmind/`, etc.) using built-in rules plus optional `.overmindignore` / `.gitignore`.
 
-After `overmind setup`, `eval_spec.json` may include a `scope` block (`optimizable_paths`, `context_paths`, `exclude_paths` as globs relative to the project root). Inspect what will load without running an LLM:
+After `overmind setup`, `eval_spec.json` includes a `scope` block with two path lists (globs relative to the project root):
+
+- `optimizable_paths` — files the optimizer may edit.
+- `read_only_paths` — files materialized into the bundle but enforced not-editable at accept time (registered entrypoint harness, fixture data, runtime adapters, README, etc.).
+
+Project-level drops go in `.overmindignore` (gitignore-style), not the spec. Inspect what will load without running an LLM:
 
 ```bash
 overmind doctor my-agent

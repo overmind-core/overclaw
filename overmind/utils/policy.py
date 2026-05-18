@@ -25,6 +25,32 @@ def default_policy_path(agent_name: str) -> str:
     return str(agent_setup_spec_dir(agent_name) / "policies.md")
 
 
+def agent_name_from_description(description: str | None) -> str:
+    """Extract the human-readable agent name from a description string.
+
+    Descriptions are conventionally formatted as ``"<Name>: <details>"``.
+    Falls back to ``"Agent"`` when no colon is present or the description is
+    empty.
+    """
+    if not description:
+        return "Agent"
+    if ":" not in description:
+        return "Agent"
+    return description.split(":", 1)[0].strip() or "Agent"
+
+
+def strip_internal_keys(d: dict | None) -> dict:
+    """Return a copy of *d* with any keys starting with ``_`` removed.
+
+    Internal keys (e.g. ``_source_files``) are local annotations that the
+    LLM prompts shouldn't see.  Always returns a fresh dict — never mutates
+    the input.
+    """
+    if not d:
+        return {}
+    return {k: v for k, v in d.items() if not k.startswith("_")}
+
+
 def load_policy_data(eval_spec: dict) -> dict | None:
     """Extract the structured policy block from an eval spec.
 

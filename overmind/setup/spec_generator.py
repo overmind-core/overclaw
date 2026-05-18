@@ -186,27 +186,40 @@ def _build_spec(
         # where the entry IS the agent under test).
         opt_paths = list(scope.get("optimizable_paths") or [])
         ro_paths = list(scope.get("read_only_paths") or [])
-        excl_paths = list(scope.get("exclude_paths") or [])
 
-        # An entry that the LLM put in ``exclude_paths`` would collapse
-        # the bundle: ``resolve_local_files`` refuses to ignore the
-        # entry and raises ``BundleConfigError``. The entry MUST be
-        # reachable for BFS; if the analyzer intended "don't edit it,"
-        # that's what ``read_only_paths`` is for. Move the declaration
-        # to the right field and warn so the user sees what happened.
-        if entry_rel in excl_paths:
-            excl_paths = [p for p in excl_paths if p != entry_rel]
-            scope["exclude_paths"] = excl_paths
-            logger.warning(
-                "spec_generator: moved %r from exclude_paths to read_only_paths (entry must be reachable for BFS)",
-                entry_rel,
-            )
-            if entry_rel not in opt_paths and entry_rel not in ro_paths:
-                ro_paths.append(entry_rel)
-                scope["read_only_paths"] = ro_paths
-        elif entry_rel not in opt_paths and entry_rel not in ro_paths:
+        if entry_rel not in opt_paths and entry_rel not in ro_paths:
             ro_paths.append(entry_rel)
             scope["read_only_paths"] = ro_paths
+
+        # Drop legacy context_paths / exclude_paths if the analyzer
+        # still emitted them. ``context_paths`` collapses into
+        # ``read_only_paths`` (strictly safer; enforced at accept time).
+        # ``exclude_paths`` collapses into ``.overmindignore`` / the
+        # hard-coded skip list — anything BFS-reachable doesn't belong
+        # there anyway, and Overmind's ignore predicate already covers
+        # the env-level cases. Keeps generated specs in the two-scope
+        # shape regardless of what the LLM emitted.
+        legacy_context = scope.pop("context_paths", None)
+        if legacy_context:
+            ro_paths = list(scope.get("read_only_paths") or [])
+            existing = set(ro_paths)
+            for p in legacy_context:
+                if p and p not in existing:
+                    ro_paths.append(p)
+                    existing.add(p)
+            scope["read_only_paths"] = ro_paths
+            logger.info(
+                "spec_generator: collapsed %d analyzer-emitted context_paths into read_only_paths",
+                len(legacy_context),
+            )
+        legacy_excludes = scope.pop("exclude_paths", None)
+        if legacy_excludes:
+            logger.info(
+                "spec_generator: dropped %d analyzer-emitted exclude_paths "
+                "entries (Overmind's hard-coded skip list and "
+                ".overmindignore handle project-level drops)",
+                len(legacy_excludes),
+            )
 
     # Deterministic ``search_paths`` injection from the entry's own
     # ``sys.path`` mutations. The analyzer prompt asks the LLM to emit

@@ -55,21 +55,21 @@ class TestSubprocessBackend:
         assert out.confidence.score == pytest.approx(1.0)
         assert out.confidence.summary == {"real_subprocess": 1}
 
-    def test_empty_cassette_not_coerced_to_null(self, tmp_path: Path):
-        """Regression: ``Cassette`` has ``__len__`` so ``bool(empty) == False``.
+    def test_pathful_cassette_is_preserved(self, tmp_path: Path):
+        """The caller's cassette must be threaded through unchanged.
 
-        If we used ``self._cassette = cassette or open_cassette(None)`` we
-        would silently drop the caller's cassette every time it started
-        empty — blocking record-only mode on the first run.
+        Historically ``Cassette`` carried a ``__len__`` that returned 0
+        for an empty cassette, so a careless ``cassette or open_cassette(None)``
+        check would silently drop the caller's path on the first run.
+        That class is now a plain frozen dataclass; this test pins the
+        threading so a future refactor cannot silently re-swap.
         """
-        from overmind.optimize.cassette import Cassette, NullCassette
+        from overmind.optimize.cassette import open_cassette
 
         cass_path = tmp_path / "c.jsonl"
-        fresh = Cassette(cass_path)
-        assert len(fresh) == 0
+        fresh = open_cassette(cass_path)
         runner = _mk_runner(ok=True)
         backend = SubprocessBackend(runner, cassette=fresh)
-        assert not isinstance(backend._cassette, NullCassette)
         assert backend._cassette.path == cass_path
 
     def test_failure_classifies_diagnosis(self):

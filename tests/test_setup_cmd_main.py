@@ -168,7 +168,6 @@ class TestSetupCmdMainFast:
 
 
 class TestSetupCmdMainInteractive:
-    @patch("overmind.commands.setup_cmd._collect_agent_provider_config")
     @patch("overmind.commands.setup_cmd.run_questionnaire")
     @patch("overmind.commands.setup_cmd.confirm_option")
     @patch("overmind.commands.setup_cmd.select_option")
@@ -194,7 +193,6 @@ class TestSetupCmdMainInteractive:
         mock_select,
         mock_confirm,
         mock_questionnaire,
-        _mock_skip_provider,
         tmp_path,
         monkeypatch,
     ):

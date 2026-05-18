@@ -100,6 +100,20 @@ parent skill knows you are finished. Do not commit or push anything.
 """
 
 
+def _entry_basename_for_prompt(entry_file: str) -> str:
+    """Return the entry filename to mention in the natural-language
+    sections of ``PROMPT.md``.
+
+    The prompt copy talks about the entry as a single recognisable
+    filename ("read `agents.py`") even though the worktree may have
+    a multi-segment relative path like
+    ``python-backend/airline/agents.py``. Using the basename keeps the
+    prose readable; full relative paths still flow through ``plan.json``
+    and the file-context section of the prompt.
+    """
+    return Path(entry_file).name
+
+
 def _write_worktree(
     *,
     iteration: int,
@@ -151,6 +165,15 @@ def _write_worktree(
                 "iteration": iteration,
                 "method": plan.get("method"),
                 "focus_area": focus,
+                # The entry file relative to the worktree root. The
+                # evaluate step uses this verbatim to locate the
+                # candidate's entry; for multi-file bundles it is a
+                # multi-segment path (e.g. ``pkg/subpkg/entry.py``)
+                # rather than a bare filename, so persisting it here is
+                # required — falling back to ``Path(agent_path).name``
+                # in evaluate_step misses any non-root layout.
+                "entry_file": entry_file,
+                "entrypoint_fn": entrypoint_fn,
                 "diagnosis": diag,
                 "suggestions": plan.get("suggestions", []),
             },
@@ -207,13 +230,36 @@ def run_diagnose(state: SkillRunState, *, iteration: int) -> dict[str, Any]:
 
     # Build per-candidate worktrees so the host coding agent can edit them
     # in parallel without stepping on each other.
+    #
+    # If the bundle could not be built, do NOT silently fall back to a
+    # single-file worktree containing just the entry. That fallback
+    # produced "single file — no cross-file imports" worktrees whose
+    # analyzer diagnoses referenced files that weren't materialised, and
+    # whose candidate edits had nothing meaningful to change. Instead,
+    # surface a structured error so the user can fix the spec.
     output_dir = Path(state.output_dir)
-    bundle_files = (
-        optimizer._best_files
-        if optimizer._bundle and optimizer._best_files
-        else {Path(cfg.agent_path).name: current_code}
-    )
-    entry_file = optimizer._bundle.entry_file if optimizer._bundle else Path(cfg.agent_path).name
+    if optimizer._bundle is None:
+        hint = (
+            "Could not build the agent bundle. Most common causes: "
+            "(1) the agent entry file is matched by an ignore pattern "
+            "(.overmindignore or one of Overmind's env-level skips) — "
+            "the entry must be reachable so the dependency BFS can walk "
+            "from it; (2) config.agent_path points at a missing file; "
+            "(3) the project root cannot be resolved. Check the "
+            "overmind.optimize.bundle_factory logs for the underlying "
+            "cause."
+        )
+        return {
+            "status": "error",
+            "step": "diagnose",
+            "state_path": state.state_path,
+            "iteration": iteration,
+            "error": "bundle_build_failed",
+            "agent_path": str(cfg.agent_path),
+            "message": hint,
+        }
+    bundle_files = optimizer._best_files or dict(optimizer._bundle.original_files)
+    entry_file = optimizer._bundle.entry_file
 
     worktrees = []
     for plan in plans:
@@ -266,7 +312,7 @@ def run_diagnose(state: SkillRunState, *, iteration: int) -> dict[str, Any]:
             "Diagnosis LLM call failed; falling back to a single empty "
             "candidate. Check that the analyzer model's provider key "
             "(e.g. ANTHROPIC_API_KEY / OPENAI_API_KEY) is present in "
-            ".overmind/agents/<name>/.env or .overmind/.env."
+            ".overmind/.env or the shell environment."
         )
         envelope["diagnose_warning"] = {
             "requested_candidates": requested,

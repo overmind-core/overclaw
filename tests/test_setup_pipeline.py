@@ -132,11 +132,12 @@ class TestHyphenLayoutEndToEnd:
         spec = generate_spec_from_proposal(analysis)
         assert "py-backend" in spec["scope"].get("search_paths", [])
 
-    def test_spec_reconciles_entry_in_exclude(self, hyphen_layout):
-        """The LLM put the entry in ``exclude_paths`` (which would
-        collapse the bundle because the resolver refuses to ignore the
-        entry). The post-process moves it to ``read_only_paths`` and
-        removes it from exclude."""
+    def test_spec_collapses_legacy_exclude_paths(self, hyphen_layout):
+        """The LLM put the entry in ``exclude_paths`` and added some
+        infra paths. The post-process drops ``exclude_paths`` entirely
+        (project-level drops belong in ``.overmindignore``; Overmind's
+        hard-coded skip list handles env-level) and auto-adds the
+        entry to ``read_only_paths`` so the accept step protects it."""
         root, entry = hyphen_layout
         analysis = {
             "description": "synthetic",
@@ -154,8 +155,7 @@ class TestHyphenLayoutEndToEnd:
             },
         }
         spec = generate_spec_from_proposal(analysis)
-        assert "entry.py" not in spec["scope"]["exclude_paths"]
-        assert "tests/**" in spec["scope"]["exclude_paths"]
+        assert "exclude_paths" not in spec["scope"]
         assert "entry.py" in spec["scope"]["read_only_paths"]
 
     def test_display_renders_new_scope_rows(self, hyphen_layout):
@@ -170,10 +170,8 @@ class TestHyphenLayoutEndToEnd:
             "output_schema": {},
             "scope": {
                 "optimizable_paths": ["py-backend/pkg/**/*.py"],
-                "read_only_paths": ["entry.py"],
+                "read_only_paths": ["entry.py", "README.md"],
                 "search_paths": ["py-backend"],
-                "context_paths": ["README.md"],
-                "exclude_paths": ["tests/**"],
             },
         }
         _display_analysis(analysis, console)

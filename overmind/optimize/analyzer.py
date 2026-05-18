@@ -17,10 +17,13 @@ import ast
 import contextvars
 import json
 import logging
+import os
 import random
 import re
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 from overmind import SpanType, attrs, set_tag
 from overmind.prompts.analyzer import (
@@ -41,12 +44,69 @@ from overmind.prompts.analyzer import (
 )
 from overmind.tracing import observe_safe
 from overmind.utils.llm import llm_completion
+from overmind.utils.llm_parse import parse_json_object
 
 if TYPE_CHECKING:
     from overmind.optimize.failure_registry import FailureRegistry
     from overmind.utils.code import AgentBundle
 
 _log = logging.getLogger("overmind.optimize.analyzer")
+
+
+# ---------------------------------------------------------------------------
+# Argument-bundle dataclasses
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DiagnosisContext:
+    """Inputs to :func:`_run_diagnosis` that stay constant across iterations.
+
+    The diagnosis prompt is parameterised by a long list of inputs — agent
+    code, per-case results, eval spec, policy text, prior attempts, etc.
+    Bundling them in this dataclass lets callers build the context once and
+    pass it through to every diagnosis call, instead of threading a dozen
+    keyword arguments through ``generate_candidates`` and the codegen
+    helpers.
+
+    Iteration-specific knobs (focus area, case fraction, max-cases budget)
+    stay as explicit parameters on :func:`_run_diagnosis` so callers can
+    vary them per call.
+    """
+
+    agent_code: str
+    case_results: list[dict]
+    evaluation_results: dict
+    model: str
+    entrypoint_fn: str
+    eval_spec: dict | None = None
+    failed_attempts: list[dict] | None = None
+    successful_changes: list[dict] | None = None
+    allow_model_change: bool = False
+    temperature: float = 0.7
+    iteration_seed: int = 42
+    policy_context: str = ""
+    bundle: AgentBundle | None = None
+    cluster_context: str = ""
+    component_weights_context: str = ""
+
+
+@dataclass
+class CodegenSettings:
+    """Inputs to the codegen phase used by :func:`generate_candidates`.
+
+    Separated from :class:`DiagnosisContext` because the codegen step has
+    its own model and step-budget knobs that the diagnosis step doesn't
+    need.
+    """
+
+    codegen_model: str = ""
+    codegen_max_steps: int = 50
+    policy_constraints: str = ""
+    agent_files: dict[str, str] | None = None
+    num_candidates: int = 3
+    return_plans_only: bool = False
+    focus_weights: dict[str, float] | None = field(default=None)
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +214,339 @@ def _format_scoring_mechanics(eval_spec: dict | None) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Tool-trace formatting (schema-aware, two-tier)
+# ---------------------------------------------------------------------------
+#
+# Tool-heavy agents (multi-agent frameworks, deep chains, search-and-rerank
+# pipelines) can record dozens of tool calls per case whose ``args``/``result``
+# JSON payloads are kilobytes each.  Dumping that raw into the analyzer prompt
+# scales linearly with (cases × calls × payload size) and routinely blows past
+# the model's context window on real workloads.
+#
+# The signal the analyzer actually needs is:
+#   1. Which tools were called, in what order (control-flow shape).
+#   2. Which calls *failed*.
+#   3. For the most diagnostic cases, the literal args / results so the model
+#      can spot wrong values, malformed inputs, off-by-one indexes, etc.
+#
+# We satisfy 1+2 cheaply for every case (a compact run-length-encoded name
+# sequence plus any error calls in full) and reserve the expensive full
+# args/results form for the worst N cases, where deep inspection pays.
+
+
+# Number of worst-scoring cases that get the full per-call tool trace.
+# Configurable via env so projects with tiny model context windows can
+# dial it down to 1, and projects with huge context windows can lift it
+# without editing source.
+_FULL_TRACE_TOP_N_DEFAULT = 3
+
+# Conservative chars-per-token estimate.  Anthropic/OpenAI English text
+# is ~3.5-4 chars/token; code is ~2.5-3 chars/token; mixed JSON/code
+# (which is what analyzer prompts are) sits near 2.8.  We pick the low
+# end so we over-shrink rather than under-shrink — the alternative is
+# a hard API rejection that wastes a whole iteration.
+_CHARS_PER_TOKEN_CONSERVATIVE = 2.8
+
+# Default analyzer context budget in *tokens* (not chars).  Set well
+# under the typical 200k-token ceiling for Claude / GPT-4o-class models
+# to leave headroom for the model's reply.  Wider-context models
+# (Gemini 2M, GPT-5 1M) can opt in via ``OVERMIND_ANALYZER_PROMPT_BUDGET_TOKENS``.
+_PROMPT_BUDGET_TOKENS_DEFAULT = 160_000
+
+
+def _full_trace_top_n() -> int:
+    try:
+        return max(0, int(os.environ.get("OVERMIND_ANALYZER_FULL_TRACE_TOP_N", _FULL_TRACE_TOP_N_DEFAULT)))
+    except (TypeError, ValueError):
+        return _FULL_TRACE_TOP_N_DEFAULT
+
+
+def _budget_tokens_for(model: str | None) -> int:
+    """Resolve a token budget for the analyzer prompt.
+
+    Priority order:
+      1. ``OVERMIND_ANALYZER_PROMPT_BUDGET_TOKENS`` env var (explicit user
+         override; useful for wider-context models or paranoid setups).
+      2. ``litellm.get_model_info(model)["max_input_tokens"]`` × safety
+         factor (0.85) when the model is known and litellm has it.
+      3. :data:`_PROMPT_BUDGET_TOKENS_DEFAULT` (160k) as a fallback.
+
+    Returned value is always **input** tokens; callers convert to chars
+    via :data:`_CHARS_PER_TOKEN_CONSERVATIVE`.
+    """
+    env_val = os.environ.get("OVERMIND_ANALYZER_PROMPT_BUDGET_TOKENS")
+    if env_val:
+        try:
+            return max(8_000, int(env_val))
+        except (TypeError, ValueError):
+            pass
+    if model:
+        try:
+            import litellm  # type: ignore
+
+            info = litellm.get_model_info(model) or {}
+            mit = info.get("max_input_tokens") or info.get("max_tokens")
+            if isinstance(mit, int) and mit > 0:
+                return max(8_000, int(mit * 0.85))
+        except Exception:
+            # litellm doesn't know this model (custom provider, typo, or
+            # offline catalog).  Fall through to the default budget — a
+            # mis-sized prompt is a degraded experience, not a crash.
+            _log.debug("litellm.get_model_info(%r) failed; using default prompt budget", model, exc_info=True)
+    return _PROMPT_BUDGET_TOKENS_DEFAULT
+
+
+def _budget_chars_for(model: str | None) -> int:
+    """Char-space budget derived from :func:`_budget_tokens_for`."""
+    tokens = _budget_tokens_for(model)
+    return max(20_000, int(tokens * _CHARS_PER_TOKEN_CONSERVATIVE))
+
+
+def _summarize_value_shape(
+    v: Any,
+    *,
+    max_str_chars: int = 80,
+    max_list_items: int = 3,
+) -> str:
+    """Return a compact, schema-aware representation of *v*.
+
+    Preserves structural information (keys, types, counts) that helps the
+    analyzer reason about tool behavior while dropping bulk content (long
+    strings, large arrays of records) that balloon tokens without adding
+    diagnostic signal.
+
+    Examples:
+        {"flights": [...50 dicts...]}       -> "{flights: [50 of {airline, dep, ...}]}"
+        "very long error message ..."       -> "<str 256 chars: 'very long…essage'>"
+        [1, 2, 3, 4, 5]                     -> "[5: 1, 2, 3, …+2]"
+        42                                  -> "42"
+    """
+    if v is None or isinstance(v, bool | int | float):
+        try:
+            return json.dumps(v)
+        except (TypeError, ValueError):
+            return repr(v)
+    if isinstance(v, str):
+        if len(v) <= max_str_chars:
+            return json.dumps(v)
+        head = v[: max(8, max_str_chars // 2)]
+        tail = v[-max(4, max_str_chars // 4) :]
+        return f"<str {len(v)} chars: {json.dumps(head)[:-1]}…{json.dumps(tail)[1:]}>"
+    if isinstance(v, list):
+        n = len(v)
+        if n == 0:
+            return "[]"
+        first = v[0]
+        if isinstance(first, dict):
+            keys = sorted(first.keys())
+            keys_part = ", ".join(keys[:6]) + ("…" if len(keys) > 6 else "")
+            return f"[{n} of {{{keys_part}}}]"
+        if isinstance(first, list):
+            return f"[{n} of list]"
+        sample = ", ".join(
+            _summarize_value_shape(x, max_str_chars=max_str_chars, max_list_items=max_list_items)
+            for x in v[:max_list_items]
+        )
+        more = f", …+{n - max_list_items}" if n > max_list_items else ""
+        return f"[{n}: {sample}{more}]"
+    if isinstance(v, dict):
+        if not v:
+            return "{}"
+        keys = sorted(v.keys())
+        # For small dicts, recurse one level so the analyzer sees the shape
+        # of nested data (e.g. ``{flights: [30 of {airline, dep}]}``).  For
+        # wide dicts, just list keys.
+        if len(keys) <= 6:
+            inner_budget = max(40, max_str_chars * 2)
+            parts = []
+            for k in keys:
+                child = _summarize_value_shape(
+                    v[k],
+                    max_str_chars=max_str_chars,
+                    max_list_items=max_list_items,
+                )
+                if len(child) > inner_budget:
+                    child = child[:inner_budget] + "…"
+                parts.append(f"{k}: {child}")
+            return "{" + ", ".join(parts) + "}"
+        keys_part = ", ".join(keys[:8]) + ("…" if len(keys) > 8 else "")
+        return "{" + keys_part + "}"
+    s = repr(v)
+    return s if len(s) <= max_str_chars else s[:max_str_chars] + "…"
+
+
+def _format_tool_call_compact(tc: dict) -> str:
+    """One-line summary of a single tool call (no bulk payload).
+
+    Used for cases beyond ``_full_trace_top_n()`` and for surfacing the
+    *individual* failing calls inside an otherwise summarized case.
+    """
+    name = tc.get("name", "?")
+    args = tc.get("args", {})
+    if isinstance(args, dict) and args:
+        keys = sorted(args.keys())
+        args_part = "{" + ", ".join(keys[:6]) + ("…" if len(keys) > 6 else "") + "}"
+    elif isinstance(args, dict):
+        args_part = "{}"
+    else:
+        args_part = _summarize_value_shape(args)
+    err = tc.get("error")
+    if err:
+        err_s = str(err)
+        if len(err_s) > 160:
+            err_s = err_s[:160] + "…"
+        return f"{name}({args_part}) → ERROR: {err_s}"
+    result_shape = _summarize_value_shape(tc.get("result"))
+    return f"{name}({args_part}) → {result_shape}"
+
+
+def _format_tool_call_full(tc: dict, *, value_chars: int = 240) -> str:
+    """Schema-aware "full" tool-call line for the deepest-inspection cases.
+
+    Replaces the previous blunt 200-char chop on JSON-dumped args/result
+    with shape-aware truncation that preserves dict keys and array counts
+    while still bounding total bytes.
+    """
+    name = tc.get("name", "?")
+    args = tc.get("args", {})
+    if isinstance(args, dict) and args:
+        per_kv = max(40, value_chars // max(len(args), 1))
+        args_inner = ", ".join(
+            f"{k}={_summarize_value_shape(v, max_str_chars=per_kv)}" for k, v in sorted(args.items())
+        )
+        args_str = "{" + args_inner + "}"
+    else:
+        args_str = _summarize_value_shape(args, max_str_chars=value_chars)
+    err = tc.get("error")
+    if err:
+        err_s = str(err)
+        if len(err_s) > value_chars:
+            err_s = err_s[:value_chars] + "…"
+        return f"{name}({args_str}) → ERROR: {err_s}"
+    result_str = _summarize_value_shape(tc.get("result"), max_str_chars=value_chars)
+    return f"{name}({args_str}) → {result_str}"
+
+
+def _format_tool_trace_compact(tool_trace: list[dict]) -> list[str]:
+    """Return compact lines summarizing *tool_trace* without bulk payloads.
+
+    Run-length-compresses consecutive same-named calls so a chain of
+    e.g. 12 retries of ``search`` renders as ``search×12``.  Always
+    surfaces failing calls in full (compact form) so the analyzer can
+    see error details even for non-top cases.
+    """
+    if not tool_trace:
+        return []
+    compressed: list[str] = []
+    prev_name: str | None = None
+    run = 0
+    for tc in tool_trace:
+        n = tc.get("name", "?")
+        if n == prev_name:
+            run += 1
+        else:
+            if prev_name is not None:
+                compressed.append(f"{prev_name}×{run}" if run > 1 else prev_name)
+            prev_name = n
+            run = 1
+    if prev_name is not None:
+        compressed.append(f"{prev_name}×{run}" if run > 1 else prev_name)
+
+    lines: list[str] = [f"  Tool calls ({len(tool_trace)}): " + " → ".join(compressed)]
+    err_calls = [tc for tc in tool_trace if tc.get("error")]
+    if err_calls:
+        lines.append("  Tool errors:")
+        for tc in err_calls[:5]:
+            lines.append(f"    - {_format_tool_call_compact(tc)}")
+        if len(err_calls) > 5:
+            lines.append(f"    … +{len(err_calls) - 5} more error calls")
+    return lines
+
+
+def _render_within_budget(
+    builder: Callable[[int], str],
+    *,
+    initial_max_cases: int,
+    model: str | None = None,
+    budget_chars: int | None = None,
+) -> str:
+    """Iteratively render a prompt, shrinking ``max_cases`` until it fits.
+
+    ``builder(max_cases)`` must return a fully-assembled prompt string.
+    We start at ``initial_max_cases`` and back off through a ladder of
+    progressively smaller case counts until the prompt size fits the
+    model's context budget (resolved via :func:`_budget_chars_for`).
+    The final returned prompt carries a one-line notice if any shrinking
+    happened, so the analyzer model knows the input is partial.
+
+    This is a defense-in-depth guard layered on top of the two-tier
+    per-case format (compact summaries for all but the worst
+    ``_full_trace_top_n()`` cases).  Together they prevent verbose
+    datasets — multi-agent tool-heavy systems especially — from busting
+    the analyzer model's context window.
+    """
+    if budget_chars is None:
+        budget_chars = _budget_chars_for(model)
+    ladder = [initial_max_cases, 12, 8, 5, 3, 2, 1]
+    seen: list[int] = []
+    last_size = 0
+    for n in ladder:
+        if n <= 0 or n in seen:
+            continue
+        seen.append(n)
+        prompt = builder(n)
+        last_size = len(prompt)
+        if os.environ.get("OVERMIND_ANALYZER_DEBUG_PROMPT"):
+            import sys as _sys
+
+            _sys.stderr.write(
+                f"[overmind/analyzer] _render_within_budget: "
+                f"max_cases={n} size={last_size:,} budget={budget_chars:,} "
+                f"model={model}\n"
+            )
+        if last_size <= budget_chars:
+            if seen and seen[0] != n:
+                notice = (
+                    f"\n\n> _NOTE: prompt-size guard reduced max_cases "
+                    f"{seen[0]} → {n} (final size {last_size:,} chars / "
+                    f"budget {budget_chars:,}) to fit the analyzer model's context._"
+                )
+                _log.info(
+                    "analyzer prompt sized to fit: %s chars at max_cases=%d (budget=%d, model=%s)",
+                    f"{last_size:,}",
+                    n,
+                    budget_chars,
+                    model or "<unspecified>",
+                )
+                return prompt + notice
+            _log.debug(
+                "analyzer prompt: %s chars at max_cases=%d (budget=%d)",
+                f"{last_size:,}",
+                n,
+                budget_chars,
+            )
+            return prompt
+    # Final attempt: even 1 case overflowed.  Return the smallest with a
+    # very explicit warning so the analyzer / caller knows the input is
+    # degraded.  The caller still ships the prompt — if the API rejects
+    # it, the retry-on-ContextWindowExceededError path will catch the
+    # failure and degrade gracefully.
+    prompt = builder(1)
+    _log.warning(
+        "analyzer prompt still %s chars at max_cases=1 (budget %d); model=%s — diagnosis quality may be reduced.",
+        f"{len(prompt):,}",
+        budget_chars,
+        model or "<unspecified>",
+    )
+    notice = (
+        f"\n\n> _WARNING: prompt-size guard could not fit any case fully — "
+        f"size {len(prompt):,} chars exceeds budget {budget_chars:,}. "
+        f"Diagnose at your own risk._"
+    )
+    return prompt + notice
+
+
 def _format_per_case_results(
     case_results: list[dict],
     eval_spec: dict | None,
@@ -161,6 +554,7 @@ def _format_per_case_results(
     max_cases: int = 20,
     case_fraction: float = 1.0,
     iteration_seed: int = 42,
+    full_trace_top_n: int | None = None,
 ) -> str:
     """Format per-case results for the analyzer.
 
@@ -168,9 +562,18 @@ def _format_per_case_results(
     can identify scoring patterns (e.g., expected values correlating with
     tool-returned data).  Anti-overfitting rules in the prompt prevent
     hardcoding specific case values.
+
+    Two-tier tool-trace rendering bounds prompt growth for tool-heavy
+    agents: the worst ``full_trace_top_n`` cases (default
+    :data:`OVERMIND_ANALYZER_FULL_TRACE_TOP_N` or 3) get the full per-call
+    detail with schema-aware value truncation; every other case gets a
+    compact run-length sequence plus any error calls in full.
     """
     if not case_results:
         return "(no results available)"
+
+    if full_trace_top_n is None:
+        full_trace_top_n = _full_trace_top_n()
 
     sorted_cases = sorted(case_results, key=lambda c: c.get("score", {}).get("total", 0))
 
@@ -196,6 +599,11 @@ def _format_per_case_results(
 
     fields = list((eval_spec or {}).get("output_fields", {}).keys())
     struct_max = (eval_spec or {}).get("structure_weight", 20)
+    # Tier boundary: first ``full_trace_top_n`` *visible* cases (which are
+    # the worst-scoring ones thanks to the sort above) get full tool-call
+    # detail; every other case gets a compact summary so prompt size scales
+    # sublinearly with the dataset size.
+    full_trace_cutoff = min(full_trace_top_n, len(visible))
 
     lines: list[str] = []
     for i, case in enumerate(visible):
@@ -281,19 +689,12 @@ def _format_per_case_results(
 
         tool_trace = case.get("tool_trace", [])
         if tool_trace:
-            lines.append("  Tool calls:")
-            for t_idx, tc in enumerate(tool_trace, 1):
-                args_str = json.dumps(tc.get("args", {}))
-                if len(args_str) > 200:
-                    args_str = args_str[:200] + "\u2026"
-                result_str = json.dumps(tc.get("result", {}))
-                if len(result_str) > 200:
-                    result_str = result_str[:200] + "\u2026"
-                err = tc.get("error")
-                if err:
-                    lines.append(f"    {t_idx}. {tc.get('name', '?')}({args_str}) \u2192 ERROR: {err}")
-                else:
-                    lines.append(f"    {t_idx}. {tc.get('name', '?')}({args_str}) \u2192 {result_str}")
+            if i < full_trace_cutoff:
+                lines.append("  Tool calls (full):")
+                for t_idx, tc in enumerate(tool_trace, 1):
+                    lines.append(f"    {t_idx}. {_format_tool_call_full(tc)}")
+            else:
+                lines.extend(_format_tool_trace_compact(tool_trace))
         elif case.get("tool_calls"):
             lines.append(f"  Tools used: {', '.join(case['tool_calls'])}")
 
@@ -302,13 +703,68 @@ def _format_per_case_results(
     return "\n".join(lines)
 
 
+# Per-arg-value bound used by the aggregated "argument value distribution"
+# section.  Without a bound, agents that pass large context objects (e.g.
+# multi-agent framework ``RunContextWrapper`` instances, tens of kilobytes
+# each, in *every* tool call) blow this section to multiple MB and bust
+# the analyzer model's context window.  Configurable via
+# ``OVERMIND_ANALYZER_ARG_VALUE_MAX_CHARS``.
+_ARG_VALUE_MAX_CHARS_DEFAULT = 80
+# Cap on the per-(tool, param) line in the aggregation output.
+_ARG_DISTRIBUTION_LINE_MAX_CHARS_DEFAULT = 400
+
+
+def _arg_value_max_chars() -> int:
+    try:
+        return max(16, int(os.environ.get("OVERMIND_ANALYZER_ARG_VALUE_MAX_CHARS", _ARG_VALUE_MAX_CHARS_DEFAULT)))
+    except (TypeError, ValueError):
+        return _ARG_VALUE_MAX_CHARS_DEFAULT
+
+
+def _arg_distribution_line_max_chars() -> int:
+    try:
+        return max(
+            80,
+            int(
+                os.environ.get(
+                    "OVERMIND_ANALYZER_ARG_DISTRIBUTION_LINE_MAX_CHARS", _ARG_DISTRIBUTION_LINE_MAX_CHARS_DEFAULT
+                )
+            ),
+        )
+    except (TypeError, ValueError):
+        return _ARG_DISTRIBUTION_LINE_MAX_CHARS_DEFAULT
+
+
+def _stringify_arg_value(v: Any, max_chars: int) -> str:
+    """Compact, bounded textual representation of an arg value for aggregation.
+
+    We delegate the shape work to :func:`_summarize_value_shape` (which
+    already preserves keys / counts and truncates long strings) and then
+    enforce a hard char cap so a single misbehaving value (e.g. a giant
+    framework wrapper printed via ``__repr__``) cannot blow the budget.
+    """
+    s = _summarize_value_shape(v, max_str_chars=max_chars, max_list_items=3)
+    if len(s) > max_chars:
+        s = s[: max_chars - 1] + "…"
+    return s
+
+
 def _format_tool_usage_analysis(case_results: list[dict]) -> str:
-    """Aggregate tool usage patterns across all cases."""
+    """Aggregate tool usage patterns across all cases.
+
+    The argument-value distribution section is value-bounded (each value
+    stringified with :func:`_stringify_arg_value`, lines truncated at
+    :func:`_arg_distribution_line_max_chars`) so a single tool that passes
+    multi-kilobyte context objects cannot dominate the analyzer prompt.
+    """
     if not case_results:
         return "(no tool data)"
 
+    max_val_chars = _arg_value_max_chars()
+    max_line_chars = _arg_distribution_line_max_chars()
+
     tool_calls_count: dict[str, int] = {}
-    arg_values: dict[str, dict[str, list]] = {}
+    arg_values: dict[str, dict[str, set[str]]] = {}
     missing_tools: dict[str, int] = {}
     errors: list[str] = []
     total_cases = len(case_results)
@@ -320,10 +776,22 @@ def _format_tool_usage_analysis(case_results: list[dict]) -> str:
             name = tc.get("name", "")
             all_tool_names.add(name)
             tool_calls_count[name] = tool_calls_count.get(name, 0) + 1
-            for param, val in tc.get("args", {}).items():
-                arg_values.setdefault(name, {}).setdefault(param, []).append(str(val))
+            args = tc.get("args", {})
+            if isinstance(args, dict):
+                for param, val in args.items():
+                    # Store bounded representations as we go so the
+                    # aggregation set itself stays small.  Cap distinct
+                    # values per (tool, param) at 32 to avoid pathological
+                    # high-cardinality params (timestamps, UUIDs, …)
+                    # filling memory before truncation.
+                    bucket = arg_values.setdefault(name, {}).setdefault(param, set())
+                    if len(bucket) < 32:
+                        bucket.add(_stringify_arg_value(val, max_val_chars))
             if tc.get("error"):
-                errors.append(f"{name}: {tc['error']}")
+                err_msg = str(tc["error"])
+                if len(err_msg) > 200:
+                    err_msg = err_msg[:200] + "…"
+                errors.append(f"{name}: {err_msg}")
 
     for case in case_results:
         called = {tc.get("name") for tc in case.get("tool_trace", [])}
@@ -339,21 +807,26 @@ def _format_tool_usage_analysis(case_results: list[dict]) -> str:
         lines.append(f"  - {name}: called {count} times{skip_note}")
 
     lines.append("")
-    lines.append("**Argument value distribution:**")
+    lines.append("**Argument value distribution** (values shape-summarized, line-capped):")
     for tool_name, params in arg_values.items():
-        for param, vals in params.items():
-            unique = set(vals)
+        for param, unique in params.items():
             if len(unique) <= 10:
-                lines.append(f"  - {tool_name}.{param}: {sorted(unique)}")
+                rendered = f"{sorted(unique)}"
             else:
                 sample = sorted(unique)[:5]
-                lines.append(f"  - {tool_name}.{param}: {len(unique)} unique values (sample: {sample})")
+                rendered = f"{len(unique)} unique values (sample: {sample})"
+            line = f"  - {tool_name}.{param}: {rendered}"
+            if len(line) > max_line_chars:
+                line = line[: max_line_chars - 1] + "…"
+            lines.append(line)
 
     if errors:
         lines.append("")
         lines.append("**Tool errors:**")
         for err in errors[:10]:
             lines.append(f"  - {err}")
+        if len(errors) > 10:
+            lines.append(f"  - … +{len(errors) - 10} more error calls")
 
     return "\n".join(lines) or "(no tool data)"
 
@@ -381,6 +854,17 @@ def _format_score_breakdown(evaluation: dict, eval_spec: dict | None) -> str:
 
 
 def _find_weakest_dimension(evaluation: dict, eval_spec: dict | None) -> tuple[str, float, float]:
+    """Return (display_name, avg_score, max_score) of the worst-relative dimension.
+
+    Dimensions that the spec configures but the evaluator did not score
+    for this run (key ``avg_<dim>`` absent from *evaluation*) are
+    skipped, not defaulted to ``0``. Treating an absent dimension as
+    ``0/max`` would give it a gap of ``1.0`` and force it to always win
+    the "weakest dimension" selection, which then pins every subsequent
+    iteration's focus to that dimension regardless of the agent's real
+    failure surface. The evaluator emits a one-time warning when this
+    happens so users still know the dimension isn't being measured.
+    """
     if not eval_spec:
         return ("unknown", 0.0, 0.0)
 
@@ -396,7 +880,10 @@ def _find_weakest_dimension(evaluation: dict, eval_spec: dict | None) -> tuple[s
         max_val = float(config.get("weight", 0))
         if max_val <= 0:
             continue
-        avg_val = evaluation.get(f"avg_{field_name}", 0.0)
+        avg_key = f"avg_{field_name}"
+        if avg_key not in evaluation:
+            continue
+        avg_val = float(evaluation[avg_key])
         gap = 1 - (avg_val / max_val)
         if gap > worst_gap:
             worst_gap = gap
@@ -412,7 +899,10 @@ def _find_weakest_dimension(evaluation: dict, eval_spec: dict | None) -> tuple[s
         max_val = float(eval_spec.get(spec_key, 0))
         if max_val <= 0:
             continue
-        avg_val = evaluation.get(f"avg_{dim_key}", 0.0)
+        avg_key = f"avg_{dim_key}"
+        if avg_key not in evaluation:
+            continue
+        avg_val = float(evaluation[avg_key])
         gap = 1 - (avg_val / max_val)
         if gap > worst_gap:
             worst_gap = gap
@@ -533,31 +1023,29 @@ def _extract_code_and_analysis(
 
     json_m = re.search(r"```json\s*\n(.*?)```", text, re.DOTALL)
     if json_m:
-        try:
-            parsed = json.loads(json_m.group(1).strip())
+        parsed = parse_json_object(json_m.group(1).strip(), on_fail="default", default=None)
+        if isinstance(parsed, dict):
             analysis = parsed.get("analysis", parsed.get("root_cause", ""))
             suggestions = parsed.get(
                 "suggestions",
                 [c.get("action", "") for c in parsed.get("changes", [])],
             )
-        except json.JSONDecodeError:
-            pass
 
     if not analysis:
-        try:
-            start = text.find("{")
-            end = text.rfind("}")
-            if start >= 0 and end > start:
-                candidate = text[start : end + 1]
-                if not _matches_fingerprint(candidate, fingerprints) and len(candidate) < 3000:
-                    parsed = json.loads(candidate)
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            candidate = text[start : end + 1]
+            # Skip candidates that look like agent code or are excessively long —
+            # they'd otherwise blow up parsing or smuggle code into the analysis.
+            if not _matches_fingerprint(candidate, fingerprints) and len(candidate) < 3000:
+                parsed = parse_json_object(candidate, on_fail="default", default=None)
+                if isinstance(parsed, dict):
                     analysis = parsed.get("analysis", parsed.get("root_cause", ""))
                     suggestions = parsed.get(
                         "suggestions",
                         [c.get("action", "") for c in parsed.get("changes", [])],
                     )
-        except (json.JSONDecodeError, ValueError):
-            pass
 
     code: str | None = None
 
@@ -638,15 +1126,13 @@ def _parse_file_updates(
 
     json_m = re.search(r"```json\s*\n(.*?)```", text, re.DOTALL)
     if json_m:
-        try:
-            parsed = json.loads(json_m.group(1).strip())
+        parsed = parse_json_object(json_m.group(1).strip(), on_fail="default", default=None)
+        if isinstance(parsed, dict):
             analysis = parsed.get("analysis", parsed.get("root_cause", ""))
             suggestions = parsed.get(
                 "suggestions",
                 [c.get("action", "") for c in parsed.get("changes", [])],
             )
-        except json.JSONDecodeError:
-            pass
 
     file_updates: dict[str, str] = {}
 
@@ -671,46 +1157,6 @@ def _parse_file_updates(
                 file_updates[file_path] = code
 
     return analysis, suggestions, file_updates
-
-
-def _parse_bundle_updates(
-    text: str,
-) -> tuple[str, list[str], dict[str, str], list[tuple[str, str]]]:
-    """Legacy parser for piece-ID format. Delegates to ``_parse_file_updates``
-    first, falling back to piece-ID parsing for backward compatibility.
-
-    Returns ``(analysis, suggestions, piece_updates, new_pieces)``.
-    """
-    analysis, suggestions, file_updates = _parse_file_updates(text)
-    if file_updates:
-        return analysis, suggestions, file_updates, []
-
-    piece_updates: dict[str, str] = {}
-    new_pieces: list[tuple[str, str]] = []
-
-    exact_pattern = r"###\s*\[P(\d+)\]\s*\n```[a-zA-Z]*\s*\n(.*?)```"
-    for m in re.finditer(exact_pattern, text, re.DOTALL):
-        pid = f"P{m.group(1)}"
-        code = m.group(2).strip()
-        if code:
-            piece_updates[pid] = code
-
-    if not piece_updates:
-        relaxed_pattern = r"\[P(\d+)\]\s*\n```[a-zA-Z]*\s*\n(.*?)```"
-        for m in re.finditer(relaxed_pattern, text, re.DOTALL):
-            pid = f"P{m.group(1)}"
-            code = m.group(2).strip()
-            if code:
-                piece_updates[pid] = code
-
-    new_pattern = r"###\s*\[NEW\]\s*IN:\s*(\S+)\s*\n```[a-zA-Z]*\s*\n(.*?)```"
-    for m in re.finditer(new_pattern, text, re.DOTALL):
-        file_path = m.group(1).strip()
-        code = m.group(2).strip()
-        if code:
-            new_pieces.append((file_path, code))
-
-    return analysis, suggestions, piece_updates, new_pieces
 
 
 def _build_agent_code_section(
@@ -751,129 +1197,217 @@ def _get_entry_file(
 
 
 def _run_diagnosis(
-    agent_code: str,
-    case_results: list[dict],
-    evaluation_results: dict,
-    model: str,
-    eval_spec: dict | None,
-    failed_attempts: list[dict] | None,
-    successful_changes: list[dict] | None,
-    allow_model_change: bool,
-    temperature: float,
+    *args: Any,
+    ctx: DiagnosisContext | None = None,
     focus_area: str | None = None,
     case_fraction: float = 1.0,
-    iteration_seed: int = 42,
-    policy_context: str = "",
-    *,
-    entrypoint_fn: str,
     max_cases: int = 20,
-    bundle: AgentBundle | None = None,
-    cluster_context: str = "",
-    component_weights_context: str = "",
+    **kwargs: Any,
 ) -> dict | None:
-    """Pass 1: Produce a structured diagnosis.
+    """Pass 1: produce a structured diagnosis from the per-case results.
 
-    If *focus_area* is set, the diagnosis is steered to prioritize changes
-    targeting that element (e.g. "tool_description", "agent_logic").
-    When *bundle* is provided, the prompt uses the virtual bundle
-    representation instead of a flat code string.
+    The function accepts two equivalent call shapes:
+
+    * A pre-built :class:`DiagnosisContext` (preferred for new code)::
+
+          _run_diagnosis(ctx=DiagnosisContext(...), focus_area="tool_description")
+
+    * Legacy keyword arguments that the rest of the codebase / tests use::
+
+          _run_diagnosis(agent_code=..., case_results=..., ..., entrypoint_fn="run")
+
+    The legacy keyword form is folded into a :class:`DiagnosisContext`
+    internally so there's exactly one execution path below.
     """
-    agent_model, capability = _detect_agent_model(agent_code)
-    weak_name, weak_score, weak_max = _find_weakest_dimension(evaluation_results, eval_spec)
+    if ctx is None:
+        ctx = _build_diagnosis_context_from_kwargs(args, kwargs)
+
+    agent_model, capability = _detect_agent_model(ctx.agent_code)
+    weak_name, weak_score, weak_max = _find_weakest_dimension(ctx.evaluation_results, ctx.eval_spec)
 
     mcr = (
         "You MAY suggest changing the MODEL constant."
-        if allow_model_change
+        if ctx.allow_model_change
         else "Do NOT suggest changing the MODEL constant."
     )
 
-    prompt_chars, prompt_lines = _measure_system_prompt(agent_code)
+    prompt_chars, prompt_lines = _measure_system_prompt(ctx.agent_code)
 
-    prompt = DIAGNOSIS_PROMPT.format(
-        agent_code_section=_build_agent_code_section(agent_code, bundle),
-        entry_file=_get_entry_file(agent_code, bundle),
-        entrypoint_fn=entrypoint_fn,
-        scoring_mechanics=_format_scoring_mechanics(eval_spec),
-        per_case_results=_format_per_case_results(
-            case_results,
-            eval_spec,
-            max_cases=max_cases,
+    def _build_prompt(_max_cases: int) -> str:
+        ac_section = _build_agent_code_section(ctx.agent_code, ctx.bundle)
+        per_case = _format_per_case_results(
+            ctx.case_results,
+            ctx.eval_spec,
+            max_cases=_max_cases,
             case_fraction=case_fraction,
-            iteration_seed=iteration_seed,
-        ),
-        tool_usage_analysis=_format_tool_usage_analysis(case_results),
-        policy_context=policy_context or "(no policy defined)",
-        avg_score=evaluation_results.get("avg_total", 0),
-        weakest_dimension=weak_name,
-        weakest_dim_score=weak_score,
-        weakest_dim_max=weak_max,
-        score_breakdown=_format_score_breakdown(evaluation_results, eval_spec),
-        successful_changes=_format_successful_changes(successful_changes),
-        failed_attempts=_format_failed_attempts(failed_attempts),
-        model_change_rule=mcr,
-        agent_model=agent_model,
-        model_capability=capability,
-        prompt_char_count=prompt_chars,
-        prompt_line_count=prompt_lines,
-    )
-
-    if bundle is not None and bundle.is_multi_file():
-        prompt += MULTI_FILE_AWARENESS_SECTION
-
-    if cluster_context:
-        prompt += FAILURE_CLUSTERS_SECTION.format(
-            formatted_clusters=cluster_context,
+            iteration_seed=ctx.iteration_seed,
         )
+        tu_section = _format_tool_usage_analysis(ctx.case_results)
+        if os.environ.get("OVERMIND_ANALYZER_DEBUG_PROMPT"):
+            import sys as _sys
 
-    if component_weights_context:
-        prompt += COMPONENT_IMPACT_SECTION.format(
-            component_lines=component_weights_context,
+            _sys.stderr.write(
+                f"[overmind/analyzer] sections @max_cases={_max_cases}: "
+                f"agent_code={len(ac_section):,} "
+                f"per_case={len(per_case):,} "
+                f"tool_usage={len(tu_section):,}\n"
+            )
+        p = DIAGNOSIS_PROMPT.format(
+            agent_code_section=ac_section,
+            entry_file=_get_entry_file(ctx.agent_code, ctx.bundle),
+            entrypoint_fn=ctx.entrypoint_fn,
+            scoring_mechanics=_format_scoring_mechanics(ctx.eval_spec),
+            per_case_results=per_case,
+            tool_usage_analysis=tu_section,
+            policy_context=ctx.policy_context or "(no policy defined)",
+            avg_score=ctx.evaluation_results.get("avg_total", 0),
+            weakest_dimension=weak_name,
+            weakest_dim_score=weak_score,
+            weakest_dim_max=weak_max,
+            score_breakdown=_format_score_breakdown(ctx.evaluation_results, ctx.eval_spec),
+            successful_changes=_format_successful_changes(ctx.successful_changes),
+            failed_attempts=_format_failed_attempts(ctx.failed_attempts),
+            model_change_rule=mcr,
+            agent_model=agent_model,
+            model_capability=capability,
+            prompt_char_count=prompt_chars,
+            prompt_line_count=prompt_lines,
         )
-
-    if focus_area:
-        labels = {k: v.format(entrypoint_fn=entrypoint_fn) if "{" in v else v for k, v in FOCUS_LABELS.items()}
-        focus_desc = labels.get(focus_area, focus_area)
-        prompt += DIAGNOSIS_FOCUS_DIRECTIVE.format(
-            focus_area=focus_area,
-            focus_desc=focus_desc,
-        )
+        if ctx.bundle is not None and ctx.bundle.is_multi_file():
+            p += MULTI_FILE_AWARENESS_SECTION
+        if ctx.cluster_context:
+            p += FAILURE_CLUSTERS_SECTION.format(formatted_clusters=ctx.cluster_context)
+        if ctx.component_weights_context:
+            p += COMPONENT_IMPACT_SECTION.format(component_lines=ctx.component_weights_context)
+        if focus_area:
+            labels = {k: v.format(entrypoint_fn=ctx.entrypoint_fn) if "{" in v else v for k, v in FOCUS_LABELS.items()}
+            focus_desc = labels.get(focus_area, focus_area)
+            p += DIAGNOSIS_FOCUS_DIRECTIVE.format(
+                focus_area=focus_area,
+                focus_desc=focus_desc,
+            )
+        return p
 
     system_msg = DIAGNOSIS_SYSTEM_PROMPT.format(
-        scoring_mechanics=_format_scoring_mechanics(eval_spec),
-        optimizable_elements=_format_optimizable_elements(eval_spec),
-        fixed_elements=_format_fixed_elements(eval_spec),
+        scoring_mechanics=_format_scoring_mechanics(ctx.eval_spec),
+        optimizable_elements=_format_optimizable_elements(ctx.eval_spec),
+        fixed_elements=_format_fixed_elements(ctx.eval_spec),
     )
 
-    try:
-        resp = llm_completion(
-            model,
-            [
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=max(temperature * 0.5, 0.1),
-            max_tokens=4000,
+    # Retry-on-context-window-exceeded: even after the proactive budget
+    # guard, the model's actual tokenizer can disagree with our
+    # chars/token estimate (Anthropic's tokenizer treats code denser
+    # than English).  Halve the char budget on overflow and re-render
+    # with fewer cases; capped at 3 retries to bound latency.
+    budget_chars = _budget_chars_for(ctx.model)
+    last_exc: Exception | None = None
+    for attempt in range(4):
+        prompt = _render_within_budget(
+            _build_prompt,
+            initial_max_cases=max_cases,
+            model=ctx.model,
+            budget_chars=budget_chars,
         )
-        content = resp.choices[0].message.content or ""
-        json_m = re.search(r"```json\s*\n(.*?)```", content, re.DOTALL)
-        if json_m:
-            return json.loads(json_m.group(1).strip())
-        start = content.find("{")
-        end = content.rfind("}") + 1
-        if start >= 0 and end > start:
-            return json.loads(content[start:end])
-    except Exception as exc:
-        # Auth failures, JSON parse errors, network blips — surface them in
-        # the log and remember the last one on the module so callers (and
-        # ultimately ``optimize-step diagnose``) can include a hint in the
-        # JSON envelope instead of silently degrading to a single
-        # ``method: "failed"`` placeholder candidate.
+        try:
+            resp = llm_completion(
+                ctx.model,
+                [
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=max(ctx.temperature * 0.5, 0.1),
+                max_tokens=4000,
+            )
+            content = resp.choices[0].message.content or ""
+            parsed = parse_json_object(content, on_fail="default", default=None)
+            if parsed is not None:
+                return parsed
+            last_exc = RuntimeError("Diagnosis response contained no JSON object.")
+            break
+        except Exception as exc:
+            last_exc = exc
+            exc_name = type(exc).__name__
+            msg = str(exc).lower()
+            is_ctx_overflow = (
+                "contextwindowexceeded" in exc_name.lower()
+                or "context_length" in msg
+                or "prompt is too long" in msg
+                or "maximum context length" in msg
+            )
+            if is_ctx_overflow and attempt < 3:
+                new_budget = max(20_000, int(budget_chars * 0.5))
+                _log.warning(
+                    "analyzer prompt rejected by model (attempt %d, model=%s): "
+                    "%s — halving char budget %d → %d and retrying.",
+                    attempt + 1,
+                    ctx.model,
+                    str(exc)[:200],
+                    budget_chars,
+                    new_budget,
+                )
+                budget_chars = new_budget
+                continue
+            break
+
+    if last_exc is not None:
         global _LAST_DIAGNOSIS_ERROR
-        _LAST_DIAGNOSIS_ERROR = f"{type(exc).__name__}: {exc}"
+        _LAST_DIAGNOSIS_ERROR = f"{type(last_exc).__name__}: {last_exc}"
         _log.warning(
-            f"diagnosis LLM call failed model={model} focus={focus_area} error={type(exc).__name__}: {str(exc)[:300]}"
+            "diagnosis LLM call failed model=%s focus=%s error=%s: %s",
+            ctx.model,
+            focus_area,
+            type(last_exc).__name__,
+            str(last_exc)[:300],
         )
     return None
+
+
+# Legacy positional-parameter names, in declaration order, used to fold the
+# pre-dataclass kwargs surface into a :class:`DiagnosisContext`.  Kept in
+# sync with the long-form signature documented in the test suite.
+_LEGACY_DIAGNOSIS_POSITIONAL = (
+    "agent_code",
+    "case_results",
+    "evaluation_results",
+    "model",
+    "eval_spec",
+    "failed_attempts",
+    "successful_changes",
+    "allow_model_change",
+    "temperature",
+)
+
+
+def _build_diagnosis_context_from_kwargs(
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> DiagnosisContext:
+    """Fold the legacy keyword surface of ``_run_diagnosis`` into a context.
+
+    Accepts both positional and keyword arguments in the historical order
+    so test callers and the optimizer's existing call sites keep working
+    while the body uses a single :class:`DiagnosisContext`.
+    """
+    merged: dict[str, Any] = dict(zip(_LEGACY_DIAGNOSIS_POSITIONAL, args, strict=False))
+    merged.update(kwargs)
+
+    return DiagnosisContext(
+        agent_code=merged["agent_code"],
+        case_results=merged["case_results"],
+        evaluation_results=merged["evaluation_results"],
+        model=merged["model"],
+        entrypoint_fn=merged["entrypoint_fn"],
+        eval_spec=merged.get("eval_spec"),
+        failed_attempts=merged.get("failed_attempts"),
+        successful_changes=merged.get("successful_changes"),
+        allow_model_change=merged.get("allow_model_change", False),
+        temperature=merged.get("temperature", 0.7),
+        iteration_seed=merged.get("iteration_seed", 42),
+        policy_context=merged.get("policy_context", ""),
+        bundle=merged.get("bundle"),
+        cluster_context=merged.get("cluster_context", ""),
+        component_weights_context=merged.get("component_weights_context", ""),
+    )
 
 
 _LAST_DIAGNOSIS_ERROR: str | None = None
@@ -912,8 +1446,8 @@ def _run_codegen(
     str
         Complete file code (single-file mode).
     dict
-        ``{"piece_updates": {pid: code}, "new_pieces": [(file, code)]}``
-        when operating in bundle mode.
+        ``{"file_updates": {rel_path: complete_new_source}}`` when
+        operating in bundle mode.
     None
         On failure.
     """
@@ -958,14 +1492,9 @@ def _run_codegen(
             _, _, file_updates = _parse_file_updates(content)
             if file_updates:
                 return {"file_updates": file_updates}
-            # Fallback: try legacy piece-ID parsing
-            _, _, piece_updates, new_pieces = _parse_bundle_updates(content)
-            if piece_updates:
-                return {
-                    "piece_updates": piece_updates,
-                    "new_pieces": new_pieces,
-                }
-            # Last resort: try single-file extraction
+            # Last resort: single-file extraction (the LLM ignored the
+            # whole-file bundle instruction and returned a single code
+            # fence — accept it for the entry file).
             _, _, code = _extract_code_and_analysis(content, agent_code)
             return code
 
@@ -1425,27 +1954,39 @@ def generate_candidates(
     def _gen_single_pass() -> dict:
         agent_tokens = len(agent_code) // 3
         sp_max_tokens = max(4000, min(16000, int(agent_tokens * 2.0)))
-        prompt = SINGLE_PASS_PROMPT.format(
-            agent_code_section=_build_agent_code_section(agent_code, bundle),
-            entry_file=_get_entry_file(agent_code, bundle),
-            entrypoint_fn=entrypoint_fn,
-            scoring_mechanics=_format_scoring_mechanics(eval_spec),
-            per_case_results=_format_per_case_results(case_results, eval_spec),
-            tool_usage_analysis=_format_tool_usage_analysis(case_results),
-            policy_context=policy_context or "(no policy defined)",
-            avg_score=evaluation_results.get("avg_total", 0),
-            weakest_dimension=weak_name,
-            weakest_dim_score=weak_score,
-            weakest_dim_max=weak_max,
-            score_breakdown=_format_score_breakdown(evaluation_results, eval_spec),
-            successful_changes=_format_successful_changes(successful_changes),
-            failed_attempts=_format_failed_attempts(failed_attempts),
-            fixed_elements=_format_fixed_elements(eval_spec),
-            optimizable_elements=_format_optimizable_elements(eval_spec),
-            model_change_rule=mcr,
-            agent_model=agent_model,
-            model_capability=capability,
-            output_format_instruction=_get_output_format_instruction(bundle),
+
+        def _build_sp_prompt(_max_cases: int) -> str:
+            return SINGLE_PASS_PROMPT.format(
+                agent_code_section=_build_agent_code_section(agent_code, bundle),
+                entry_file=_get_entry_file(agent_code, bundle),
+                entrypoint_fn=entrypoint_fn,
+                scoring_mechanics=_format_scoring_mechanics(eval_spec),
+                per_case_results=_format_per_case_results(
+                    case_results,
+                    eval_spec,
+                    max_cases=_max_cases,
+                ),
+                tool_usage_analysis=_format_tool_usage_analysis(case_results),
+                policy_context=policy_context or "(no policy defined)",
+                avg_score=evaluation_results.get("avg_total", 0),
+                weakest_dimension=weak_name,
+                weakest_dim_score=weak_score,
+                weakest_dim_max=weak_max,
+                score_breakdown=_format_score_breakdown(evaluation_results, eval_spec),
+                successful_changes=_format_successful_changes(successful_changes),
+                failed_attempts=_format_failed_attempts(failed_attempts),
+                fixed_elements=_format_fixed_elements(eval_spec),
+                optimizable_elements=_format_optimizable_elements(eval_spec),
+                model_change_rule=mcr,
+                agent_model=agent_model,
+                model_capability=capability,
+                output_format_instruction=_get_output_format_instruction(bundle),
+            )
+
+        prompt = _render_within_budget(
+            _build_sp_prompt,
+            initial_max_cases=20,
+            model=model,
         )
         try:
             resp = llm_completion(
@@ -1472,24 +2013,6 @@ def generate_candidates(
                             "response_len": len(raw),
                             "finish_reason": finish_reason,
                             "files_updated": len(file_updates),
-                        },
-                    }
-                # Fallback: try legacy piece-ID format
-                _, _, piece_updates, new_pieces = _parse_bundle_updates(raw)
-                if piece_updates:
-                    return {
-                        "analysis": analysis_str if analysis_str else "",
-                        "suggestions": suggs if suggs else [],
-                        "updated_code": None,
-                        "bundle_updates": {
-                            "piece_updates": piece_updates,
-                            "new_pieces": new_pieces,
-                        },
-                        "method": "single_pass_bundle_legacy",
-                        "_debug": {
-                            "response_len": len(raw),
-                            "finish_reason": finish_reason,
-                            "pieces_updated": len(piece_updates),
                         },
                     }
 
@@ -1530,25 +2053,28 @@ def generate_candidates(
     trimmed_successful = successful_changes[-adaptive_history_cap:] if successful_changes else None
 
     # --- Shared diagnosis (single LLM call) ---
-    diag = _run_diagnosis(
-        agent_code,
-        case_results,
-        evaluation_results,
-        model,
-        eval_spec,
-        trimmed_failed,
-        trimmed_successful,
-        allow_model_change,
-        temperature,
-        focus_area=None,
-        case_fraction=diagnosis_case_fraction,
+    shared_diag_ctx = DiagnosisContext(
+        agent_code=agent_code,
+        case_results=case_results,
+        evaluation_results=evaluation_results,
+        model=model,
+        entrypoint_fn=entrypoint_fn,
+        eval_spec=eval_spec,
+        failed_attempts=trimmed_failed,
+        successful_changes=trimmed_successful,
+        allow_model_change=allow_model_change,
+        temperature=temperature,
         iteration_seed=iteration_seed,
         policy_context=policy_context,
-        entrypoint_fn=entrypoint_fn,
-        max_cases=adaptive_max_cases,
         bundle=bundle,
         cluster_context=cluster_context,
         component_weights_context=component_weights_context,
+    )
+    diag = _run_diagnosis(
+        ctx=shared_diag_ctx,
+        focus_area=None,
+        case_fraction=diagnosis_case_fraction,
+        max_cases=adaptive_max_cases,
     )
 
     if not diag:
@@ -1571,25 +2097,28 @@ def generate_candidates(
     # temperature so it explores a different improvement direction.
     independent_diag: dict | None = None
     if num_candidates >= 3:
-        independent_diag = _run_diagnosis(
-            agent_code,
-            case_results,
-            evaluation_results,
-            model,
-            eval_spec,
-            trimmed_failed,
-            trimmed_successful,
-            allow_model_change,
-            min(temperature + 0.15, 1.0),
-            focus_area=None,
-            case_fraction=max(0.5, diagnosis_case_fraction - 0.2),
+        independent_diag_ctx = DiagnosisContext(
+            agent_code=agent_code,
+            case_results=case_results,
+            evaluation_results=evaluation_results,
+            model=model,
+            entrypoint_fn=entrypoint_fn,
+            eval_spec=eval_spec,
+            failed_attempts=trimmed_failed,
+            successful_changes=trimmed_successful,
+            allow_model_change=allow_model_change,
+            temperature=min(temperature + 0.15, 1.0),
             iteration_seed=iteration_seed + 9973,
             policy_context=policy_context,
-            entrypoint_fn=entrypoint_fn,
-            max_cases=adaptive_max_cases,
             bundle=bundle,
             cluster_context=cluster_context,
             component_weights_context=component_weights_context,
+        )
+        independent_diag = _run_diagnosis(
+            ctx=independent_diag_ctx,
+            focus_area=None,
+            case_fraction=max(0.5, diagnosis_case_fraction - 0.2),
+            max_cases=adaptive_max_cases,
         )
 
     # --- Parallel codegen forks with different focus areas ---
@@ -1773,7 +2302,6 @@ def generate_candidates(
                     "shared_diagnosis": not is_independent,
                     "focus": focus,
                     "files_updated": len(result.get("file_updates", {})),
-                    "pieces_updated": len(result.get("piece_updates", {})),
                 },
             }
 
@@ -1862,41 +2390,3 @@ def generate_candidates(
             }
         ]
     return all_results
-
-
-def analyze_and_improve(
-    agent_code: str,
-    traces: list[dict],
-    evaluation_results: dict,
-    model: str,
-    eval_spec: dict | None = None,
-    failed_attempts: list[dict] | None = None,
-    successful_changes: list[dict] | None = None,
-    allow_model_change: bool = False,
-    case_results: list[dict] | None = None,
-    num_candidates: int = 1,
-    temperature: float = 0.7,
-    policy_context: str = "",
-    policy_constraints: str = "",
-    *,
-    entrypoint_fn: str,
-    bundle: AgentBundle | None = None,
-) -> dict:
-    """Backward-compatible single-candidate wrapper."""
-    candidates = generate_candidates(
-        agent_code=agent_code,
-        case_results=case_results or [],
-        evaluation_results=evaluation_results,
-        model=model,
-        eval_spec=eval_spec,
-        failed_attempts=failed_attempts,
-        successful_changes=successful_changes,
-        allow_model_change=allow_model_change,
-        num_candidates=num_candidates,
-        temperature=temperature,
-        policy_context=policy_context,
-        policy_constraints=policy_constraints,
-        entrypoint_fn=entrypoint_fn,
-        bundle=bundle,
-    )
-    return candidates[0]

@@ -36,6 +36,8 @@ from overmind.prompts.policy_generator import (
 from overmind.tracing import observe_safe
 from overmind.utils.display import BRAND, make_spinner_progress, overmind_prompt
 from overmind.utils.llm import llm_completion
+from overmind.utils.llm_parse import parse_json_object
+from overmind.utils.policy import agent_name_from_description, strip_internal_keys
 
 logger = logging.getLogger("overmind.setup.policy_generator")
 
@@ -79,25 +81,24 @@ def _extract_markdown_and_json(text: str) -> tuple[str, dict]:
             end = json_fence_m.start() if json_fence_m else len(text)
             md_content = text[start:end].strip()
 
+    # First try each ```json fenced block, since the prompt is supposed to
+    # emit a single fenced JSON object alongside the markdown.  We accept a
+    # block only if it looks like a policy payload (avoids picking up an
+    # unrelated example JSON the model might also have produced).
     json_blocks = re.findall(r"```json\s*\n(.*?)```", text, re.DOTALL)
     policy_data: dict = {}
     for block in json_blocks:
-        try:
-            candidate = json.loads(block.strip())
-            if "domain_rules" in candidate or "decision_rules" in candidate or "purpose" in candidate:
-                policy_data = candidate
-                break
-        except json.JSONDecodeError:
-            continue
+        candidate = parse_json_object(block, on_fail="default", default=None)
+        if isinstance(candidate, dict) and (
+            "domain_rules" in candidate or "decision_rules" in candidate or "purpose" in candidate
+        ):
+            policy_data = candidate
+            break
 
     if not policy_data:
-        start = text.rfind("{")
-        end = text.rfind("}") + 1
-        if start >= 0 and end > start:
-            try:
-                policy_data = json.loads(text[start:end])
-            except json.JSONDecodeError:
-                pass
+        fallback = parse_json_object(text, on_fail="default", default=None)
+        if isinstance(fallback, dict):
+            policy_data = fallback
 
     # Migrate legacy format if needed
     policy_data = _migrate_legacy_policy(policy_data)
@@ -161,7 +162,7 @@ def elicit_policy(
     Returns ``(markdown_text, structured_policy_dict)``.
     """
     description = analysis.get("description", "AI agent")
-    agent_name = description.split(":")[0].strip() if ":" in description else "Agent"
+    agent_name = agent_name_from_description(description)
     logger.info(f"elicit_policy starting agent={agent_name} model={model}")
 
     console.print()
@@ -214,7 +215,7 @@ def elicit_policy(
     )
     terminology = Prompt.ask(" ", default="")
 
-    analysis_for_llm = {k: v for k, v in analysis.items() if not k.startswith("_")}
+    analysis_for_llm = strip_internal_keys(analysis)
 
     with stage(
         "setup.policy.generate",
@@ -279,8 +280,8 @@ def generate_policy_from_document(
     """
     user_doc = Path(document_path).read_text()
     description = analysis.get("description", "AI agent")
-    agent_name = description.split(":")[0].strip() if ":" in description else "Agent"
-    analysis_for_llm = {k: v for k, v in analysis.items() if not k.startswith("_")}
+    agent_name = agent_name_from_description(description)
+    analysis_for_llm = strip_internal_keys(analysis)
 
     with stage(
         "setup.policy.from_document",
@@ -339,8 +340,8 @@ def generate_policy_from_code(
         f"```python\n{analysis.get('_agent_code', '')}\n```",
     )
     description = analysis.get("description", "AI agent")
-    agent_name = description.split(":")[0].strip() if ":" in description else "Agent"
-    analysis_for_llm = {k: v for k, v in analysis.items() if not k.startswith("_")}
+    agent_name = agent_name_from_description(description)
+    analysis_for_llm = strip_internal_keys(analysis)
 
     with stage(
         "setup.policy.from_code",
@@ -403,8 +404,8 @@ def improve_existing_policy(
         f"```python\n{analysis.get('_agent_code', '')}\n```",
     )
     description = analysis.get("description", "AI agent")
-    agent_name = description.split(":")[0].strip() if ":" in description else "Agent"
-    analysis_for_llm = {k: v for k, v in analysis.items() if not k.startswith("_")}
+    agent_name = agent_name_from_description(description)
+    analysis_for_llm = strip_internal_keys(analysis)
 
     with stage(
         "setup.policy.improve",
@@ -481,9 +482,9 @@ def refine_policy(
     additions = Prompt.ask(" ", default="")
 
     description = analysis.get("description", "AI agent")
-    agent_name = description.split(":")[0].strip() if ":" in description else "Agent"
+    agent_name = agent_name_from_description(description)
 
-    analysis_for_llm = {k: v for k, v in analysis.items() if not k.startswith("_")}
+    analysis_for_llm = strip_internal_keys(analysis)
 
     prompt = POLICY_REFINE_PROMPT.format(
         analysis_json=json.dumps(analysis_for_llm, indent=2),

@@ -1,70 +1,43 @@
-"""Prompts for ``overmind.setup.policy_generator``."""
+"""Prompts for ``overmind.setup.policy_generator``.
 
-POLICY_TEMPLATE = """\
+The five public prompts below all walk the LLM through the same canonical
+two-layer policy format.  Rather than repeating the Markdown skeleton and the
+JSON schema five times verbatim, we keep them once in module-level constants
+and compose each prompt from those building blocks.
+
+Constants
+---------
+:data:`_POLICY_MD_SKELETON_HEADERS`
+    Headers-only Markdown skeleton used by every prompt that doesn't need
+    inline guidance.
+:data:`_POLICY_MD_SKELETON_DETAILED`
+    The detailed skeleton with section-level guidance, used only by
+    :data:`POLICY_GENERATION_PROMPT` which conducts the elicitation from
+    scratch.
+:data:`_POLICY_JSON_SCHEMA`
+    Shared JSON schema block — appended at the end of every prompt.
+"""
+
+_POLICY_MD_SKELETON_HEADERS = """\
 # Agent Policy: {agent_name}
 
 ## 1. Domain Knowledge
 
 ### 1.1 Purpose & Context
-<!-- What domain does this agent operate in? What decisions does it make? -->
-
 ### 1.2 Domain Rules
-<!-- Business rules, heuristics, and decision logic from the real world.
-     These are the ground-truth rules the agent must follow. -->
-
 ### 1.3 Domain Edge Cases
-<!-- Tricky real-world scenarios and the correct handling for each. -->
-
 ### 1.4 Terminology & Definitions
-<!-- Key terms, categories, thresholds, or enumerations the agent must
-     understand to reason correctly. -->
 
 ## 2. Agent Behavior
 
 ### 2.1 Output Constraints
-<!-- Schema requirements: field names, types, valid values, ranges. -->
-
 ### 2.2 Tool Usage
-<!-- Which tools must be called, in what order, and how outputs chain. -->
-
 ### 2.3 Decision Mapping
-<!-- How domain signals map to output fields (score ranges → categories, etc.) -->
-
 ### 2.4 Quality Expectations
-<!-- What "good" output looks like — calibration, consistency, reasoning depth. -->
 """
 
-POLICY_GENERATION_PROMPT = """\
-You are an expert at defining evaluation policies for AI agents. Given the \
-agent analysis and user-provided domain knowledge, produce a **two-layer** \
-policy: domain knowledge (the real-world rules) and agent behaviour (how the \
-agent should implement them).
 
-## Agent Analysis
-{analysis_json}
-
-## User-Provided Domain Knowledge
-
-### Business rules and decision logic:
-{decision_rules}
-
-### Domain-specific mistakes that are unacceptable:
-{hard_constraints}
-
-### Real-world edge cases and correct handling:
-{edge_cases}
-
-### Key terminology or definitions:
-{terminology}
-
-## Task
-
-Produce TWO outputs, clearly separated.
-
-**FIRST**, output a Markdown policy document inside a fenced block. Follow \
-this exact structure:
-
-```markdown
+_POLICY_MD_SKELETON_DETAILED = """\
 # Agent Policy: {agent_name}
 
 ## 1. Domain Knowledge
@@ -102,11 +75,10 @@ signal combinations → recommended actions.
 ### 2.4 Quality Expectations
 What "good" output looks like — internal consistency, reasoning depth, \
 calibration guidance.
-```
+"""
 
-**SECOND**, output a JSON block with the machine-readable summary:
 
-```json
+_POLICY_JSON_SCHEMA = """\
 {{
   "purpose": "<one sentence>",
   "domain_rules": [
@@ -131,7 +103,76 @@ calibration guidance.
   "quality_expectations": [
     "<expectation 1>"
   ]
-}}
+}}\
+"""
+
+
+_POLICY_JSON_SCHEMA_COMPACT = """\
+{{
+  "purpose": "<one sentence>",
+  "domain_rules": ["<rule>"],
+  "domain_edge_cases": [{{"scenario": "<desc>", "correct_handling": "<behaviour>"}}],
+  "terminology": {{}},
+  "output_constraints": ["<constraint>"],
+  "tool_requirements": ["<requirement>"],
+  "decision_mapping": ["<mapping>"],
+  "quality_expectations": ["<expectation>"]
+}}\
+"""
+
+
+_POLICY_JSON_SCHEMA_COMPACT_INFERRED = """\
+{{
+  "purpose": "<one sentence>",
+  "domain_rules": ["<rule> (inferred)"],
+  "domain_edge_cases": [{{"scenario": "<desc>", "correct_handling": "<behaviour> (inferred)"}}],
+  "terminology": {{}},
+  "output_constraints": ["<constraint>"],
+  "tool_requirements": ["<requirement>"],
+  "decision_mapping": ["<mapping>"],
+  "quality_expectations": ["<expectation>"]
+}}\
+"""
+
+
+POLICY_GENERATION_PROMPT = f"""\
+You are an expert at defining evaluation policies for AI agents. Given the \
+agent analysis and user-provided domain knowledge, produce a **two-layer** \
+policy: domain knowledge (the real-world rules) and agent behaviour (how the \
+agent should implement them).
+
+## Agent Analysis
+{{analysis_json}}
+
+## User-Provided Domain Knowledge
+
+### Business rules and decision logic:
+{{decision_rules}}
+
+### Domain-specific mistakes that are unacceptable:
+{{hard_constraints}}
+
+### Real-world edge cases and correct handling:
+{{edge_cases}}
+
+### Key terminology or definitions:
+{{terminology}}
+
+## Task
+
+Produce TWO outputs, clearly separated.
+
+**FIRST**, output a Markdown policy document inside a fenced block. Follow \
+this exact structure:
+
+```markdown
+{_POLICY_MD_SKELETON_DETAILED}\
+```
+
+**SECOND**, output a JSON block with the machine-readable summary:
+
+```json
+{_POLICY_JSON_SCHEMA}
 ```
 
 Rules:
@@ -144,16 +185,16 @@ inferred from code.
 - The JSON must be parseable and consistent with the Markdown.
 """
 
-POLICY_FROM_DOCUMENT_PROMPT = """\
+POLICY_FROM_DOCUMENT_PROMPT = f"""\
 You are an expert at structuring AI agent policies. The user has provided an \
 existing policy or domain document. Restructure it into the canonical \
 two-layer format: domain knowledge and agent behaviour.
 
 ## Agent Analysis
-{analysis_json}
+{{analysis_json}}
 
 ## User's Policy Document
-{user_document}
+{{user_document}}
 
 ## Task
 
@@ -162,36 +203,13 @@ Produce TWO outputs.
 **FIRST**, a restructured Markdown policy following the two-layer format:
 
 ```markdown
-# Agent Policy: {agent_name}
-
-## 1. Domain Knowledge
-
-### 1.1 Purpose & Context
-### 1.2 Domain Rules
-### 1.3 Domain Edge Cases
-### 1.4 Terminology & Definitions
-
-## 2. Agent Behavior
-
-### 2.1 Output Constraints
-### 2.2 Tool Usage
-### 2.3 Decision Mapping
-### 2.4 Quality Expectations
+{_POLICY_MD_SKELETON_HEADERS}\
 ```
 
 **SECOND**, a JSON summary:
 
 ```json
-{{
-  "purpose": "<one sentence>",
-  "domain_rules": ["<rule>"],
-  "domain_edge_cases": [{{"scenario": "<desc>", "correct_handling": "<behaviour>"}}],
-  "terminology": {{}},
-  "output_constraints": ["<constraint>"],
-  "tool_requirements": ["<requirement>"],
-  "decision_mapping": ["<mapping>"],
-  "quality_expectations": ["<expectation>"]
-}}
+{_POLICY_JSON_SCHEMA_COMPACT}
 ```
 
 Rules:
@@ -206,16 +224,16 @@ substantive rules from the original.
 - Discard organizational boilerplate but keep every testable rule.
 """
 
-POLICY_FROM_CODE_PROMPT = """\
+POLICY_FROM_CODE_PROMPT = f"""\
 You are an expert at inferring evaluation policies from AI agent code. The \
 user has not provided explicit policies, so infer reasonable defaults from \
 the agent's logic, tool definitions, and output schema.
 
 ## Agent Analysis
-{analysis_json}
+{{analysis_json}}
 
 ## Agent Code
-{agent_code_section}
+{{agent_code_section}}
 
 ## Task
 
@@ -226,7 +244,7 @@ Produce TWO outputs: a Markdown policy and a JSON summary. Infer rules from:
 - Any validation or post-processing logic → quality expectations
 
 ```markdown
-# Agent Policy: {agent_name}
+# Agent Policy: {{agent_name}}
 
 ## 1. Domain Knowledge
 
@@ -246,16 +264,7 @@ Mark inferred cases with (inferred).
 ```
 
 ```json
-{{
-  "purpose": "<one sentence>",
-  "domain_rules": ["<rule> (inferred)"],
-  "domain_edge_cases": [{{"scenario": "<desc>", "correct_handling": "<behaviour> (inferred)"}}],
-  "terminology": {{}},
-  "output_constraints": ["<constraint>"],
-  "tool_requirements": ["<requirement>"],
-  "decision_mapping": ["<mapping>"],
-  "quality_expectations": ["<expectation>"]
-}}
+{_POLICY_JSON_SCHEMA_COMPACT_INFERRED}
 ```
 
 Be conservative — only include domain rules you can clearly derive from the \
@@ -264,19 +273,19 @@ verify them. Agent behaviour rules derived from code don't need the marker. \
 Keep the document to 200-400 words.
 """
 
-POLICY_IMPROVE_PROMPT = """\
+POLICY_IMPROVE_PROMPT = f"""\
 You are an expert at evaluating and improving AI agent policies. The user has \
 provided an existing policy document. Compare it against the agent's actual \
 code and analysis to identify gaps, inconsistencies, or improvements.
 
 ## Agent Analysis
-{analysis_json}
+{{analysis_json}}
 
 ## Agent Code
-{agent_code_section}
+{{agent_code_section}}
 
 ## User's Existing Policy
-{existing_policy}
+{{existing_policy}}
 
 ## Task
 
@@ -304,36 +313,13 @@ Produce THREE outputs.
 **SECOND**, the improved Markdown policy inside a fenced block:
 
 ```markdown
-# Agent Policy: {agent_name}
-
-## 1. Domain Knowledge
-
-### 1.1 Purpose & Context
-### 1.2 Domain Rules
-### 1.3 Domain Edge Cases
-### 1.4 Terminology & Definitions
-
-## 2. Agent Behavior
-
-### 2.1 Output Constraints
-### 2.2 Tool Usage
-### 2.3 Decision Mapping
-### 2.4 Quality Expectations
+{_POLICY_MD_SKELETON_HEADERS}\
 ```
 
 **THIRD**, the JSON summary:
 
 ```json
-{{
-  "purpose": "<one sentence>",
-  "domain_rules": ["<rule>"],
-  "domain_edge_cases": [{{"scenario": "<desc>", "correct_handling": "<behaviour>"}}],
-  "terminology": {{}},
-  "output_constraints": ["<constraint>"],
-  "tool_requirements": ["<requirement>"],
-  "decision_mapping": ["<mapping>"],
-  "quality_expectations": ["<expectation>"]
-}}
+{_POLICY_JSON_SCHEMA_COMPACT}
 ```
 
 Rules:
@@ -345,24 +331,24 @@ remove them unless they directly contradict the code.
 - If the existing policy is already excellent, say so and make minimal changes.
 """
 
-POLICY_REFINE_PROMPT = """\
+POLICY_REFINE_PROMPT = f"""\
 You are refining an existing agent policy based on user feedback.
 
 ## Agent Analysis
-{analysis_json}
+{{analysis_json}}
 
 ## Current Policy (Markdown)
-{current_md}
+{{current_md}}
 
 ## Current Policy (Structured)
-{current_data_json}
+{{current_data_json}}
 
 ## User Feedback
 What they want to change:
-{feedback}
+{{feedback}}
 
 Additional domain rules or edge cases:
-{additions}
+{{additions}}
 
 ## Task
 
@@ -371,36 +357,13 @@ Produce the updated policy in TWO outputs, maintaining the two-layer format.
 **FIRST**, the revised Markdown policy inside a fenced block:
 
 ```markdown
-# Agent Policy: {agent_name}
-
-## 1. Domain Knowledge
-
-### 1.1 Purpose & Context
-### 1.2 Domain Rules
-### 1.3 Domain Edge Cases
-### 1.4 Terminology & Definitions
-
-## 2. Agent Behavior
-
-### 2.1 Output Constraints
-### 2.2 Tool Usage
-### 2.3 Decision Mapping
-### 2.4 Quality Expectations
+{_POLICY_MD_SKELETON_HEADERS}\
 ```
 
 **SECOND**, the updated JSON summary:
 
 ```json
-{{
-  "purpose": "<one sentence>",
-  "domain_rules": ["<rule>"],
-  "domain_edge_cases": [{{"scenario": "<desc>", "correct_handling": "<behaviour>"}}],
-  "terminology": {{}},
-  "output_constraints": ["<constraint>"],
-  "tool_requirements": ["<requirement>"],
-  "decision_mapping": ["<mapping>"],
-  "quality_expectations": ["<expectation>"]
-}}
+{_POLICY_JSON_SCHEMA_COMPACT}
 ```
 
 Rules:

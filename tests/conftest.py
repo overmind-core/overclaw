@@ -13,9 +13,7 @@ from opentelemetry import trace as _otel_trace
 from opentelemetry.sdk.trace import TracerProvider
 
 import overmind.tracing as _overmind_tracing
-
 from overmind.core.constants import OVERMIND_DIR_NAME
-
 
 # ---------------------------------------------------------------------------
 # OTel / overmind SDK bootstrap for tests

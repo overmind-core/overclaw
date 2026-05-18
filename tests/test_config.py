@@ -19,7 +19,6 @@ from overmind.optimize.config import (
     validate_eval_spec,
 )
 
-
 # ---------------------------------------------------------------------------
 # Config dataclass
 # ---------------------------------------------------------------------------
@@ -184,22 +183,12 @@ class TestApplyEvalSpecScope:
         apply_eval_spec_scope(cfg, {"scope": {"optimizable_paths": ["a.py", "b.py"]}})
         assert cfg.optimizable_scope == ["a.py", "b.py"]
 
-    def test_picks_up_context_paths(self):
-        cfg = _bare_cfg()
-        apply_eval_spec_scope(cfg, {"scope": {"context_paths": ["docs/README.md"]}})
-        assert cfg.context_scope == ["docs/README.md"]
-
     def test_picks_up_read_only_paths(self):
-        """``read_only_paths`` is the new machine-readable knob for declaring
+        """``read_only_paths`` is the machine-readable knob for declaring
         harness / fixture files that must not be edited by candidates."""
         cfg = _bare_cfg()
         apply_eval_spec_scope(cfg, {"scope": {"read_only_paths": ["entrypoint.py"]}})
         assert cfg.read_only_scope == ["entrypoint.py"]
-
-    def test_picks_up_exclude_paths(self):
-        cfg = _bare_cfg()
-        apply_eval_spec_scope(cfg, {"scope": {"exclude_paths": [".venv/**"]}})
-        assert cfg.exclude_scope == [".venv/**"]
 
     def test_picks_up_search_paths(self):
         """``search_paths`` is the new sys.path-style knob for hyphenated
@@ -212,35 +201,163 @@ class TestApplyEvalSpecScope:
         assert cfg.bundle_search_paths == ["python-backend", "src"]
 
     def test_existing_scope_not_overwritten(self):
-        """If a Config field is already set (e.g. via interactive prompts),
-        the spec must not stomp on it."""
+        """If ``optimizable_scope`` / ``read_only_scope`` are already set
+        (e.g. via interactive prompts), the spec must not stomp on them.
+        Legacy ``context_paths`` and ``exclude_paths`` still flow through
+        the migration shim regardless (they have no Config field to
+        overwrite)."""
         cfg = _bare_cfg(
             optimizable_scope=["already.py"],
-            context_scope=["already_ctx.py"],
             read_only_scope=["already_ro.py"],
-            exclude_scope=["already_excl/**"],
         )
         apply_eval_spec_scope(
             cfg,
             {
                 "scope": {
                     "optimizable_paths": ["from_spec.py"],
-                    "context_paths": ["from_spec_ctx.py"],
                     "read_only_paths": ["from_spec_ro.py"],
-                    "exclude_paths": ["from_spec_excl/**"],
                 }
             },
         )
         assert cfg.optimizable_scope == ["already.py"]
-        assert cfg.context_scope == ["already_ctx.py"]
         assert cfg.read_only_scope == ["already_ro.py"]
-        assert cfg.exclude_scope == ["already_excl/**"]
 
     def test_empty_spec_leaves_defaults(self):
         cfg = _bare_cfg()
         apply_eval_spec_scope(cfg, {})
         assert cfg.optimizable_scope == []
         assert cfg.read_only_scope == []
+        assert cfg._legacy_exclude_paths == []
+
+
+class TestLegacyScopeMigration:
+    """``scope.context_paths`` and ``scope.exclude_paths`` are deprecated
+    in favor of the two-scope model (``optimizable_paths`` +
+    ``read_only_paths`` plus ``.overmindignore`` for project-level
+    drops). These tests pin the auto-migration behaviour in
+    :func:`apply_eval_spec_scope` so existing eval_spec.json files in
+    the wild keep working under a deprecation warning."""
+
+    def test_context_paths_merges_into_read_only_with_warning(self, caplog):
+        import logging
+
+        caplog.set_level(logging.WARNING)
+        cfg = _bare_cfg()
+        apply_eval_spec_scope(
+            cfg,
+            {
+                "scope": {
+                    "optimizable_paths": ["agent.py"],
+                    "context_paths": ["docs/README.md", "policies.md"],
+                }
+            },
+        )
+        assert "docs/README.md" in cfg.read_only_scope
+        assert "policies.md" in cfg.read_only_scope
+        assert any(
+            "scope.context_paths is deprecated" in rec.message
+            for rec in caplog.records
+        )
+
+    def test_context_paths_merge_preserves_existing_read_only(self, caplog):
+        cfg = _bare_cfg()
+        apply_eval_spec_scope(
+            cfg,
+            {
+                "scope": {
+                    "optimizable_paths": ["agent.py"],
+                    "read_only_paths": ["entrypoint.py"],
+                    "context_paths": ["policies.md"],
+                }
+            },
+        )
+        assert cfg.read_only_scope == ["entrypoint.py", "policies.md"]
+
+    def test_context_paths_merge_dedupes(self):
+        """If a path is in both ``context_paths`` and
+        ``read_only_paths`` the merge must not produce a duplicate."""
+        cfg = _bare_cfg()
+        apply_eval_spec_scope(
+            cfg,
+            {
+                "scope": {
+                    "optimizable_paths": ["agent.py"],
+                    "read_only_paths": ["policies.md"],
+                    "context_paths": ["policies.md"],
+                }
+            },
+        )
+        assert cfg.read_only_scope == ["policies.md"]
+
+    def test_exclude_paths_populates_legacy_field_with_warning(self, caplog):
+        import logging
+
+        caplog.set_level(logging.WARNING)
+        cfg = _bare_cfg()
+        apply_eval_spec_scope(
+            cfg,
+            {
+                "scope": {
+                    "optimizable_paths": ["agent.py"],
+                    "exclude_paths": ["memory_store.py", "**/__pycache__/**"],
+                }
+            },
+        )
+        assert cfg._legacy_exclude_paths == [
+            "memory_store.py",
+            "**/__pycache__/**",
+        ]
+        assert any(
+            "scope.exclude_paths is deprecated" in rec.message
+            for rec in caplog.records
+        )
+
+    def test_old_spec_with_both_legacy_fields_still_loads(self, caplog):
+        """Old eval_spec.json files commonly had both fields. Loading
+        must succeed (no crash, no overlap errors), with each field
+        routed to its respective migration target."""
+        import logging
+
+        caplog.set_level(logging.WARNING)
+        cfg = _bare_cfg()
+        apply_eval_spec_scope(
+            cfg,
+            {
+                "scope": {
+                    "optimizable_paths": ["agent.py"],
+                    "read_only_paths": ["entrypoint.py"],
+                    "context_paths": ["README.md"],
+                    "exclude_paths": ["tests/**"],
+                }
+            },
+        )
+        assert cfg.optimizable_scope == ["agent.py"]
+        assert "entrypoint.py" in cfg.read_only_scope
+        assert "README.md" in cfg.read_only_scope
+        assert cfg._legacy_exclude_paths == ["tests/**"]
+        # Both deprecation warnings fired
+        messages = [rec.message for rec in caplog.records]
+        assert any("context_paths is deprecated" in m for m in messages)
+        assert any("exclude_paths is deprecated" in m for m in messages)
+
+    def test_no_legacy_fields_no_warnings(self, caplog):
+        import logging
+
+        caplog.set_level(logging.WARNING)
+        cfg = _bare_cfg()
+        apply_eval_spec_scope(
+            cfg,
+            {
+                "scope": {
+                    "optimizable_paths": ["agent.py"],
+                    "read_only_paths": ["entrypoint.py"],
+                }
+            },
+        )
+        assert cfg._legacy_exclude_paths == []
+        assert not any(
+            "deprecated" in rec.message for rec in caplog.records
+        )
 
     def test_overlap_between_optimizable_and_read_only_is_rejected(self):
         """Listing a path in both ``optimizable_paths`` and ``read_only_paths``

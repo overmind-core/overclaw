@@ -19,16 +19,11 @@ from rich.syntax import Syntax
 from rich.table import Table
 
 from overmind import SpanType, attrs, set_tag
-from overmind.commands.agent_env import (
-    collect_agent_provider_config,
-    collect_code_detected_env_vars,
-    instrument_agent_files,
-)
+from overmind.commands.agent_env import instrument_agent_files
 from overmind.core.constants import overmind_rel
 from overmind.core.paths import (
     agent_experiments_dir,
     agent_setup_spec_dir,
-    load_agent_dotenv,
     load_overmind_dotenv,
 )
 from overmind.core.registry import (
@@ -43,6 +38,56 @@ from overmind.core.registry import (
 )
 from overmind.tracing import observe_safe
 from overmind.utils.display import BRAND, confirm_option, rel, select_option
+
+
+def _sync_agent_id_to_registry(
+    name: str,
+    entrypoint: str,
+    agent_path: str,
+    *,
+    description: str | None = None,
+) -> str | None:
+    """Best-effort: upsert a minimal Agent record in the Overmind backend
+    and persist the returned UUID into ``.overmind/agents.toml`` so later
+    commands (``optimize``, ``setup``, ``optimize-step``) can attribute
+    runs to the right Agent record without re-querying the API.
+
+    Returns the UUID string on success, ``None`` on any failure (missing
+    API key, project resolution failure, network error). All failures are
+    swallowed — the local registry write already succeeded, so a missing
+    backend record only affects UI visibility, not local registration.
+    """
+    try:
+        from overmind.storage import StorageNotConfiguredError, configure_storage, get_storage
+    except Exception:  # pragma: no cover - defensive import guard
+        return None
+
+    try:
+        configure_storage(agent_path=agent_path, agent_name=name)
+    except Exception:
+        return None
+    try:
+        storage = get_storage()
+    except StorageNotConfiguredError:
+        return None
+    except Exception:
+        return None
+
+    minimal_spec: dict = {"agent_description": (description or name)[:512]}
+    try:
+        storage.save_spec(minimal_spec)
+    except Exception:
+        return None
+
+    agent_id = storage.get_agent_id() or None
+    if not agent_id:
+        return None
+
+    try:
+        save_agent(name, entrypoint, id=agent_id)
+    except Exception:
+        return agent_id
+    return agent_id
 
 
 def _other_agents_with_entrypoint(
@@ -389,13 +434,6 @@ def cmd_register(name: str, entrypoint: str) -> None:
             raise SystemExit(0)
 
         agent_path = str(file_path)
-        entry_for_env_scan = str(Path(file_path).resolve())
-
-        console.print()
-        console.print(Rule(style="dim"))
-        collect_agent_provider_config(name, console)
-        collect_code_detected_env_vars(name, entry_for_env_scan, console)
-        load_agent_dotenv(name)
 
         console.print()
         console.print(Rule(style="dim"))
@@ -407,13 +445,16 @@ def cmd_register(name: str, entrypoint: str) -> None:
         entrypoint, file_path, fn = result
 
         save_agent(name, entrypoint)
+        agent_id = _sync_agent_id_to_registry(name, entrypoint, agent_path)
         console.print(
             f"\n  [bold green]\u2713[/bold green]  "
             f"Agent '[bold]{name}[/bold]' registered.\n"
             f"  [dim]Entrypoint:[/dim] {entrypoint}\n"
             f"  [dim]File:[/dim]      {file_path}\n"
-            f"  [dim]Function:[/dim]  {fn}\n"
+            f"  [dim]Function:[/dim]  {fn}\n" + (f"  [dim]Agent ID:[/dim]  {agent_id}\n" if agent_id else "")
         )
+        if agent_id:
+            set_tag(attrs.AGENT_ID, agent_id)
         _print_post_register_next_step(console, name)
         return
 
@@ -429,19 +470,12 @@ def cmd_register(name: str, entrypoint: str) -> None:
         console.print(f"\n  [bold red]Error:[/bold red] {exc}\n")
         raise SystemExit(1) from exc
 
-    # ---- 1. Collect agent-specific env vars (API keys) ----
-    console.print()
-    console.print(Rule(style="dim"))
-    collect_agent_provider_config(name, console)
-    collect_code_detected_env_vars(name, str(Path(agent_path).resolve()), console)
-    load_agent_dotenv(name)
-
-    # ---- 2. Copy agent source into .overmind/ (instrumentation) ----
+    # ---- 1. Copy agent source into .overmind/ (instrumentation) ----
     console.print()
     console.print(Rule(style="dim"))
     instrument_agent_files(agent_path, name, console)
 
-    # ---- 3. Validate entrypoint function (may trigger wrapper generation) ----
+    # ---- 2. Validate entrypoint function (may trigger wrapper generation) ----
     try:
         resolve_entrypoint(entrypoint)
     except (EntrypointNotFoundError, EntrypointSignatureError) as exc:
@@ -452,21 +486,24 @@ def cmd_register(name: str, entrypoint: str) -> None:
         file_path = result[1]
         fn = result[2]
 
-    # ---- 4. Save to registry ----
+    # ---- 3. Save to registry ----
     save_agent(name, entrypoint)
+    agent_id = _sync_agent_id_to_registry(name, entrypoint, agent_path)
 
     # ``file_path`` is usually a Path; stringify defensively so the
     # span attribute carries a plain string regardless of where the
     # caller resolved it from.
     set_tag(attrs.AGENT_FILE_PATH, str(file_path))
     set_tag(attrs.AGENT_FUNCTION_NAME, fn)
+    if agent_id:
+        set_tag(attrs.AGENT_ID, agent_id)
 
     console.print(
         f"\n  [bold green]\u2713[/bold green]  "
         f"Agent '[bold]{name}[/bold]' registered.\n"
         f"  [dim]Entrypoint:[/dim] {entrypoint}\n"
         f"  [dim]File:[/dim]      {file_path}\n"
-        f"  [dim]Function:[/dim]  {fn}\n"
+        f"  [dim]Function:[/dim]  {fn}\n" + (f"  [dim]Agent ID:[/dim]  {agent_id}\n" if agent_id else "")
     )
     _print_post_register_next_step(console, name)
 
@@ -570,19 +607,12 @@ def cmd_update(name: str, entrypoint: str) -> None:
         console.print(f"\n  [bold red]Error:[/bold red] {exc}\n")
         raise SystemExit(1) from exc
 
-    # 1. Re-collect envs
-    console.print()
-    console.print(Rule(style="dim"))
-    collect_agent_provider_config(name, console)
-    collect_code_detected_env_vars(name, str(Path(agent_path).resolve()), console)
-    load_agent_dotenv(name)
-
-    # 2. Re-instrument
+    # 1. Re-instrument
     console.print()
     console.print(Rule(style="dim"))
     instrument_agent_files(agent_path, name, console)
 
-    # 3. Validate entrypoint function (may trigger wrapper generation)
+    # 2. Validate entrypoint function (may trigger wrapper generation)
     try:
         resolve_entrypoint(entrypoint)
     except (EntrypointNotFoundError, EntrypointSignatureError) as exc:
@@ -591,7 +621,7 @@ def cmd_update(name: str, entrypoint: str) -> None:
             raise SystemExit(1) from exc
         entrypoint = result[0]
 
-    # 4. Save
+    # 3. Save
     save_agent(name, entrypoint)
 
     console.print(f"\n  [dim]Old entrypoint:[/dim] {old_ep_raw}\n  [dim]New entrypoint:[/dim] {entrypoint}\n")
@@ -687,7 +717,6 @@ def cmd_validate(name: str, data: str) -> None:
         )
         raise SystemExit(1)
 
-    load_agent_dotenv(name)
     agent_path, fn_name = resolve_agent(name)
 
     data_path = Path(data)

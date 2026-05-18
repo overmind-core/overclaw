@@ -104,60 +104,96 @@ def get_api_settings(
     return overmind_api_key, base_url.rstrip("/")
 
 
-def serialize_dataclass(obj: Any) -> Any:
-    """
-    Recursively serialize dataclass and nested dataclasses into
-    JSON-serializable objects (dicts, lists, primitives).
+# Recursion guard for :func:`_normalize_for_json`.  Pathological inputs
+# (``MagicMock``, cyclic ``__dict__`` references, Pydantic v1 models whose
+# ``model_dump`` returns more models, …) used to cause unbounded recursion
+# and 27 GB RSS spikes before we hit ``RecursionError``.  10 levels is
+# more than any real LLM input we capture in tracing.
+_MAX_NORMALIZE_DEPTH = 10
 
-    Falls back to str(obj) if not serializable.
-    Handles nested dataclasses, lists/tuples/sets of dataclasses, and dicts.
+
+def _normalize_for_json(obj: Any, *, _depth: int = 0) -> Any:
+    """Recursively convert *obj* into a value :func:`json.dumps` can handle.
+
+    Produces a tree of plain Python primitives (``str``/``int``/``float``/
+    ``bool``/``None``), ``list`` and ``dict``.  Unknown objects fall back to
+    a stringified placeholder so serialisation never crashes the caller.
+
+    Handles, in order:
+
+    * recursion-depth guard — past 10 levels we stringify the rest of the tree
+    * primitives (passthrough)
+    * dataclass instances → dict of normalised fields
+    * pydantic-style ``model_dump()`` providers (only if it returns a real dict)
+    * UI types listed in :data:`_SKIP_INPUT_TYPES` → ``"<TypeName>"`` tag
+    * ``Mapping`` / ``Sequence`` (incl. ``set`` / ``tuple``) → list/dict of normalised members
+    * ``bytes`` → hex string
+    * ``PurePath`` → string
+    * everything else → ``str(obj)``
     """
-    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
-        result = {}
-        for field in dataclasses.fields(obj):
-            value = getattr(obj, field.name)
-            result[field.name] = serialize(value)
-        return result
-    elif isinstance(obj, (list, tuple, set)):
-        return [serialize(item) for item in obj]
-    elif isinstance(obj, dict):
-        # Only serialize keys if they're strings or basic types
-        return {str(k): serialize(v) for k, v in obj.items()}
-    elif isinstance(obj, (str, int, float, bool)) or obj is None:
+    if _depth > _MAX_NORMALIZE_DEPTH:
+        return f"<truncated:{type(obj).__name__}>"
+    if isinstance(obj, (str, int, float, bool, type(None))):
         return obj
-    else:
-        # Fallback: try to get __dict__, else use str
-        if hasattr(obj, "__dict__"):
-            return serialize(vars(obj))
+    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+        return {f.name: _normalize_for_json(getattr(obj, f.name), _depth=_depth + 1) for f in dataclasses.fields(obj)}
+    if _should_skip_value(obj):
+        return f"<{type(obj).__name__}>"
+    if isinstance(obj, dict):
+        return {str(k): _normalize_for_json(v, _depth=_depth + 1) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set, frozenset)):
+        return [_normalize_for_json(item, _depth=_depth + 1) for item in obj]
+    if isinstance(obj, bytes):
+        return obj.hex()
+    if isinstance(obj, PurePath):
         return str(obj)
+    # Pydantic-style ``model_dump`` is the last resort because some test
+    # doubles (``MagicMock``) expose a callable ``model_dump`` that returns
+    # another mock — recurse there without a guard and you melt the heap.
+    dumper = getattr(obj, "model_dump", None)
+    if callable(dumper):
+        try:
+            dumped = dumper()
+        except Exception:
+            return str(obj)
+        if isinstance(dumped, dict):
+            return _normalize_for_json(dumped, _depth=_depth + 1)
+        return str(obj)
+    if hasattr(obj, "__dict__"):
+        try:
+            items = vars(obj).items()
+        except TypeError:
+            return str(obj)
+        return {k: _normalize_for_json(v, _depth=_depth + 1) for k, v in items if not k.startswith("_")}
+    return str(obj)
+
+
+def _json_dumps(obj: Any) -> str:
+    """JSON-serialise *obj* via :func:`_normalize_for_json`, never raises."""
+    try:
+        return json.dumps(_normalize_for_json(obj), ensure_ascii=False)
+    except (TypeError, ValueError, OverflowError):
+        return repr(obj)
+
+
+# Legacy aliases retained for any in-process callers that may still hold a
+# reference; new code should use :func:`_normalize_for_json` /
+# :func:`_json_dumps` directly.
+serialize_dataclass = _normalize_for_json
+serialize = _json_dumps
 
 
 def _default_serializer(obj):
-    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
-        return serialize_dataclass(obj)
-    if isinstance(obj, PurePath):
-        return str(obj)
-    if isinstance(obj, (set, frozenset)):
-        return list(obj)
-    if isinstance(obj, bytes):
-        return obj.hex()
-    if hasattr(obj, "model_dump"):
-        try:
-            return obj.model_dump()
-        except Exception:
-            logger.exception("Error serializing object")
-    if hasattr(obj, "__dict__"):
-        return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
-    return repr(obj)
+    """JSON ``default=`` hook used when an external caller hands us
+    a ``json.dumps`` call directly (currently nothing internal does).
 
-
-def serialize(obj) -> str:
-    try:
-        raw = json.dumps(obj, default=_default_serializer, ensure_ascii=False)
-    except (TypeError, ValueError, OverflowError):
-        raw = repr(obj)
-
-    return raw
+    Retained as a thin shim over :func:`_normalize_for_json` so external
+    code that imports it doesn't break.
+    """
+    normalized = _normalize_for_json(obj)
+    if isinstance(normalized, (dict, list, str, int, float, bool, type(None))):
+        return normalized
+    return str(normalized)
 
 
 # ---------------------------------------------------------------------------
@@ -165,107 +201,103 @@ def serialize(obj) -> str:
 # ---------------------------------------------------------------------------
 
 
-def enable_agno():
-    name, module = "agno", "agno"
-    global _providers
+def _enable_provider(name: str, module: str, instrumentor_factory) -> None:
+    """Instrument *module* with the OTel instrumentor returned by *instrumentor_factory*.
+
+    Idempotent: a second call for the same *name* is a no-op.  When the
+    upstream module isn't installed we either raise (strict mode) or log a
+    warning so the rest of the SDK keeps working.
+
+    Parameters
+    ----------
+    name:
+        Stable identifier stored in :data:`_providers` for the idempotency check.
+    module:
+        Module name to probe with :func:`importlib.util.find_spec`.
+    instrumentor_factory:
+        Zero-arg callable that returns an OTel instrumentor instance.  We import
+        the instrumentor lazily *inside* this callable so providers that aren't
+        being enabled don't pay the import cost.
+    """
     if name in _providers:
         logger.debug(f"{name} already enabled")
         return
 
     if importlib.util.find_spec(module) is None:
+        install_name = module.replace(".", "-")
+        msg = f"{install_name} is not installed. Please install it with `pip install {install_name}`."
         if _strict_mode:
-            raise ImportError(f"{module} is not installed. Please install it with `pip install {module}`.")
-        logger.warning(f"{module} is not installed. Please install it with `pip install {module}`.")
+            raise ImportError(msg)
+        logger.warning(msg)
         return
 
+    instrumentor_factory().instrument()
+    _providers.add(name)
+    logger.info(f"{name} instrumentation enabled")
+
+
+def _agno_factory():
     from opentelemetry.instrumentation.agno import AgnoInstrumentor
 
-    AgnoInstrumentor().instrument()
-    _providers.add(name)
-    logger.info(f"{name} instrumentation enabled")
+    return AgnoInstrumentor()
 
 
-def enable_openai():
-    name, module = "openai", "openai"
-    global _providers
-    if name in _providers:
-        logger.debug(f"{name} already enabled")
-        return
-
-    if importlib.util.find_spec(module) is None:
-        if _strict_mode:
-            raise ImportError(f"{module} is not installed. Please install it with `pip install {module}`.")
-        logger.warning(f"{module} is not installed. Please install it with `pip install {module}`.")
-        return
-
+def _openai_factory():
     from opentelemetry.instrumentation.openai import OpenAIInstrumentor
 
-    OpenAIInstrumentor().instrument()
-
-    _providers.add(name)
-    logger.info(f"{name} instrumentation enabled")
+    return OpenAIInstrumentor()
 
 
-def enable_anthropic():
-    name, module = "anthropic", "anthropic"
-    global _providers
-    if name in _providers:
-        logger.debug(f"{name} already enabled")
-        return
-
-    if importlib.util.find_spec(module) is None:
-        if _strict_mode:
-            raise ImportError(f"{module} is not installed. Please install it with `pip install {module}`.")
-        logger.warning(f"{module} is not installed. Please install it with `pip install {module}`.")
-        return
-
+def _anthropic_factory():
     from opentelemetry.instrumentation.anthropic import AnthropicInstrumentor
 
-    AnthropicInstrumentor().instrument()
-
-    _providers.add(name)
-    logger.info(f"{name} instrumentation enabled")
+    return AnthropicInstrumentor()
 
 
-def enable_google_genai():
-    name, module = "google", "google.genai"
-
-    global _providers
-    if name in _providers:
-        logger.debug(f"{name} already enabled")
-        return
-
-    if importlib.util.find_spec(module) is None:
-        module = module.replace(".", "-")
-        if _strict_mode:
-            raise ImportError(f"{module} is not installed. Please install it with `pip install {module}`.")
-        logger.warning(f"{module} is not installed. Please install it with `pip install {module}`.")
-        return
-
+def _google_genai_factory():
     from opentelemetry.instrumentation.google_generativeai import GoogleGenerativeAiInstrumentor
 
-    GoogleGenerativeAiInstrumentor().instrument()
-
-    _providers.add(name)
-    logger.info(f"{name} instrumentation enabled")
+    return GoogleGenerativeAiInstrumentor()
 
 
-def enable_tracing(providers: list[str] | None = None):
+def enable_agno() -> None:
+    _enable_provider("agno", "agno", _agno_factory)
+
+
+def enable_openai() -> None:
+    _enable_provider("openai", "openai", _openai_factory)
+
+
+def enable_anthropic() -> None:
+    _enable_provider("anthropic", "anthropic", _anthropic_factory)
+
+
+def enable_google_genai() -> None:
+    _enable_provider("google", "google.genai", _google_genai_factory)
+
+
+_PROVIDER_ENABLERS = {
+    "agno": enable_agno,
+    "openai": enable_openai,
+    "anthropic": enable_anthropic,
+    "google": enable_google_genai,
+}
+
+
+def enable_tracing(providers: list[str] | None = None) -> None:
     if providers == []:
-        # if no providers are provided, enable all supported providers
-        providers = ["openai", "anthropic", "google", "agno"]
+        # If no providers are provided, enable all supported providers.
+        providers = list(_PROVIDER_ENABLERS.keys())
     logger.info(f"Enabling tracing for providers: {providers}")
 
     if providers is None:
         return
-    if "agno" in providers:
-        enable_agno()
-    if "openai" in providers:
-        enable_openai()
-    if "anthropic" in providers:
-        enable_anthropic()
-    if "google" in providers:
-        enable_google_genai()
+    for name in providers:
+        enabler = _PROVIDER_ENABLERS.get(name)
+        if enabler is None:
+            logger.warning(f"Unknown tracing provider: {name!r}")
+            continue
+        enabler()
 
 
 # Context-propagation keys.  We use the canonical ``overmind.*``
@@ -275,8 +307,8 @@ def enable_tracing(providers: list[str] | None = None):
 # stamp the same key without re-mapping.  Workflow + conversation
 # labels don't have a 1:1 span-attribute counterpart, so they use
 # their own dotted symbolic names.
-_CTX_KEY_WORKFLOW_NAME = "overmind.workflow.name"
-_CTX_KEY_CONVERSATION_ID = "overmind.conversation.id"
+_CTX_KEY_WORKFLOW_NAME = attrs.WORKFLOW_NAME
+_CTX_KEY_CONVERSATION_ID = attrs.CONVERSATION_ID
 
 
 def _span_processor_on_start(span: trace.Span, parent_context: trace.Context | None = None):
@@ -363,6 +395,27 @@ def init(
         # there is no such thing as remove initialization
         logger.debug(f"Overmind SDK already initialized, reinitializing with providers: {providers}")
         enable_tracing(providers)
+        return
+
+    # When running inside the optimize-step subprocess, the runner wrapper
+    # configures a local JSONL TracerProvider via ``OVERMIND_TRACE_FILE`` and
+    # deliberately strips ``OVERMIND_API_KEY`` from the env so spans land in a
+    # file instead of the cloud backend. Any ``overmind.init()`` calls that
+    # were instrumented into the agent entrypoint should reuse that already-
+    # configured provider rather than crashing on the missing API key or
+    # silently replacing the wrapper's exporter.
+    if os.environ.get("OVERMIND_TRACE_FILE") and not (overmind_api_key or os.environ.get("OVERMIND_API_KEY")):
+        from overmind import __version__ as _SDK_VERSION
+
+        logger.debug(
+            "Overmind SDK init() skipped: OVERMIND_TRACE_FILE is set and no "
+            "OVERMIND_API_KEY available; reusing the local file-exporter "
+            "TracerProvider configured by the optimize runner wrapper.",
+        )
+        _tracer = trace.get_tracer("overmind", _SDK_VERSION)
+        enable_tracing(providers)
+        _attach_remote_parent_if_present()
+        _initialized = True
         return
 
     environment = (
@@ -475,7 +528,7 @@ def set_user(user_id: str, email: str | None = None, username: str | None = None
             span.set_attribute("user.username", username)
 
 
-def _coerce_attribute_value(value: Any) -> Any:
+def _coerce_to_otel_attribute(value: Any) -> Any:
     """Project *value* onto an OTel-compatible attribute value.
 
     OTel attribute values must be primitives or sequences of strings.
@@ -489,24 +542,19 @@ def _coerce_attribute_value(value: Any) -> Any:
         return ""
     if isinstance(value, (bool, str, int, float)):
         return value
-    if isinstance(value, (list, tuple)):
-        if all(isinstance(v, str) for v in value):
-            return list(value)
-        try:
-            return json.dumps(value, default=_default_serializer, ensure_ascii=False)
-        except (TypeError, ValueError):
-            return str(value)
-    if isinstance(value, dict):
-        try:
-            return json.dumps(value, default=_default_serializer, ensure_ascii=False)
-        except (TypeError, ValueError):
-            return str(value)
-    return str(value)
+    if isinstance(value, (list, tuple)) and all(isinstance(v, str) for v in value):
+        return list(value)
+    return _json_dumps(value)
+
+
+# Legacy alias retained for any in-process callers that may still hold a
+# reference; new code should use :func:`_coerce_to_otel_attribute` directly.
+_coerce_attribute_value = _coerce_to_otel_attribute
 
 
 def _safe_set_attribute(otel_span, key: str, value: Any) -> None:
-    """Set *key* / *value* on *otel_span* via :func:`_coerce_attribute_value`."""
-    otel_span.set_attribute(key, _coerce_attribute_value(value))
+    """Set *key* / *value* on *otel_span* via :func:`_coerce_to_otel_attribute`."""
+    otel_span.set_attribute(key, _coerce_to_otel_attribute(value))
 
 
 def set_tag(key: str, value) -> None:
@@ -613,29 +661,10 @@ def _should_skip_value(value: Any) -> bool:
     return type(value).__name__ in _SKIP_INPUT_TYPES
 
 
-def _prepare_for_otel(value: Any) -> Any:
-    """Normalise *value* into something :func:`serialize` can handle.
-
-    Primitives pass through untouched; UI helpers collapse to a tag
-    like ``"<Console>"``; pydantic models use ``model_dump``; paths
-    stringify; everything else falls back to ``repr``-style coercion.
-    """
-    if isinstance(value, (str, int, float, bool, type(None))):
-        return value
-    if _should_skip_value(value):
-        return f"<{type(value).__name__}>"
-    if hasattr(value, "model_dump"):
-        try:
-            return value.model_dump()
-        except Exception:
-            return str(value)
-    if isinstance(value, (dict, list, tuple)):
-        return value
-    if isinstance(value, (set, frozenset)):
-        return list(value)
-    if isinstance(value, PurePath):
-        return str(value)
-    return str(value)
+# Legacy alias retained for callers that haven't migrated yet.  The
+# behaviour is now identical to :func:`_normalize_for_json` since both
+# share the same skip-list, model-dump, dataclass, and path-coercion logic.
+_prepare_for_otel = _normalize_for_json
 
 
 def _stamp_span_metadata(otel_span, span_type: SpanType) -> None:
@@ -706,13 +735,13 @@ def _capture_inputs(
             if _should_skip_value(arg):
                 continue
             param_name = param_names[i] if i < len(param_names) else f"arg_{i}"
-            inputs[param_name] = _prepare_for_otel(arg)
+            inputs[param_name] = _normalize_for_json(arg)
         for key, value in kwargs.items():
             if _should_skip_value(value):
                 continue
-            inputs[key] = _prepare_for_otel(value)
+            inputs[key] = _normalize_for_json(value)
 
-        otel_span.set_attribute("inputs", serialize(inputs))
+        otel_span.set_attribute("inputs", _json_dumps(inputs))
     except Exception:
         logger.debug("observe(): input capture failed for %s", func.__name__, exc_info=True)
 
@@ -720,7 +749,7 @@ def _capture_inputs(
 def _capture_output(otel_span, result: Any) -> None:
     """Serialise *result* and attach it as ``outputs`` (best-effort)."""
     try:
-        otel_span.set_attribute("outputs", serialize(_prepare_for_otel(result)))
+        otel_span.set_attribute("outputs", _json_dumps(result))
     except Exception:
         logger.debug("observe(): output capture failed", exc_info=True)
 
@@ -1042,10 +1071,35 @@ def set_iteration_analytics(
 
 
 __all__ = [
+    "DEFAULT_BASE_URL",
+    "SpanType",
+    "capture_exception",
+    "conversation",
+    "enable_agno",
+    "enable_anthropic",
+    "enable_google_genai",
+    "enable_openai",
+    "enable_tracing",
+    "entry_point",
+    "force_flush_traces",
+    "function",
+    "get_api_settings",
+    "get_tracer",
+    "init",
+    "observe",
+    "observe_safe",
+    "serialize",
+    "serialize_dataclass",
+    "set_agent_name",
+    "set_conversation_id",
     "set_iteration_analytics",
     "set_progress",
     "set_status",
+    "set_tag",
+    "set_user",
+    "set_workflow_name",
+    "start_child_span",
+    "start_span",
+    "tool",
+    "workflow",
 ]
-
-
-# __all__ = ["force_flush_traces"]

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from overmind.optimize.analyzer import (
     _build_fingerprints,
     _detect_agent_model,
@@ -20,7 +19,6 @@ from overmind.optimize.analyzer import (
     _matches_fingerprint,
     _measure_system_prompt,
 )
-
 
 # ---------------------------------------------------------------------------
 # _measure_system_prompt
@@ -228,6 +226,41 @@ class TestFindWeakestDimension:
         name, score, max_val = _find_weakest_dimension(evaluation, spec)
         assert name == "B"
         assert max_val == 50.0
+
+    def test_skips_absent_tool_usage(self):
+        """Configured-but-absent dimensions must not hijack worst-gap selection.
+
+        Pre-fix, an absent ``avg_tool_usage`` defaulted to 0 and locked
+        every iteration's focus onto tools because gap=1.0 always won.
+        """
+        spec = {
+            "structure_weight": 20,
+            "tool_usage_weight": 10,
+            "output_fields": {
+                "response_text": {"weight": 12},
+                "final_agent_name": {"weight": 15},
+            },
+        }
+        evaluation = {
+            "avg_structure": 20.0,
+            "avg_response_text": 5.7,  # the real weak link
+            "avg_final_agent_name": 12.1,
+            # avg_tool_usage intentionally absent — dimension was unscored.
+        }
+        name, _score, _max_val = _find_weakest_dimension(evaluation, spec)
+        assert name == "Response Text"
+
+    def test_skips_absent_output_field(self):
+        spec = {
+            "structure_weight": 20,
+            "output_fields": {
+                "scored": {"weight": 50},
+                "never_scored": {"weight": 100},
+            },
+        }
+        evaluation = {"avg_structure": 20.0, "avg_scored": 25.0}
+        name, _score, _max_val = _find_weakest_dimension(evaluation, spec)
+        assert name == "Scored"
 
 
 # ---------------------------------------------------------------------------

@@ -1,10 +1,13 @@
 """Interactive configuration collection for the optimization run."""
 
 import json
+import logging
 import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from rich.console import Console
 from rich.panel import Panel
@@ -14,7 +17,6 @@ from rich.table import Table
 
 from overmind.core.constants import overmind_rel
 from overmind.core.paths import (
-    agent_env_path,
     agent_experiments_dir,
     agent_setup_spec_dir,
     load_overmind_dotenv,
@@ -138,18 +140,23 @@ class Config:
     # When False (default), regression checks are faster but may miss
     # semantic quality regressions on judge-heavy specs.
     judge_in_regression: bool = False
-    # Read-only context files (globs relative to project root), merged into the
-    # bundle but never edited by the coding agent.
-    context_scope: list[str] = field(default_factory=list)
     # Read-only files (globs relative to project root) that MUST be present in
     # the bundle / worktree but MUST NOT be modified by candidates. Enforced
-    # at accept time via a content diff against the bundle's baseline. Unlike
-    # ``context_scope`` (advisory; relies on the analyzer prompt for steering),
-    # ``read_only_scope`` is enforced — a candidate whose worktree mutates any
-    # listed file is rejected before scoring.
+    # at accept time via a content diff against the bundle's baseline — a
+    # candidate whose worktree mutates any listed file is rejected before
+    # scoring. This is the only "in bundle, not editable" tier; the previous
+    # ``context_scope`` (advisory, unenforced) was strictly worse and has
+    # been collapsed into ``read_only_scope``.
     read_only_scope: list[str] = field(default_factory=list)
-    # Extra path globs to exclude from BFS (merged with .overmindignore).
-    exclude_scope: list[str] = field(default_factory=list)
+    # Transient migration field: populated by :func:`apply_eval_spec_scope`
+    # when a legacy spec still declares ``scope.exclude_paths``. Consumed
+    # by :func:`overmind.optimize.bundle_factory.build_agent_bundle` to
+    # auto-promote BFS-reachable matches to read-only (preserving user
+    # intent) while emitting a per-match deprecation warning. New specs
+    # should use ``scope.read_only_paths`` directly or ``.overmindignore``
+    # for project-level drops; this field will be removed in the next
+    # release.
+    _legacy_exclude_paths: list[str] = field(default_factory=list)
     # Extra sys.path-style search directories under the project root that the
     # import resolver should treat as package roots. Supports hyphenated
     # layouts (``python-backend/``) and explicit ``src/`` layouts whose
@@ -355,18 +362,53 @@ def apply_eval_spec_scope(cfg: Config, spec: dict) -> None:
         paths = scope.get("optimizable_paths")
         if paths:
             cfg.optimizable_scope = list(paths)
-    if not cfg.context_scope:
-        ctx = scope.get("context_paths")
-        if ctx:
-            cfg.context_scope = list(ctx)
     if not cfg.read_only_scope:
         ro = scope.get("read_only_paths")
         if ro:
             cfg.read_only_scope = list(ro)
-    if not cfg.exclude_scope:
-        excl = scope.get("exclude_paths")
-        if excl:
-            cfg.exclude_scope = list(excl)
+
+    # Legacy ``scope.context_paths`` collapsed into ``scope.read_only_paths``
+    # in this release. ``context_paths`` was always meant to be materialized
+    # as read-only context but was never enforced at accept time (see
+    # accept_step.py — only ``read_only_scope`` is diff-checked). Promoting
+    # to enforced read-only is strictly safer. We merge unconditionally and
+    # warn once per spec load so existing eval_spec.json files keep working
+    # while the user migrates them.
+    legacy_context = scope.get("context_paths") or []
+    if legacy_context:
+        existing = set(cfg.read_only_scope)
+        for p in legacy_context:
+            if p and p not in existing:
+                cfg.read_only_scope.append(p)
+                existing.add(p)
+        logger.warning(
+            "scope.context_paths is deprecated and was merged into "
+            "scope.read_only_paths (%d path(s) added). Update your "
+            "eval_spec.json to use scope.read_only_paths directly; the "
+            "context_paths field will be removed in the next release.",
+            len(legacy_context),
+        )
+
+    # Legacy ``scope.exclude_paths`` is no longer a first-class field on
+    # ``Config``. We stash the raw list on ``_legacy_exclude_paths`` so
+    # ``build_agent_bundle`` can run the existing auto-promotion logic
+    # against BFS-reachable matches (preserving user intent: "not editable")
+    # while emitting a per-match warning that names the offending glob.
+    # Env-style globs in the list (``**/__pycache__/**`` etc.) are no-ops
+    # because BFS already skips those via ``build_ignore_predicate``.
+    # Non-BFS-reachable files were always no-ops in the bundle anyway.
+    # Users wanting project-level drops should use ``.overmindignore``.
+    legacy_excludes = scope.get("exclude_paths") or []
+    if legacy_excludes:
+        cfg._legacy_exclude_paths = list(legacy_excludes)
+        logger.warning(
+            "scope.exclude_paths is deprecated. BFS-reachable matches will "
+            "be auto-promoted to read-only with a per-match warning; "
+            "project-level drops (test directories, vendored code, infra) "
+            "belong in .overmindignore. The exclude_paths field will be "
+            "removed in the next release."
+        )
+
     if not cfg.bundle_search_paths:
         sp = scope.get("search_paths")
         if sp:
@@ -643,12 +685,7 @@ def collect_config(
                 default_model=DEFAULT_ANALYZER_MODEL,
                 no_catalog_prompt="  Enter analyzer model",
             )
-            ensure_provider_api_keys(
-                cfg.analyzer_model,
-                agent_env_path(cfg.agent_name),
-                cfg.agent_name,
-                console,
-            )
+            ensure_provider_api_keys(cfg.analyzer_model, console)
     else:
         console.print(f"  [yellow]No ANALYZER_MODEL found in {overmind_rel('.env')}[/yellow]")
         cfg.analyzer_model = prompt_for_catalog_litellm_model(
@@ -658,7 +695,7 @@ def collect_config(
             default_model=DEFAULT_ANALYZER_MODEL,
             no_catalog_prompt="  Enter analyzer model",
         )
-        ensure_provider_api_keys(cfg.analyzer_model, agent_env_path(cfg.agent_name), cfg.agent_name, console)
+        ensure_provider_api_keys(cfg.analyzer_model, console)
 
     # ---- LLM-as-Judge ----
     console.print()
