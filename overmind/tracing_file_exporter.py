@@ -18,6 +18,11 @@ gets its own ``trace_file`` path (the optimizer allocates one per case).
 Within a process, exports are serialised by the ``BatchSpanProcessor``,
 and each export ends with an ``fsync`` so the parent can read every
 span after the subprocess exits.
+
+:func:`install_local_provider` is the one-call bootstrap used by the
+optimizer's runner subprocess: it wires up a fresh ``TracerProvider`` that
+exports *only* to a JSONL file (no cloud, no API key) and enables the
+supported LLM-provider auto-instrumentations.
 """
 
 from __future__ import annotations
@@ -32,6 +37,30 @@ from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 
 logger = logging.getLogger(__name__)
+
+
+def install_local_provider(path: str | os.PathLike[str]) -> None:
+    """Install a JSONL-file-only :class:`TracerProvider` on the global API.
+
+    Used by the optimizer's subprocess wrapper to enable tracing without
+    any cloud roundtrip — the entire span stream is written to *path*.
+    Best-effort: any failure to set up tracing is swallowed so the agent
+    process can still run.
+    """
+    try:
+        from opentelemetry import trace
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+        from overmind.tracing import enable_tracing
+
+        provider = TracerProvider(resource=Resource.create({"service.name": "overmind-optimize-subprocess"}))
+        provider.add_span_processor(BatchSpanProcessor(JsonlFileSpanExporter(path)))
+        trace.set_tracer_provider(provider)
+        enable_tracing(providers=[])
+    except Exception:
+        logger.exception("install_local_provider: tracing setup failed")
 
 
 class JsonlFileSpanExporter(SpanExporter):
@@ -84,4 +113,4 @@ class JsonlFileSpanExporter(SpanExporter):
         return MessageToDict(traces_data, preserving_proto_field_name=True)
 
 
-__all__ = ["JsonlFileSpanExporter"]
+__all__ = ["JsonlFileSpanExporter", "install_local_provider"]

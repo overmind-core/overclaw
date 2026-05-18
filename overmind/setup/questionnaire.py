@@ -10,14 +10,15 @@ import logging
 
 from rich.console import Console
 from rich.prompt import Prompt
-from rich.table import Table
 
 from overmind import SpanType, attrs, set_tag
 from overmind.core.logging import stage
 from overmind.prompts.questionnaire import REFINEMENT_PROMPT
 from overmind.tracing import observe_safe
-from overmind.utils.display import make_spinner_progress, overmind_prompt
+from overmind.utils.display import make_spinner_progress, overmind_prompt, render_criteria_table
 from overmind.utils.llm import llm_completion
+from overmind.utils.llm_parse import LLMParseError, parse_json_object
+from overmind.utils.policy import strip_internal_keys
 
 logger = logging.getLogger("overmind.setup.questionnaire")
 
@@ -58,7 +59,7 @@ def run_questionnaire(analysis: dict, model: str, console: Console) -> dict:
     original_criteria = analysis.get("proposed_criteria", {})
 
     # Strip internal keys before sending to the LLM
-    analysis_for_llm = {k: v for k, v in analysis.items() if not k.startswith("_")}
+    analysis_for_llm = strip_internal_keys(analysis)
 
     with stage(
         "setup.questionnaire.refine_criteria",
@@ -95,14 +96,9 @@ def run_questionnaire(analysis: dict, model: str, console: Console) -> dict:
         content = response.choices[0].message.content
 
         try:
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            if start >= 0 and end > start:
-                refined_criteria = json.loads(content[start:end])
-            else:
-                raise ValueError("No JSON found in LLM response")
+            refined_criteria = parse_json_object(content)
             info["parsed_ok"] = True
-        except (json.JSONDecodeError, ValueError) as exc:
+        except LLMParseError as exc:
             logger.warning(f"Refined-criteria JSON parse failed: {exc}")
             console.print(f"\n  [yellow]Could not parse refined criteria ({exc}). Using original proposal.[/yellow]")
             refined_criteria = original_criteria
@@ -122,37 +118,9 @@ def run_questionnaire(analysis: dict, model: str, console: Console) -> dict:
 
 def _display_refined(criteria: dict, analysis: dict, console: Console):
     """Show the refined criteria table."""
-    fields_criteria = criteria.get("fields", {})
-    if not fields_criteria:
-        return
-
-    console.print()
-    table = Table(title="Refined Evaluation Criteria", border_style="green")
-    table.add_column("Field", style="bold")
-    table.add_column("Importance")
-    table.add_column("Scoring Detail")
-
-    output_schema = analysis.get("output_schema", {})
-    for field_name, fc in fields_criteria.items():
-        importance = fc.get("importance", "important")
-        ftype = output_schema.get(field_name, {}).get("type", "text")
-
-        if ftype == "enum":
-            detail = "partial credit" if fc.get("partial_credit", True) else "exact match only"
-        elif ftype == "number":
-            detail = f"tolerance ±{fc.get('tolerance', 10)}"
-        elif ftype == "text":
-            mode = fc.get("eval_mode", "non_empty")
-            detail = "check non-empty" if mode == "non_empty" else "skip"
-        else:
-            detail = "exact match"
-
-        table.add_row(field_name, importance, detail)
-
-    sw = criteria.get("structure_weight", 20)
-    table.add_row(
-        "[dim]structure[/dim]",
-        "[dim]—[/dim]",
-        f"[dim]{sw} pts for completeness[/dim]",
+    render_criteria_table(
+        console,
+        criteria,
+        analysis.get("output_schema", {}),
+        title="Refined Evaluation Criteria",
     )
-    console.print(table)

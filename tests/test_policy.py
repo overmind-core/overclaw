@@ -9,6 +9,7 @@ from overmind.utils.policy import (
     _get_quality_expectations,
     _get_rules,
     _is_two_layer,
+    agent_name_from_description,
     default_policy_path,
     format_for_codegen,
     format_for_diagnosis,
@@ -16,7 +17,45 @@ from overmind.utils.policy import (
     format_for_synthetic_data,
     load_policy_data,
     load_policy_markdown,
+    strip_internal_keys,
 )
+
+
+class TestAgentNameFromDescription:
+    def test_extracts_name_before_colon(self) -> None:
+        assert agent_name_from_description("Lead Triager: qualifies leads") == "Lead Triager"
+
+    def test_handles_extra_whitespace(self) -> None:
+        assert agent_name_from_description("  Spaced   :  details") == "Spaced"
+
+    def test_falls_back_when_no_colon(self) -> None:
+        assert agent_name_from_description("just a description") == "Agent"
+
+    def test_handles_empty_input(self) -> None:
+        assert agent_name_from_description("") == "Agent"
+        assert agent_name_from_description(None) == "Agent"
+
+    def test_only_colon_returns_agent_default(self) -> None:
+        # Empty name slice should not silently turn into an empty string.
+        assert agent_name_from_description(":only suffix") == "Agent"
+
+
+class TestStripInternalKeys:
+    def test_removes_underscored_keys(self) -> None:
+        assert strip_internal_keys({"a": 1, "_b": 2, "c": 3}) == {"a": 1, "c": 3}
+
+    def test_returns_fresh_dict(self) -> None:
+        src = {"a": 1, "_internal": 2}
+        out = strip_internal_keys(src)
+        out["new"] = 99
+        assert "new" not in src
+
+    def test_handles_empty_and_none(self) -> None:
+        assert strip_internal_keys({}) == {}
+        assert strip_internal_keys(None) == {}
+
+    def test_keeps_keys_with_trailing_underscore(self) -> None:
+        assert strip_internal_keys({"trailing_": 1, "_leading": 2}) == {"trailing_": 1}
 
 
 # ---------------------------------------------------------------------------

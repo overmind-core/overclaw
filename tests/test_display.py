@@ -6,12 +6,72 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from rich.console import Console
+
 from overmind.utils import display
 from overmind.utils.display import (
     confirm_option,
     is_non_interactive,
+    render_criteria_table,
     select_option,
 )
+
+
+class TestRenderCriteriaTable:
+    """The new shared Rich criteria table renderer."""
+
+    @staticmethod
+    def _criteria() -> dict:
+        return {
+            "fields": {
+                "priority": {"importance": "critical", "partial_credit": True},
+                "score": {"importance": "important", "tolerance": 5},
+                "notes": {"importance": "minor", "eval_mode": "non_empty"},
+            },
+            "structure_weight": 20,
+        }
+
+    @staticmethod
+    def _output_schema() -> dict:
+        return {
+            "priority": {"type": "enum"},
+            "score": {"type": "number"},
+            "notes": {"type": "text"},
+        }
+
+    def _capture(self, **kwargs) -> str:
+        console = Console(record=True, force_terminal=False, width=120)
+        render_criteria_table(console, self._criteria(), self._output_schema(), **kwargs)
+        return console.export_text()
+
+    def test_renders_one_row_per_field_plus_structure(self):
+        rendered = self._capture()
+        for name in ("priority", "score", "notes", "structure"):
+            assert name in rendered
+
+    def test_scoring_details_match_field_types(self):
+        rendered = self._capture()
+        assert "partial credit" in rendered
+        assert "tolerance" in rendered
+        assert "non-empty" in rendered or "non empty" in rendered
+
+    def test_default_title_proposed(self):
+        rendered = self._capture()
+        assert "Proposed Evaluation Criteria" in rendered
+
+    def test_custom_title_used(self):
+        rendered = self._capture(title="Refined Evaluation Criteria")
+        assert "Refined Evaluation Criteria" in rendered
+        assert "Proposed Evaluation Criteria" not in rendered
+
+    def test_no_fields_prints_nothing(self):
+        console = Console(record=True, force_terminal=False, width=120)
+        render_criteria_table(console, {"fields": {}}, {}, title="Nope")
+        assert "Nope" not in console.export_text()
+
+    def test_structure_weight_rendered(self):
+        rendered = self._capture()
+        assert "20 pts" in rendered
 
 
 # ---------------------------------------------------------------------------

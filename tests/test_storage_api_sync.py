@@ -22,7 +22,7 @@ These tests pin the post-fix contract:
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
@@ -176,56 +176,42 @@ class TestLoadPolicySync:
 
 
 # ---------------------------------------------------------------------------
-# Cross-cutting regression guard — _run_async must never appear in these flows
+# Cross-cutting regression guard — the asyncio bridge stays deleted.
 # ---------------------------------------------------------------------------
 
 
-class TestNoRunAsyncWrapper:
-    """Standing guard: if anyone re-wraps a sync SDK call in ``_run_async``,
-    these tests fail before shipping.
+class TestNoAsyncBridge:
+    """Standing guard: the asyncio bridge functions stay deleted.
 
-    We stub ``_run_async`` at its canonical source (``overmind.client``) with
-    a sentinel that fails loudly. Exercising every public ``ApiBackend``
-    method that touches the SDK and asserting the sentinel was never invoked
-    covers every line historically broken by the wrapper. The runtime guard
-    inside ``_run_async`` itself (``TypeError`` on non-coroutine) is the
-    second layer of defence; this test catches reintroduction earlier.
+    Bug 6 was a hand-rolled ``_run_async`` that wrapped sync SDK calls;
+    the wrapper raised ``TypeError`` *after* the HTTP request succeeded
+    and every caller's bare ``except Exception:`` reported failure to
+    the user. The wrapper was deleted in the client.py cleanup, so this
+    test only needs to assert it stays gone.
     """
 
-    @pytest.fixture
-    def sentinel_run_async(self):
-        sentinel = MagicMock(side_effect=AssertionError(
-            "ApiBackend wrapped a sync SDK call in _run_async — see Bug 6."
-        ))
-        with patch.object(client_mod, "_run_async", sentinel):
-            yield sentinel
-
-    def test_save_policy_does_not_wrap(self, backend, sentinel_run_async):
-        be, _client = backend
-        be.save_policy("# md")
-        sentinel_run_async.assert_not_called()
-
-    def test_delete_policy_does_not_wrap(self, backend, sentinel_run_async):
-        be, _client = backend
-        be.delete_policy()
-        sentinel_run_async.assert_not_called()
-
-    def test_load_spec_does_not_wrap(self, backend, sentinel_run_async):
-        be, client = backend
-        client.agents_eval_spec_retrieve.return_value = SimpleNamespace(
-            to_dict=lambda: {}
+    def test_run_async_does_not_exist(self):
+        assert not hasattr(client_mod, "_run_async"), (
+            "_run_async re-introduced — the generated SDK is sync. "
+            "Wrap fire-and-forget writes in client._fire instead."
         )
-        client.agents_retrieve.return_value = SimpleNamespace(policy_data=None)
-        be.load_spec()
-        sentinel_run_async.assert_not_called()
 
-    def test_load_policy_does_not_wrap(self, backend, sentinel_run_async):
-        be, client = backend
-        client.agents_retrieve.return_value = SimpleNamespace(policy_markdown="x")
-        be.load_policy()
-        sentinel_run_async.assert_not_called()
+    def test_submit_async_does_not_exist(self):
+        assert not hasattr(client_mod, "_submit_async"), (
+            "_submit_async re-introduced — the generated SDK is sync. "
+            "Wrap fire-and-forget writes in client._fire instead."
+        )
 
-    def test_delete_spec_does_not_wrap(self, backend, sentinel_run_async):
+    def test_get_bg_loop_does_not_exist(self):
+        assert not hasattr(client_mod, "_get_bg_loop"), (
+            "_get_bg_loop re-introduced — the asyncio bridge is gone."
+        )
+
+    def test_apibackend_still_works_after_cleanup(self, backend):
+        """Sanity check that ApiBackend operations still work after the cleanup."""
         be, _client = backend
+        # These calls used to be the regression-test surface for the async bridge.
+        # Now they just verify ApiBackend's public methods don't crash.
         be.delete_spec()
-        sentinel_run_async.assert_not_called()
+        be.save_policy("# md")
+        be.delete_policy()

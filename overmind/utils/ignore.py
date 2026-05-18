@@ -18,8 +18,15 @@ import fnmatch
 import logging
 from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import TypeAlias
 
 logger = logging.getLogger(__name__)
+
+# A callable that decides whether a *relative* path (relative to the
+# project root) should be skipped when walking the agent's source tree.
+# Used by the bundle factory, agent-env command, and the agent analyzer
+# so they all share a single, self-documenting type signature.
+IgnorePredicate: TypeAlias = Callable[[str], bool]
 
 # Directories we always skip.  Conservative — purely build / cache paths.
 _ALWAYS_SKIP_DIRS = {
@@ -96,7 +103,7 @@ def _matches_any(rel_path: str, patterns: Iterable[str]) -> bool:
     return False
 
 
-def build_ignore_predicate(root: Path) -> Callable[[str], bool]:
+def build_ignore_predicate(root: Path) -> IgnorePredicate:
     """Return a predicate that decides whether a *relative* path is ignored.
 
     The predicate is called with a path string relative to *root*.  It

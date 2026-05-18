@@ -26,9 +26,7 @@ import shutil
 import signal
 from contextlib import suppress
 from pathlib import Path
-from uuid import UUID
 
-from dotenv import dotenv_values
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import IntPrompt, Prompt
@@ -36,36 +34,51 @@ from rich.rule import Rule
 
 from overmind import SpanType, attrs, set_tag
 from overmind.client import (
-    ProjectResolutionError,
     flush_pending_api_updates,
     get_client,
-    resolve_project_id,
-    upsert_agent,
+)
+from overmind.commands.setup import (
+    check_agent_dependencies as _check_agent_dependencies,
+)
+from overmind.commands.setup import (
+    ensure_remote_agent_id as _ensure_remote_agent_id,
+)
+from overmind.commands.setup import (
+    run_beginning_smoke_test as _run_beginning_smoke_test,
+)
+from overmind.commands.setup import (
+    run_end_smoke_test as _run_end_smoke_test,
+)
+from overmind.commands.setup import (
+    smoke_test_agent as _smoke_test_agent,  # noqa: F401 — re-exported for tests
+)
+from overmind.commands.setup import (
+    sync_setup_artifacts as _sync_setup_artifacts,
+)
+from overmind.commands.setup import (
+    validate_agent_entrypoint as _validate_agent_entrypoint,
+)
+from overmind.commands.setup.smoke_test import (
+    resolve_seed_json_files as _resolve_seed_json_files,
 )
 from overmind.core.constants import overmind_rel
 from overmind.core.paths import (
-    agent_env_path,
     agent_instrumented_dir,
     agent_setup_spec_dir,
-    load_agent_dotenv,
     load_overmind_dotenv,
+    overmind_env_path,
 )
 from overmind.core.registry import (
-    get_agent_id,
-    load_registry,
     project_root_from_agent_file,
     resolve_agent,
-    save_agent,
 )
 from overmind.optimize.data import (
-    check_consistent_fields,
     generate_diverse_synthetic_data,
     generate_synthetic_data,
     load_data,
     normalize_data_fields,
 )
 from overmind.optimize.data_analyzer import analyze_seed_coverage, validate_seed_data
-from overmind.optimize.evaluator import has_entrypoint
 from overmind.setup.agent_analyzer import analyze_agent
 from overmind.setup.policy_generator import (
     display_policy,
@@ -84,6 +97,7 @@ from overmind.utils.display import (
     confirm_option,
     make_spinner_progress,
     rel,
+    render_criteria_table,
     render_logo,
     select_option,
 )
@@ -95,275 +109,13 @@ from overmind.utils.models import (
 )
 from overmind.utils.policy import default_policy_path, format_for_synthetic_data
 from overmind.utils.provider_keys import (
-    PROVIDER_ENV_KEYS as _PROVIDER_ENV_KEYS,
-)
-from overmind.utils.provider_keys import (
     ensure_provider_api_keys as _ensure_provider_api_keys,
 )
 from overmind.utils.provider_keys import (
-    update_agent_env as _update_agent_env,
+    update_overmind_env as _update_overmind_env,
 )
 
 logger = logging.getLogger("overmind.commands.setup")
-
-
-def _check_agent_dependencies(
-    agent_path: str,
-    agent_name: str,
-    console: Console,
-    *,
-    fast: bool = False,
-    instrumented_dir: Path | None = None,
-) -> None:
-    """Detect external imports without a dependency manifest and guide the user.
-
-    When *instrumented_dir* is provided the dependency check and any generated
-    manifest are placed inside the instrumented copy so the original agent
-    source is never modified.  The manifest is also written to the
-    instrumented **root** (the top of the copied tree) so the runner's
-    ``ensure_environment`` finds it when provisioning the sandbox.
-
-    In interactive mode: offers to generate a requirements.txt / package.json
-    or lets the user handle it themselves.  In fast mode: fails with a clear
-    message.
-    """
-    from overmind.optimize.runner import (
-        Language,
-        detect_external_imports,
-        generate_package_json,
-        generate_requirements_txt,
-        has_dep_manifest,
-        imports_to_package_names,
-    )
-
-    p = Path(agent_path).resolve()
-    agent_dir = p.parent
-    entry_file = p.name
-
-    check_dir = instrumented_dir if instrumented_dir is not None else agent_dir
-
-    try:
-        language = Language.from_path(entry_file)
-    except ValueError:
-        return
-
-    if has_dep_manifest(check_dir, language):
-        console.print(f"  [bold green]\u2713[/bold green] Found dependency manifest in [dim]{rel(check_dir)}[/dim]")
-        return
-
-    inst_entry = check_dir / entry_file if instrumented_dir is not None else p
-    if inst_entry.is_file():
-        ext_imports = detect_external_imports(check_dir, entry_file, language)
-    else:
-        ext_imports = detect_external_imports(agent_dir, entry_file, language)
-    if not ext_imports:
-        return
-
-    packages = imports_to_package_names(ext_imports, language)
-    is_python = language == Language.PYTHON
-    manifest_name = "requirements.txt" if is_python else "package.json"
-
-    console.print()
-    console.print(
-        Panel(
-            f"[bold yellow]No dependency file found[/bold yellow]\n\n"
-            f"Your agent imports [bold]{len(ext_imports)}[/bold] external package(s):\n"
-            f"  [cyan]{', '.join(ext_imports[:12])}"
-            f"{'…' if len(ext_imports) > 12 else ''}[/cyan]\n\n"
-            f"But there is no [bold]{manifest_name}[/bold] in the project.\n\n"
-            f"Overmind needs a dependency file to create an isolated\n"
-            f"environment so your agent runs reliably.",
-            border_style="yellow",
-            padding=(1, 2),
-        )
-    )
-
-    if fast:
-        console.print(f"  [red]Create a [bold]{manifest_name}[/bold] in your project and re-run setup.[/red]\n")
-        raise SystemExit(1)
-
-    choice = select_option(
-        [
-            f"Generate {manifest_name} (auto-detected — you review before continuing)",
-            f"I'll create {manifest_name} myself (exit setup, re-run when ready)",
-            "Skip isolation — use the current environment (not recommended)",
-        ],
-        title="How would you like to proceed?",
-        default_index=0,
-        console=console,
-    )
-
-    if choice == 0:
-        dest = check_dir / ("requirements.txt" if is_python else "package.json")
-        if is_python:
-            content = generate_requirements_txt(packages)
-        else:
-            content = generate_package_json(packages, agent_name)
-
-        dest.write_text(content)
-
-        console.print()
-        console.print(
-            Panel(
-                f"[bold green]Generated {manifest_name}[/bold green]\n\n"
-                + "\n".join(f"  {pkg}" for pkg in sorted(set(packages)))
-                + f"\n\n[dim]Saved to: {rel(dest)}[/dim]\n\n"
-                + "[yellow]Versions are unpinned. Review and pin versions\n"
-                "for reproducibility before production use.[/yellow]",
-                border_style="green",
-                padding=(1, 2),
-            )
-        )
-
-        if not confirm_option("Continue with setup?", default=True, console=console):
-            console.print(f"\n  [dim]Edit [cyan]{rel(dest)}[/cyan] and re-run setup when ready.[/dim]\n")
-            raise SystemExit(0)
-
-    elif choice == 1:
-        console.print(
-            f"\n  Create [bold]{manifest_name}[/bold] in your project, then re-run:\n"
-            f"    [bold]overmind setup {agent_name}[/bold]\n"
-        )
-        raise SystemExit(0)
-
-    else:
-        console.print(
-            "\n  [yellow]Skipping dependency isolation.[/yellow]\n"
-            "  [dim]The agent will run using packages from the current environment.\n"
-            "  If imports fail during optimization, create a dependency file and retry.[/dim]\n"
-        )
-
-
-def _validate_agent_entrypoint(
-    agent_path: str,
-    fn_name: str,
-    agent_name: str,
-    console: Console,
-    *,
-    fast: bool = False,
-) -> tuple[str, str]:
-    """Verify the agent file defines the registered entry function.
-
-    Returns ``(agent_path, fn_name)`` — unchanged when valid, or
-    updated to point at a generated wrapper when the user opts in.
-    """
-    from overmind.entrypoint_wrapper import (
-        generate_entrypoint_wrapper,
-        wrapper_entrypoint,
-    )
-    from overmind.optimize.runner import AgentRunner
-
-    code = Path(agent_path).read_text()
-
-    p = Path(agent_path).resolve()
-    try:
-        runner = AgentRunner(agent_dir=p.parent, entry_file=p.name, entrypoint_fn=fn_name)
-        found = runner.validate_entrypoint(code)
-    except ValueError:
-        found = has_entrypoint(code, fn_name)
-
-    if found:
-        return agent_path, fn_name
-
-    # --- Entrypoint not found — offer wrapper generation ---
-    if fast:
-        console.print(
-            f"\n  [bold red]Error:[/bold red] Function [bold]{fn_name}()[/bold] not found "
-            f"in [cyan]{agent_path}[/cyan].\n"
-            f"  Generate a wrapper first:\n"
-            f"    [bold]overmind agent register {agent_name} <module:function>[/bold]\n"
-        )
-        raise SystemExit(1)
-
-    console.print(
-        f"\n  [bold yellow]\u26a0[/bold yellow]  Function [bold]{fn_name}()[/bold] not found "
-        f"in [cyan]{rel(agent_path)}[/cyan].\n"
-    )
-    console.print(
-        "  Overmind needs a function that takes input and returns output, e.g.:\n"
-        "    [dim]def run(input_data: dict) -> dict[/dim]\n"
-    )
-
-    choice = select_option(
-        [
-            "Generate an entrypoint wrapper (Overmind reads your code and creates one)",
-            "I'll fix it myself (exit setup)",
-        ],
-        title="How would you like to proceed?",
-        default_index=0,
-        console=console,
-    )
-
-    if choice != 0:
-        console.print(f"\n  Fix the entrypoint and re-run:\n    [bold]overmind setup {agent_name}[/bold]\n")
-        raise SystemExit(1)
-
-    agent_dir = p.parent
-    console.print()
-    with make_spinner_progress(console) as progress:
-        progress.add_task("  Analyzing agent code and generating wrapper\u2026")
-        wp = generate_entrypoint_wrapper(agent_dir, agent_name)
-
-    if wp == "refused":
-        console.print(
-            "\n  [bold yellow]⚠[/bold yellow]  This agent's code is too complex for an "
-            "auto-generated wrapper.\n\n"
-            "  The wrapper needs to be a trivial bridge (import + call), but this\n"
-            "  agent would require re-implementing agent-specific logic.\n\n"
-            "  Add a [bold]def run(input_data: dict) -> dict[/bold] function directly\n"
-            "  in your agent code, then re-register:\n"
-            f"    [bold]overmind agent register {agent_name} <your_module:run>[/bold]\n"
-        )
-        raise SystemExit(1)
-
-    if wp is None or not wp.is_file():
-        console.print(
-            "\n  [bold red]\u2717[/bold red]  Wrapper generation failed.\n"
-            "  This can happen if no LLM model is configured.\n"
-            f"  Set [bold]ANALYZER_MODEL[/bold] in [bold]{overmind_rel('.env')}[/bold] "
-            "or write the wrapper manually.\n"
-        )
-        raise SystemExit(1)
-
-    wrapper_code = wp.read_text(encoding="utf-8")
-
-    from rich.syntax import Syntax
-
-    console.print()
-    console.print(
-        Panel(
-            f"[bold green]Generated entrypoint wrapper[/bold green]\n\n"
-            f"  File:     [cyan]{rel(wp)}[/cyan]\n"
-            f"  Function: [bold]run(input_data: dict) -> dict[/bold]",
-            border_style="green",
-            padding=(1, 2),
-        )
-    )
-
-    if confirm_option("Review the generated code?", default=True, console=console):
-        console.print()
-        console.print(
-            Syntax(
-                wrapper_code,
-                "python",
-                theme="monokai",
-                line_numbers=True,
-                word_wrap=True,
-            )
-        )
-
-    console.print()
-    if not confirm_option("Continue setup with this wrapper?", default=True, console=console):
-        console.print(f"\n  [dim]Edit [cyan]{rel(wp)}[/cyan] and re-run setup.[/dim]\n")
-        raise SystemExit(0)
-
-    new_agent_path = str(wp)
-    new_fn_name = "run"
-    new_ep = wrapper_entrypoint(agent_name)
-    save_agent(agent_name, new_ep)
-
-    console.print(f"  [dim]Updated registry \u2192 {new_ep}[/dim]\n")
-    return new_agent_path, new_fn_name
 
 
 def _clear_existing_eval_spec(agent_name: str, console: Console, *, fast: bool = False) -> None:
@@ -487,102 +239,6 @@ def _save_and_finish(
     console.print(f"\n  Next step: [bold {BRAND}]overmind optimize {next_cmd}[/bold {BRAND}]\n")
 
 
-def _smoke_test_agent(
-    agent_path: str,
-    fn_name: str,
-    input_case: dict,
-    env_dir: str | Path | None = None,
-    agent_dir: str | Path | None = None,
-) -> tuple[bool, str | None]:
-    """Run the agent via subprocess and call fn_name(input_case) once.
-
-    Returns (True, None) on success or (False, error_message) on any exception.
-    Uses the AgentRunner for full dependency isolation.
-
-    *agent_dir* overrides the working directory for the subprocess.  When
-    running the instrumented copy, pass the instrumented root so local
-    imports resolve correctly.  When ``None``, the project root is detected
-    via ``project_root_from_agent_file`` (falls back to the entry file's
-    parent directory).
-
-    *env_dir* should point to the **original** project root so dependency
-    manifests, ``.venv``, and ``.env`` are found.
-    """
-    from overmind.optimize.runner import AgentRunner, RunnerConfig
-
-    try:
-        p = Path(agent_path).resolve()
-        if agent_dir is not None:
-            resolved_agent_dir = Path(agent_dir).resolve()
-        else:
-            pr = project_root_from_agent_file(agent_path)
-            resolved_agent_dir = pr if pr is not None else p.parent
-        entry_file = str(p.relative_to(resolved_agent_dir))
-        logger.debug(
-            f"smoke_test: agent_path={agent_path} fn={fn_name} entry={entry_file} "
-            f"agent_dir={resolved_agent_dir} env_dir={env_dir}"
-        )
-
-        runner = AgentRunner(
-            agent_dir=resolved_agent_dir,
-            entry_file=entry_file,
-            entrypoint_fn=fn_name,
-            config=RunnerConfig(timeout=300),
-            env_dir=Path(env_dir) if env_dir else None,
-        )
-        runner.ensure_environment()
-        result = runner.run(input_case)
-        runner.cleanup()
-        if result.success:
-            logger.debug(f"smoke_test: agent={agent_path} succeeded")
-            return True, None
-        parts = [result.error] if result.error else []
-        if result.stderr and result.stderr.strip() not in (result.error or ""):
-            parts.append(result.stderr[-2000:])
-        logger.warning(f"smoke_test: agent={agent_path} failed rc={result.returncode} err={(result.error or '')[:300]}")
-        return False, "\n".join(parts) or "Unknown error"
-
-    except Exception as exc:
-        logger.exception(f"smoke_test: exception for agent={agent_path}")
-        return False, str(exc)
-
-
-def _resolve_seed_json_files(data_arg: str | None, *, console: Console) -> list[Path]:
-    """Resolve ``--data`` to a list of JSON seed files (single file or ``*.json`` in a directory)."""
-    if not (data_arg or "").strip():
-        return []
-    raw = data_arg.strip()
-    p = Path(raw).expanduser()
-    try:
-        p = p.resolve()
-    except OSError as exc:
-        console.print(
-            f"\n  [red]Error:[/red] Could not resolve [bold]--data[/bold] path [cyan]{raw}[/cyan] [dim]({exc})[/dim]"
-        )
-        raise SystemExit(1) from exc
-    if not p.exists():
-        console.print(f"\n  [red]Error:[/red] [bold]--data[/bold] path does not exist: [cyan]{raw}[/cyan]")
-        raise SystemExit(1)
-    if p.is_file():
-        if p.suffix.lower() != ".json":
-            console.print(
-                f"\n  [red]Error:[/red] [bold]--data[/bold] must be a [bold].json[/bold] file or a "
-                f"directory of JSON files; got [cyan]{p.name}[/cyan]"
-            )
-            raise SystemExit(1)
-        return [p]
-    if p.is_dir():
-        found = sorted(p.glob("*.json"))
-        if not found:
-            console.print(
-                f"  [yellow]Warning:[/yellow] No [bold].json[/bold] files in [cyan]{rel(p)}[/cyan] "
-                "— continuing without seed files from this path."
-            )
-        return found
-    console.print(f"\n  [red]Error:[/red] [bold]--data[/bold] must be a file or directory: [cyan]{raw}[/cyan]")
-    raise SystemExit(1)
-
-
 def _prompt_seed_data_flag_early(agent_name: str, *, console: Console) -> None:
     """Explain seed data, ask about ``--data``; if yes, print the command and exit setup."""
     console.print(
@@ -610,163 +266,6 @@ def _prompt_seed_data_flag_early(agent_name: str, *, console: Console) -> None:
     console.print()
     console.print("  [dim]Exiting setup — run the command above when your seed files are ready.[/dim]\n")
     raise SystemExit(0)
-
-
-def _run_beginning_smoke_test(
-    agent_path: str,
-    agent_name: str,
-    fn_name: str,
-    console: Console,
-    *,
-    fast: bool = False,
-    data_path: str | None = None,
-    instrumented_entry: str | None = None,
-) -> None:
-    """Smoke-test the agent with the first seed case when ``--data`` supplies JSON.
-
-    When *instrumented_entry* is provided the smoke test runs against the
-    instrumented copy (with the original project root as ``env_dir`` so
-    dependency manifests and venvs are found).  Hard-fails (SystemExit 1)
-    when seed data exists but the agent crashes.  Skips when ``--data`` is
-    omitted — use ``--data`` for an early smoke check.
-    """
-    existing_json = _resolve_seed_json_files(data_path, console=console)
-
-    if not existing_json:
-        console.print(
-            "  [dim]Skipping pre-setup smoke test with seed data "
-            "(pass [bold]--data[/bold] with a JSON file or directory of JSON files).[/dim]"
-        )
-        return
-
-    console.print(f"  [dim]Using seed data from [cyan]{rel(existing_json[0])}[/cyan] for smoke test…[/dim]")
-
-    try:
-        cases = load_data(str(existing_json[0]))
-    except Exception:
-        console.print(f"  [dim]Could not read [cyan]{existing_json[0].name}[/cyan] — skipping smoke test.[/dim]")
-        return
-
-    if not cases:
-        console.print(f"  [dim][cyan]{existing_json[0].name}[/cyan] is empty — skipping pre-setup smoke test.[/dim]")
-        return
-
-    # ── Field-consistency check ───────────────────────────────────────────
-    consistent, common_fields, bad_indices = check_consistent_fields(cases)
-    if not consistent:
-        console.print(
-            f"\n  [bold red]Error:[/bold red] Not all data points in "
-            f"[cyan]{existing_json[0].name}[/cyan] have the same fields.\n"
-            f"  First case fields: {sorted(common_fields)}\n"
-            f"  Mismatched at indices: {bad_indices[:10]}"
-            + ("  …" if len(bad_indices) > 10 else "")
-            + "\n  Please ensure every entry in your seed file has identical top-level keys.\n"
-        )
-        raise SystemExit(1)
-
-    # ── Field mapping (prompt once, then persisted for validate / optimize) ─
-    cases = normalize_data_fields(cases, console, require_output=False, agent_name=agent_name)
-
-    run_path = instrumented_entry or agent_path
-    env_dir: str | Path | None = None
-    inst_root: str | Path | None = None
-    if instrumented_entry:
-        pr = project_root_from_agent_file(agent_path)
-        env_dir = pr if pr is not None else Path(agent_path).resolve().parent
-        inst_root = agent_instrumented_dir(agent_name)
-
-    first_input = cases[0].get("input", cases[0])
-    with make_spinner_progress(console, transient=True) as progress:
-        progress.add_task(f"  Smoke-testing agent using {existing_json[0].name} ({len(cases)} case(s))…")
-        success, error = _smoke_test_agent(
-            run_path,
-            fn_name,
-            first_input,
-            env_dir=env_dir,
-            agent_dir=inst_root,
-        )
-
-    if success:
-        console.print("  [bold green]✓[/bold green]  [dim]Agent smoke test passed.[/dim]\n")
-    else:
-        console.print(
-            f"\n  [bold red]✗  Agent smoke test failed[/bold red]\n"
-            f"  [dim]{error}[/dim]\n\n"
-            "  Fix the error above before running setup.\n"
-        )
-        raise SystemExit(1)
-
-
-def _run_end_smoke_test(
-    agent_name: str,
-    agent_path: str,
-    fn_name: str,
-    console: Console,
-    instrumented_entry: str | None = None,
-) -> None:
-    """Validate the agent runs against the first generated dataset case.
-
-    When *instrumented_entry* is provided the smoke test executes against the
-    instrumented copy (matching what the optimizer will run) with the
-    original project root as ``env_dir``.
-
-    Issues a warning panel on failure but does NOT abort — the spec is already
-    saved and the user should be informed rather than left with a silent problem.
-    """
-    dataset_path = agent_setup_spec_dir(agent_name) / "dataset.json"
-    if not dataset_path.exists():
-        return
-
-    try:
-        cases = load_data(str(dataset_path))
-    except Exception:
-        return
-
-    if not cases:
-        return
-
-    run_path = instrumented_entry or agent_path
-    env_dir: str | Path | None = None
-    inst_root: str | Path | None = None
-    if instrumented_entry:
-        pr = project_root_from_agent_file(agent_path)
-        env_dir = pr if pr is not None else Path(agent_path).resolve().parent
-        inst_root = agent_instrumented_dir(agent_name)
-
-    first_input = cases[0].get("input", cases[0])
-    with make_spinner_progress(console, transient=True) as progress:
-        progress.add_task("  Post-setup smoke test against first dataset case…")
-        success, error = _smoke_test_agent(
-            run_path,
-            fn_name,
-            first_input,
-            env_dir=env_dir,
-            agent_dir=inst_root,
-        )
-
-    if success:
-        console.print("  [bold green]✓[/bold green]  Agent smoke test passed — ready for optimization.\n")
-    else:
-        console.print(
-            Panel(
-                "[bold yellow]⚠  Smoke test warning[/bold yellow]\n\n"
-                "The agent raised an error on a sample dataset case:\n"
-                f"[dim]{error}[/dim]\n\n"
-                "The setup spec has been saved. Review the error above before running:\n"
-                f"  [bold]overmind optimize {agent_name}[/bold]\n\n"
-                "Validate the agent endpoint against the setup dataset (important during "
-                "optimization) with:\n"
-                f"  [bold]overmind agent validate {agent_name} --data "
-                f".overmind/agents/{agent_name}/setup_spec/dataset.json[/bold]",
-                border_style="yellow",
-                padding=(1, 2),
-            )
-        )
-
-
-def _data_dir(agent_path: str) -> Path:
-    """Historical default sibling ``data/`` directory (no longer used unless you pass ``--data``)."""
-    return Path(agent_path).resolve().parent / "data"
 
 
 def _build_eval_spec_stub(
@@ -957,156 +456,6 @@ def _save_dataset(
     return str(data_path)
 
 
-def _ensure_remote_agent_id(
-    agent_name: str,
-    agent_path: str,
-    console: Console,
-    spec: dict | None = None,
-) -> str | None:
-    """Ensure a remote Overmind agent exists; return its id when available."""
-    existing_id = get_agent_id(agent_name)
-    client = get_client()
-    project_id: str | None
-    try:
-        project_id = resolve_project_id(client) if client else None
-    except ProjectResolutionError as exc:
-        console.print(f"  [yellow]Warning:[/yellow] {exc}")
-        project_id = None
-    if existing_id:
-        # Verify stored id belongs to the currently configured project.
-        # This avoids silently writing to another project's similarly-slugged agent.
-        if client and project_id:
-            with suppress(Exception):
-                existing = client.agents_retrieve(id=UUID(existing_id))
-                existing_project = str(getattr(existing, "project", "") or "")
-                if existing_project == str(project_id):
-                    return existing_id
-                console.print(
-                    "  [yellow]Stored agent id belongs to a different project; "
-                    "creating a project-local agent id.[/yellow]"
-                )
-        else:
-            return existing_id
-
-    if not client or not project_id:
-        return None
-
-    console.print("  [dim]No remote id found. Creating agent in Overmind...[/dim]")
-    try:
-        minimal_spec = {
-            "agent_description": f"{agent_name} agent",
-            "agent_path": agent_path,
-            "input_schema": {},
-            "output_fields": {},
-            "structure_weight": 20,
-            "total_points": 100,
-        }
-        create_spec = spec if isinstance(spec, dict) and spec else minimal_spec
-        result = upsert_agent(
-            client,
-            project_id=project_id,
-            agent_path=agent_path,
-            spec=create_spec,
-            agent_name=agent_name,
-        )
-        new_id = str(result.id)
-        entrypoint = (load_registry().get(agent_name, {}) or {}).get("entrypoint")
-        if entrypoint:
-            save_agent(agent_name, entrypoint, id=new_id)
-        console.print("  [dim]Remote agent created and id stored in agents.toml.[/dim]")
-        return new_id
-    except Exception as exc:
-        # Retry once with a minimal payload in case local artifacts contain
-        # fields rejected by the backend's current schema/version.
-        if spec:
-            with suppress(Exception):
-                result = upsert_agent(
-                    client,
-                    project_id=project_id,
-                    agent_path=agent_path,
-                    spec=minimal_spec,
-                    agent_name=agent_name,
-                )
-                new_id = str(result.id)
-                entrypoint = (load_registry().get(agent_name, {}) or {}).get("entrypoint")
-                if entrypoint:
-                    save_agent(agent_name, entrypoint, id=new_id)
-                console.print("  [dim]Remote agent created and id stored in agents.toml.[/dim]")
-                return new_id
-        console.print(f"  [yellow]Warning:[/yellow] Could not create agent in Overmind. [dim]({exc})[/dim]")
-        return None
-
-
-def _sync_setup_artifacts(agent_name: str, agent_path: str, console: Console) -> None:
-    """Upload local setup artifacts to Overmind backend if configured.
-
-    Silently skips when ``OVERMIND_API_KEY`` is not set.  The project is
-    auto-resolved from the key via :func:`resolve_project_id`.
-    """
-    client = get_client()
-    if not client:
-        return
-
-    spec_path = agent_setup_spec_dir(agent_name) / "eval_spec.json"
-    dataset_path = agent_setup_spec_dir(agent_name) / "dataset.json"
-    policy_path = Path(default_policy_path(agent_name))
-
-    spec: dict | None = None
-    if spec_path.exists():
-        with suppress(Exception):
-            loaded = json.loads(spec_path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-                spec = loaded
-
-    agent_id = _ensure_remote_agent_id(agent_name, agent_path, console, spec=spec)
-    if not agent_id:
-        return
-
-    configure_storage(agent_path=agent_path, agent_id=agent_id, agent_name=agent_name)
-    try:
-        storage = get_storage()
-    except Exception:
-        return
-
-    synced: list[str] = []
-
-    if spec_path.exists():
-        with suppress(Exception):
-            loaded = json.loads(spec_path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-                spec = loaded
-                storage.save_spec(spec)
-                synced.append("spec")
-
-    if dataset_path.exists():
-        with suppress(Exception):
-            loaded = json.loads(dataset_path.read_text(encoding="utf-8"))
-            cases = loaded.get("test_cases", []) if isinstance(loaded, dict) else loaded
-            if isinstance(cases, list):
-                # Uploading a pre-existing local dataset.json — provenance is
-                # unknown, so record it as ``seed`` (user-provided data).
-                storage.save_dataset(
-                    cases,
-                    source="seed",
-                    metadata={"synced_from": str(dataset_path)},
-                )
-                synced.append("dataset")
-
-    if policy_path.exists():
-        with suppress(Exception):
-            policy_md = policy_path.read_text(encoding="utf-8")
-            policy_data = spec.get("policy") if isinstance(spec, dict) else None
-            storage.save_policy(
-                policy_md,
-                policy_data if isinstance(policy_data, dict) else None,
-            )
-            synced.append("policy")
-
-    if synced:
-        flush_pending_api_updates(timeout=20.0)
-        console.print(f"  [dim]Synced setup artifacts to Overmind ({', '.join(synced)}).[/dim]")
-
-
 @observe_safe(span_name="overmind.setup.data_phase", type=SpanType.FUNCTION)
 def _run_data_phase(
     analysis: dict,
@@ -1139,12 +488,7 @@ def _run_data_phase(
     # ── Fast mode ──────────────────────────────────────────────────────────
     if fast:
         datagen_model = _resolve_datagen_model(console, fast=True)
-        _pin_model_to_agent_env(
-            datagen_model,
-            "SYNTHETIC_DATAGEN_MODEL",
-            agent_env_path(agent_name),
-            agent_name,
-        )
+        _pin_model_to_overmind_env(datagen_model, "SYNTHETIC_DATAGEN_MODEL")
         if has_seed_data:
             seed_cases = load_data(str(seed_files[0]))
             seed_cases = normalize_data_fields(seed_cases, console, require_output=False, agent_name=agent_name)
@@ -1217,13 +561,8 @@ def _run_data_phase(
                 console.print("  [dim]Skipping dataset generation.[/dim]")
                 return
             datagen_model = _resolve_datagen_model(console)
-            _pin_model_to_agent_env(
-                datagen_model,
-                "SYNTHETIC_DATAGEN_MODEL",
-                agent_env_path(agent_name),
-                agent_name,
-            )
-            _ensure_provider_api_keys(datagen_model, agent_env_path(agent_name), agent_name, console)
+            _pin_model_to_overmind_env(datagen_model, "SYNTHETIC_DATAGEN_MODEL")
+            _ensure_provider_api_keys(datagen_model, console)
             _handle_no_data_path(
                 analysis=analysis,
                 policy_context=policy_context,
@@ -1279,13 +618,8 @@ def _run_data_phase(
             return
 
         datagen_model = _resolve_datagen_model(console)
-        _pin_model_to_agent_env(
-            datagen_model,
-            "SYNTHETIC_DATAGEN_MODEL",
-            agent_env_path(agent_name),
-            agent_name,
-        )
-        _ensure_provider_api_keys(datagen_model, agent_env_path(agent_name), agent_name, console)
+        _pin_model_to_overmind_env(datagen_model, "SYNTHETIC_DATAGEN_MODEL")
+        _ensure_provider_api_keys(datagen_model, console)
         _handle_seed_data_path(
             seed_path,
             seed_data=seed_data,
@@ -1312,13 +646,8 @@ def _run_data_phase(
         expected_output_hint = _prompt_expected_output_format(console)
 
         datagen_model = _resolve_datagen_model(console)
-        _pin_model_to_agent_env(
-            datagen_model,
-            "SYNTHETIC_DATAGEN_MODEL",
-            agent_env_path(agent_name),
-            agent_name,
-        )
-        _ensure_provider_api_keys(datagen_model, agent_env_path(agent_name), agent_name, console)
+        _pin_model_to_overmind_env(datagen_model, "SYNTHETIC_DATAGEN_MODEL")
+        _ensure_provider_api_keys(datagen_model, console)
         _handle_no_data_path(
             analysis=analysis,
             policy_context=policy_context,
@@ -1485,81 +814,22 @@ def _handle_no_data_path(
 
 def _display_proposed_criteria(analysis: dict, console: Console) -> None:
     """Show the proposed evaluation criteria table so the user can review it."""
-    from rich.table import Table
-
     criteria = analysis.get("proposed_criteria", {})
-    fields_criteria = criteria.get("fields", {})
-    output_schema = analysis.get("output_schema", {})
-
-    if not fields_criteria:
+    if not criteria.get("fields"):
         console.print("  [dim]No proposed criteria available.[/dim]")
         return
-
-    table = Table(title="Proposed Evaluation Criteria", border_style="green")
-    table.add_column("Field", style="bold")
-    table.add_column("Importance")
-    table.add_column("Scoring Detail")
-
-    for field_name, fc in fields_criteria.items():
-        importance = fc.get("importance", "important")
-        ftype = output_schema.get(field_name, {}).get("type", "text")
-
-        if ftype == "enum":
-            detail = "partial credit" if fc.get("partial_credit", True) else "exact match only"
-        elif ftype == "number":
-            detail = f"tolerance \u00b1{fc.get('tolerance', 10)}"
-        elif ftype == "text":
-            mode = fc.get("eval_mode", "non_empty")
-            detail = "check non-empty" if mode == "non_empty" else "skip"
-        else:
-            detail = "exact match"
-
-        table.add_row(field_name, importance, detail)
-
-    sw = criteria.get("structure_weight", 20)
-    table.add_row(
-        "[dim]structure[/dim]",
-        "[dim]\u2014[/dim]",
-        f"[dim]{sw} pts for completeness[/dim]",
-    )
-    console.print(table)
+    render_criteria_table(console, criteria, analysis.get("output_schema", {}))
 
 
-def _write_agent_env(path: Path, agent_name: str, env_vars: dict[str, str]) -> None:
-    """Write agent-specific env vars — delegates to shared module."""
-    from overmind.commands.agent_env import write_agent_env
+def _pin_model_to_overmind_env(model: str, env_key: str) -> None:
+    """Save *model* under *env_key* in the project ``.overmind/.env``.
 
-    write_agent_env(path, agent_name, env_vars)
-
-
-def _pin_model_to_agent_env(model: str, env_key: str, env_path: Path, agent_name: str) -> None:
-    """Save *model* under *env_key* in the agent's ``.env`` and copy any
-    provider credentials from the global environment if not already present.
-
-    This makes the agent env self-contained: Overmind will always load it
-    instead of the global ``.overmind/.env`` when setting up or optimizing the
-    agent.
+    Provider credentials are **not** copied from the live environment — they
+    already live in the same file (the user added them via ``overmind init``),
+    or in the shell environment, which subsequent ``load_dotenv()`` calls
+    respect without override.
     """
-    updates: dict[str, str] = {env_key: model}
-
-    provider = model.split("/")[0] if "/" in model else ""
-    env_key_names = _PROVIDER_ENV_KEYS.get(provider, [])
-    if env_key_names:
-        existing = {k: (v or "") for k, v in (dotenv_values(env_path) or {}).items()} if env_path.exists() else {}
-        for key_name in env_key_names:
-            if not existing.get(key_name, "").strip():
-                global_val = os.getenv(key_name, "").strip()
-                if global_val:
-                    updates[key_name] = global_val
-
-    _update_agent_env(env_path, agent_name, updates)
-
-
-def _collect_agent_provider_config(agent_name: str, console: Console) -> None:
-    """Ask which LLM provider the agent uses — delegates to shared module."""
-    from overmind.commands.agent_env import collect_agent_provider_config
-
-    collect_agent_provider_config(agent_name, console)
+    _update_overmind_env({env_key: model})
 
 
 @observe_safe(span_name="overmind.setup", type=SpanType.WORKFLOW)
@@ -1610,14 +880,6 @@ def main(
     if not fast and not data_opt:
         console.print()
         _prompt_seed_data_flag_early(agent_name, console=console)
-
-    # Agent env vars (API keys) — may have been configured during register.
-    # The shared function skips if already configured; always load into env.
-    console.print()
-    console.print(Rule(style="dim"))
-    if not fast:
-        _collect_agent_provider_config(agent_name, console)
-    load_agent_dotenv(agent_name)
 
     agent_id = _ensure_remote_agent_id(agent_name, agent_path, console)
     configure_storage(
@@ -1688,7 +950,7 @@ def main(
             raise SystemExit(1)
         model = normalize_to_litellm_model_id(raw_model) or raw_model
         set_tag(attrs.SETUP_ANALYZER_MODEL, model)
-        _pin_model_to_agent_env(model, "ANALYZER_MODEL", agent_env_path(agent_name), agent_name)
+        _pin_model_to_overmind_env(model, "ANALYZER_MODEL")
 
         if not os.getenv("SYNTHETIC_DATAGEN_MODEL", "").strip():
             console.print("\n[red]Fast mode requires SYNTHETIC_DATAGEN_MODEL in the environment.[/red]")
@@ -1729,9 +991,9 @@ def main(
                 default_model=DEFAULT_ANALYZER_MODEL,
                 no_catalog_prompt="  Enter model for analysis (provider/model)",
             )
-        _pin_model_to_agent_env(model, "ANALYZER_MODEL", agent_env_path(agent_name), agent_name)
-        _ensure_provider_api_keys(model, agent_env_path(agent_name), agent_name, console)
-        load_agent_dotenv(agent_name)
+        _pin_model_to_overmind_env(model, "ANALYZER_MODEL")
+        _ensure_provider_api_keys(model, console)
+        load_overmind_dotenv()
 
     # ---- Phase 1: Agent Analysis ----
     logger.info(f"PHASE BEGIN setup.phase1.agent_analysis agent={agent_name} model={model}")

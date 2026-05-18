@@ -13,7 +13,6 @@ from overmind.core.paths import agent_setup_spec_dir
 from overmind.commands.setup_cmd import (
     _build_eval_spec_stub,
     _clear_existing_eval_spec,
-    _data_dir,
     _display_proposed_criteria,
     _prompt_seed_data_flag_early,
     _resolve_datagen_model,
@@ -61,11 +60,6 @@ class TestPathHelpers:
     def test_dataset_under_setup_spec(self, overmind_tmp_project: Path):
         result = agent_setup_spec_dir("a1") / "dataset.json"
         assert str(result).endswith("dataset.json")
-
-    def test_data_dir(self):
-        result = _data_dir("/project/agents/a1/agent.py")
-        assert result.name == "data"
-
 
 class TestClearExistingEvalSpec:
     def test_no_dir(self, overmind_tmp_project: Path):

@@ -91,11 +91,6 @@ def configure_storage(
     )
 
 
-def clear_storage_binding() -> None:
-    """Clear previously bound storage defaults in the current context."""
-    _BOUND_STORAGE.set(None)
-
-
 def _resolve_storage_identity() -> tuple[str, str | None]:
     """Resolve identity with precedence: configured binding > env."""
     load_overmind_dotenv()
@@ -152,17 +147,10 @@ def get_storage() -> StorageBackend:
     return instance
 
 
-def get_storage_class() -> type[StorageBackend]:
-    """Return the backend class used by :func:`get_storage`."""
-    return ApiBackend
-
-
 __all__ = [
     "ApiBackend",
     "StorageBackend",
     "StorageNotConfiguredError",
-    "clear_storage_binding",
     "configure_storage",
     "get_storage",
-    "get_storage_class",
 ]

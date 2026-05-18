@@ -41,6 +41,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from overmind.utils.llm_parse import parse_json_object
+
 if TYPE_CHECKING:
     from overmind.optimize.shadow_runtime import ShadowConfig
 
@@ -785,22 +787,8 @@ if _cwd not in sys.path:
 #     stream spans to the remote backend over OTLP HTTP.
 _ocl_trace_file = os.environ.get("OVERMIND_TRACE_FILE")
 if _ocl_trace_file:
-    try:
-        from opentelemetry import trace as _ocl_otel_trace
-        from opentelemetry.sdk.resources import Resource as _OclResource
-        from opentelemetry.sdk.trace import TracerProvider as _OclTracerProvider
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor as _OclBatchSpanProcessor
-        from overmind.tracing_file_exporter import JsonlFileSpanExporter as _OclJsonlFileSpanExporter
-        from overmind.tracing import enable_tracing as _ocl_enable_tracing
-        _ocl_provider = _OclTracerProvider(resource=_OclResource.create({{"service.name": "overmind-optimize-subprocess"}}))
-        _ocl_provider.add_span_processor(_OclBatchSpanProcessor(_OclJsonlFileSpanExporter(_ocl_trace_file)))
-        _ocl_otel_trace.set_tracer_provider(_ocl_provider)
-        _ocl_enable_tracing(providers=[])
-    except Exception:
-        # Tracing is best-effort. If anything in the local setup fails, the
-        # agent still runs — Tool Usage just falls back to its "unscored"
-        # path in the evaluator. Print to stderr so the failure is visible.
-        traceback.print_exc()
+    from overmind.tracing_file_exporter import install_local_provider as _ocl_install_local_provider
+    _ocl_install_local_provider(_ocl_trace_file)
 elif os.environ.get("OVERMIND_API_KEY"):
     try:
         from overmind import init as overmind_init
@@ -811,13 +799,8 @@ elif os.environ.get("OVERMIND_API_KEY"):
         pass
 
 def _ocl_force_flush():
-    try:
-        from opentelemetry import trace as _otel_trace
-        _provider = _otel_trace.get_tracer_provider()
-        if hasattr(_provider, "force_flush"):
-            _provider.force_flush(timeout_millis=3000)
-    except Exception:
-        pass
+    from overmind.tracing import force_flush_traces as _ocl_ff
+    _ocl_ff(timeout_millis=3000)
 
 # Preflight import so module-level failures surface with a clear marker
 # (argparse-on-sys.argv crashes, load_dotenv misses, broken imports, …)
@@ -1341,28 +1324,14 @@ def _extract_marked_result(stdout: str) -> str | None:
 
 
 def _try_parse_json(text: str) -> Any:
-    """Attempt to parse *text* as JSON. Returns the parsed value or None."""
-    text = text.strip()
-    if not text:
+    """Attempt to parse *text* as JSON.  Returns the parsed value or ``None``.
+
+    Thin wrapper around :func:`overmind.utils.llm_parse.parse_json_object` that
+    preserves the legacy ``None``-on-failure contract.
+    """
+    if not text or not isinstance(text, str):
         return None
-    try:
-        return json.loads(text)
-    except (json.JSONDecodeError, ValueError):
-        pass
-
-    for start_char, end_char in [("{", "}"), ("[", "]")]:
-        last_end = text.rfind(end_char)
-        if last_end == -1:
-            continue
-        first_start = text.rfind(start_char, 0, last_end + 1)
-        while first_start >= 0:
-            candidate = text[first_start : last_end + 1]
-            try:
-                return json.loads(candidate)
-            except json.JSONDecodeError:
-                first_start = text.rfind(start_char, 0, first_start)
-
-    return None
+    return parse_json_object(text, on_fail="default", default=None)
 
 
 # ---------------------------------------------------------------------------
@@ -1412,8 +1381,15 @@ def _validate_js_syntax(code: str, agent_dir: Path) -> bool:
         Path(tmp).unlink(missing_ok=True)
 
 
-def _validate_js_entrypoint(code: str, fn_name: str) -> bool:
-    """Lightweight regex check for JS/TS function or export."""
+def validate_js_entrypoint(code: str, fn_name: str) -> bool:
+    """Lightweight regex check for a JS/TS function or named export.
+
+    Used by both the runner itself (entrypoint sanity check before
+    spawning the worker subprocess) and the evaluator (when validating an
+    eval spec against an existing JS agent file).  Promoted from the
+    earlier ``_validate_js_entrypoint`` private alias so cross-module
+    callers don't reach across a module boundary into private API.
+    """
     patterns = [
         rf"\bfunction\s+{re.escape(fn_name)}\s*\(",
         rf"\bconst\s+{re.escape(fn_name)}\s*=",
@@ -1429,6 +1405,10 @@ def _validate_js_entrypoint(code: str, fn_name: str) -> bool:
         if re.search(pat, code):
             return True
     return False
+
+
+# Legacy alias — call sites should use :func:`validate_js_entrypoint`.
+_validate_js_entrypoint = validate_js_entrypoint
 
 
 # ---------------------------------------------------------------------------

@@ -27,13 +27,11 @@ from typing import Any
 from uuid import UUID
 
 from overmind.client import (
-    ProjectResolutionError,
     _fire,
     create_dataset,
     fetch_dataset_datapoints,
     get_active_dataset_id,
     get_client,
-    resolve_project_id,
     upsert_agent,
 )
 from overmind.client import (
@@ -114,22 +112,6 @@ class ApiBackend(StorageBackend):
             return self._client
         return get_client()
 
-    def _project_id(self) -> str | None:
-        """Return the active project id, auto-resolving from the API key when possible.
-
-        Returns ``None`` (rather than raising) if resolution fails, so the
-        higher-level ``save_*`` methods preserve their "best-effort, never
-        crash the user's setup flow" contract.  The original error is logged.
-        """
-        client = self._client_()
-        if client is None:
-            return None
-        try:
-            return resolve_project_id(client)
-        except ProjectResolutionError as exc:
-            logger.warning(f"_project_id: could not resolve project ({exc})")
-            return None
-
     def _patch_agent(self, **fields: Any) -> bool:
         """PATCH this agent record via ``agents_partial_update``.
 
@@ -165,14 +147,10 @@ class ApiBackend(StorageBackend):
         client = self._client_()
         if not client:
             return
-        project_id = self._project_id()
-        if not project_id:
-            return
         if not self._agent_id:
             try:
                 result = upsert_agent(
                     client,
-                    project_id=project_id,
                     agent_path=self._agent_path,
                     spec=spec,
                     agent_name=self._agent_name,
@@ -184,7 +162,6 @@ class ApiBackend(StorageBackend):
 
         _submit_async_upsert(
             client,
-            project_id=project_id,
             agent_path=self._agent_path,
             spec=spec,
             agent_name=self._agent_name,
@@ -336,7 +313,6 @@ class ApiBackend(StorageBackend):
 def _submit_async_upsert(
     client: Any,
     *,
-    project_id: str,
     agent_path: str,
     spec: dict,
     agent_name: str | None = None,
@@ -345,7 +321,6 @@ def _submit_async_upsert(
     _fire(
         upsert_agent,
         client,
-        project_id=project_id,
         agent_path=agent_path,
         spec=spec,
         agent_name=agent_name,

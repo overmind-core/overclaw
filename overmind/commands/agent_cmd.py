@@ -19,16 +19,11 @@ from rich.syntax import Syntax
 from rich.table import Table
 
 from overmind import SpanType, attrs, set_tag
-from overmind.commands.agent_env import (
-    collect_agent_provider_config,
-    collect_code_detected_env_vars,
-    instrument_agent_files,
-)
+from overmind.commands.agent_env import instrument_agent_files
 from overmind.core.constants import overmind_rel
 from overmind.core.paths import (
     agent_experiments_dir,
     agent_setup_spec_dir,
-    load_agent_dotenv,
     load_overmind_dotenv,
 )
 from overmind.core.registry import (
@@ -439,13 +434,6 @@ def cmd_register(name: str, entrypoint: str) -> None:
             raise SystemExit(0)
 
         agent_path = str(file_path)
-        entry_for_env_scan = str(Path(file_path).resolve())
-
-        console.print()
-        console.print(Rule(style="dim"))
-        collect_agent_provider_config(name, console)
-        collect_code_detected_env_vars(name, entry_for_env_scan, console)
-        load_agent_dotenv(name)
 
         console.print()
         console.print(Rule(style="dim"))
@@ -483,19 +471,12 @@ def cmd_register(name: str, entrypoint: str) -> None:
         console.print(f"\n  [bold red]Error:[/bold red] {exc}\n")
         raise SystemExit(1) from exc
 
-    # ---- 1. Collect agent-specific env vars (API keys) ----
-    console.print()
-    console.print(Rule(style="dim"))
-    collect_agent_provider_config(name, console)
-    collect_code_detected_env_vars(name, str(Path(agent_path).resolve()), console)
-    load_agent_dotenv(name)
-
-    # ---- 2. Copy agent source into .overmind/ (instrumentation) ----
+    # ---- 1. Copy agent source into .overmind/ (instrumentation) ----
     console.print()
     console.print(Rule(style="dim"))
     instrument_agent_files(agent_path, name, console)
 
-    # ---- 3. Validate entrypoint function (may trigger wrapper generation) ----
+    # ---- 2. Validate entrypoint function (may trigger wrapper generation) ----
     try:
         resolve_entrypoint(entrypoint)
     except (EntrypointNotFoundError, EntrypointSignatureError) as exc:
@@ -506,7 +487,7 @@ def cmd_register(name: str, entrypoint: str) -> None:
         file_path = result[1]
         fn = result[2]
 
-    # ---- 4. Save to registry ----
+    # ---- 3. Save to registry ----
     save_agent(name, entrypoint)
     agent_id = _sync_agent_id_to_registry(name, entrypoint, agent_path)
 
@@ -628,19 +609,12 @@ def cmd_update(name: str, entrypoint: str) -> None:
         console.print(f"\n  [bold red]Error:[/bold red] {exc}\n")
         raise SystemExit(1) from exc
 
-    # 1. Re-collect envs
-    console.print()
-    console.print(Rule(style="dim"))
-    collect_agent_provider_config(name, console)
-    collect_code_detected_env_vars(name, str(Path(agent_path).resolve()), console)
-    load_agent_dotenv(name)
-
-    # 2. Re-instrument
+    # 1. Re-instrument
     console.print()
     console.print(Rule(style="dim"))
     instrument_agent_files(agent_path, name, console)
 
-    # 3. Validate entrypoint function (may trigger wrapper generation)
+    # 2. Validate entrypoint function (may trigger wrapper generation)
     try:
         resolve_entrypoint(entrypoint)
     except (EntrypointNotFoundError, EntrypointSignatureError) as exc:
@@ -649,7 +623,7 @@ def cmd_update(name: str, entrypoint: str) -> None:
             raise SystemExit(1) from exc
         entrypoint = result[0]
 
-    # 4. Save
+    # 3. Save
     save_agent(name, entrypoint)
 
     console.print(f"\n  [dim]Old entrypoint:[/dim] {old_ep_raw}\n  [dim]New entrypoint:[/dim] {entrypoint}\n")
@@ -745,7 +719,6 @@ def cmd_validate(name: str, data: str) -> None:
         )
         raise SystemExit(1)
 
-    load_agent_dotenv(name)
     agent_path, fn_name = resolve_agent(name)
 
     data_path = Path(data)

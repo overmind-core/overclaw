@@ -312,7 +312,7 @@ def run_diagnose(state: SkillRunState, *, iteration: int) -> dict[str, Any]:
             "Diagnosis LLM call failed; falling back to a single empty "
             "candidate. Check that the analyzer model's provider key "
             "(e.g. ANTHROPIC_API_KEY / OPENAI_API_KEY) is present in "
-            ".overmind/agents/<name>/.env or .overmind/.env."
+            ".overmind/.env or the shell environment."
         )
         envelope["diagnose_warning"] = {
             "requested_candidates": requested,

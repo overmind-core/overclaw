@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 from overmind.optimize.analyzer import (
     _run_codegen,
     _run_diagnosis,
-    analyze_and_improve,
     generate_candidates,
 )
 
@@ -176,15 +175,3 @@ class TestGenerateCandidates:
             assert result[0]["method"] == "failed"
 
 
-class TestAnalyzeAndImprove:
-    @patch("overmind.optimize.analyzer.generate_candidates")
-    def test_delegates(self, mock_gen):
-        mock_gen.return_value = [{"analysis": "test", "updated_code": "code"}]
-        result = analyze_and_improve(
-            agent_code="def run(x): pass",
-            traces=[],
-            evaluation_results={"avg_total": 50},
-            model="model",
-            entrypoint_fn="run",
-        )
-        assert result["analysis"] == "test"

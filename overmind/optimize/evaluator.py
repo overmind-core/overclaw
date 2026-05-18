@@ -24,7 +24,7 @@ from overmind.optimize.provenance import (
     TraceSource,
     aggregate_confidence,
 )
-from overmind.optimize.runner import _validate_js_entrypoint
+from overmind.optimize.runner import validate_js_entrypoint
 from overmind.prompts.evaluator import (
     LLM_JUDGE_BATCH_PROMPT,
     LLM_JUDGE_PROMPT,
@@ -32,6 +32,7 @@ from overmind.prompts.evaluator import (
 )
 from overmind.utils.code import has_entrypoint_ast
 from overmind.utils.llm import llm_completion
+from overmind.utils.llm_parse import parse_json_object
 
 logger = logging.getLogger(__name__)
 
@@ -950,12 +951,9 @@ class SpecEvaluator:
                     max_tokens=max_tokens,
                 )
                 content = resp.choices[0].message.content or ""
-                start = content.find("[")
-                end = content.rfind("]") + 1
-                if start >= 0 and end > start:
-                    parsed = json.loads(content[start:end])
-                    if isinstance(parsed, list) and len(parsed) >= len(batch_items):
-                        return [self._compute_judge_score(p) for p in parsed[: len(batch_items)]]
+                parsed = parse_json_object(content, on_fail="default", default=None)
+                if isinstance(parsed, list) and len(parsed) >= len(batch_items):
+                    return [self._compute_judge_score(p) for p in parsed[: len(batch_items)]]
             except Exception as exc:
                 last_exc = exc
                 if attempt < _JUDGE_MAX_RETRIES - 1:
@@ -967,10 +965,8 @@ class SpecEvaluator:
 
     def _parse_judge_scores(self, content: str) -> float:
         """Parse a single judge response JSON into a 0.0–1.0 score."""
-        start = content.find("{")
-        end = content.rfind("}") + 1
-        if start >= 0 and end > start:
-            parsed = json.loads(content[start:end])
+        parsed = parse_json_object(content, on_fail="default", default=None)
+        if isinstance(parsed, dict):
             return self._compute_judge_score(parsed)
         return _JUDGE_FALLBACK_SCORE
 
@@ -1145,10 +1141,8 @@ class SpecEvaluator:
                     max_tokens=150,
                 )
                 content = resp.choices[0].message.content or ""
-                start = content.find("{")
-                end = content.rfind("}") + 1
-                if start >= 0 and end > start:
-                    parsed = json.loads(content[start:end])
+                parsed = parse_json_object(content, on_fail="default", default=None)
+                if isinstance(parsed, dict):
                     raw = parsed.get("score", 5)
                     return max(0.0, min(1.0, float(raw) / 10.0))
             except Exception:
@@ -1168,12 +1162,7 @@ def has_entrypoint(code: str, fn_name: str) -> bool:
     if f"def {fn_name}(" in code or f"def {fn_name} (" in code:
         return True
 
-    return _validate_js_entrypoint(code, fn_name)
-
-
-def has_run_entrypoint(code: str) -> bool:
-    """Backward-compatible alias for ``has_entrypoint(code, 'run')``."""
-    return has_entrypoint(code, "run")
+    return validate_js_entrypoint(code, fn_name)
 
 
 def load_evaluator(

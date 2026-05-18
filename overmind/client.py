@@ -4,21 +4,24 @@ A thin, synchronous-feeling facade over the generated
 ``overmind.openapi_client`` SDK.  Configure via the standard environment
 variable:
 
-* ``OVERMIND_API_KEY``  Either a project-scoped key (``ovr_…``) or a user JWT.
-                        The backend URL defaults to the Overmind Cloud endpoint;
-                        the project is auto-resolved from the key via
-                        :func:`resolve_project_id`.
+* ``OVERMIND_API_KEY``  A project-scoped key (``ovr_…``) is recommended; a user
+                        JWT is also accepted for legacy flows.  The backend URL
+                        defaults to the Overmind Cloud endpoint and the project
+                        is inferred server-side from the key — there is no
+                        client-side project disambiguation.
 
-Why this module exists
-----------------------
-The generated SDK is fully asynchronous, but the Overmind CLI is a
-synchronous-first surface.  Wrapping every call in ``asyncio.run(...)``
-at the call site is noisy and accidentally creates / tears down a new
-event loop on every invocation.  Instead, we keep a single background
-asyncio loop running on a daemon thread and route every coroutine into
-it — ``OvermindClient`` then exposes ergonomic, blocking helpers
-(``get_agent``, ``resolve_agent``, ``upsert_dataset`` …) that hide that
-machinery from the caller.
+Concurrency model
+-----------------
+The generated OpenAPI SDK is **synchronous** — every API method returns
+a decoded model object directly.  Long-running CLI flows still need to
+avoid blocking on network I/O, so fire-and-forget API writes are sent
+through :func:`_fire`, which submits the call to a small background
+thread pool.  :func:`flush_pending_api_updates` lets the caller wait for
+in-flight writes to drain at shutdown.
+
+Do **not** wrap SDK calls in asyncio primitives — they are not
+coroutines.  Past attempts to do so silently swallowed ``TypeError``
+after the HTTP call had already succeeded.
 
 Example::
 
@@ -31,7 +34,6 @@ Example::
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import logging
 import os
@@ -41,8 +43,6 @@ from concurrent.futures import Future, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
 from uuid import UUID
-
-import tomlkit
 
 from overmind.core.constants import DEFAULT_BASE_URL
 from overmind.openapi_client import ApiClient, Configuration
@@ -56,11 +56,6 @@ from overmind.openapi_client.api.traces_api import TracesApi
 from overmind.openapi_client.models.agent_request import AgentRequest
 from overmind.openapi_client.models.datapoint_request import DatapointRequest
 from overmind.openapi_client.models.dataset_request import DatasetRequest
-from overmind.openapi_client.models.job_iteration_request import JobIterationRequest
-from overmind.openapi_client.models.job_iteration_status_enum import (
-    JobIterationStatusEnum,
-)
-from overmind.openapi_client.models.job_request import JobRequest
 from overmind.openapi_client.models.job_status_enum import JobStatusEnum
 from overmind.openapi_client.models.patched_agent_request import PatchedAgentRequest
 from overmind.openapi_client.models.patched_job_request import PatchedJobRequest
@@ -69,17 +64,16 @@ from overmind.openapi_client.models.source_enum import SourceEnum
 logger = logging.getLogger("overmind.client")
 
 # ---------------------------------------------------------------------------
-# Background execution: thread pool + asyncio loop
+# Background execution: small thread pool for fire-and-forget API writes.
 # ---------------------------------------------------------------------------
-# Fire-and-forget API writes are dispatched here so the optimizer / setup
-# loops never block on network I/O.  Daemon threads so they don't block exit.
+# Daemon threads so background writes never block process exit.  The
+# optimizer / setup loops dispatch every PATCH/POST through :func:`_fire`
+# and call :func:`flush_pending_api_updates` at shutdown to drain in-flight
+# requests.
 
 _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="overmind-api")
 _pending_futures: set[Future] = set()
 _pending_lock = threading.Lock()
-
-_bg_loop: asyncio.AbstractEventLoop | None = None
-_bg_loop_lock = threading.Lock()
 
 
 def _track_future(fut: Future) -> Future:
@@ -93,50 +87,6 @@ def _track_future(fut: Future) -> Future:
 
     fut.add_done_callback(_done)
     return fut
-
-
-def _get_bg_loop() -> asyncio.AbstractEventLoop:
-    global _bg_loop
-    if _bg_loop is None or not _bg_loop.is_running():
-        with _bg_loop_lock:
-            if _bg_loop is None or not _bg_loop.is_running():
-                _bg_loop = asyncio.new_event_loop()
-                t = threading.Thread(
-                    target=_bg_loop.run_forever,
-                    daemon=True,
-                    name="overmind-async",
-                )
-                t.start()
-                logger.debug(f"Started background asyncio loop thread={t.name} loop={_bg_loop!r}")
-    return _bg_loop
-
-
-def _submit_async(coro) -> Future:
-    """Fire-and-forget: submit a coroutine to the background loop; never blocks."""
-    fut = asyncio.run_coroutine_threadsafe(coro, _get_bg_loop())
-    return _track_future(fut)
-
-
-def _run_async(coro, timeout: float = 30.0) -> Any:
-    """Submit a coroutine to the background loop and wait for its result.
-
-    Strictly rejects non-coroutine arguments. The generated OpenAPI SDK is
-    fully **synchronous** — calling ``_run_async(client.agents_partial_update(...))``
-    silently fires the HTTP request, then raises ``TypeError`` from inside
-    ``asyncio.run_coroutine_threadsafe``, where every existing call site has
-    a bare ``except Exception:`` that swallows it and reports failure to the
-    caller. The result is "remote write succeeded, local state thinks it
-    failed" — the worst possible debug experience. Failing loudly with a
-    typed error here means future "let me wrap this in ``_run_async``"
-    attempts blow up in CI rather than in production.
-    """
-    if not asyncio.iscoroutine(coro):
-        raise TypeError(
-            f"_run_async expected a coroutine, got {type(coro).__name__}. "
-            "The generated SDK is synchronous — call the method directly "
-            "instead of wrapping it in _run_async()."
-        )
-    return asyncio.run_coroutine_threadsafe(coro, _get_bg_loop()).result(timeout=timeout)
 
 
 def _fire(fn, *args, **kwargs) -> None:
@@ -195,11 +145,8 @@ class OvermindClient(
         agent = client.agents_retrieve(id=agent_id)
         page  = client.projects_list(page_size=2)
 
-    Do **not** wrap SDK calls in :func:`_run_async`. The generated client
-    is sync; :func:`_run_async` is reserved for the few coroutines this
-    module still defines internally (background trace flushing etc.).
-    Wrapping a sync call in :func:`_run_async` will raise ``TypeError``
-    by construction — see that function's docstring for the why.
+    The SDK is sync; do not wrap calls in any asyncio primitive.  Fire
+    background writes through :func:`_fire` instead.
 
     This subclass adds higher-level helpers (``resolve_agent``,
     ``upsert_dataset``, ``patch_job``…) for the operations the CLI calls
@@ -299,103 +246,41 @@ def is_configured() -> bool:
     return bool(os.getenv("OVERMIND_API_KEY", "").strip())
 
 
-class ProjectResolutionError(RuntimeError):
-    """Raised when the project id can't be determined from env or the API.
+# ---------------------------------------------------------------------------
+# Project resolution (implementation detail of upsert_agent)
+# ---------------------------------------------------------------------------
+# The generated ``AgentRequest`` schema requires a ``project: UUID`` field, so
+# even though the backend infers the project from the API key for *every other*
+# endpoint, the SDK side still has to attach a UUID to agent-creation payloads.
+# We do a one-shot ``projects_list(page_size=1)`` lookup and cache the result.
+#
+# This is *not* a public API: callers should never have to think about project
+# ids.  If the backend ever drops the schema-level ``project`` requirement, the
+# helper and its single call site can disappear.
 
-    Carries a list of accessible project ids/slugs (when the failure was
-    "multiple projects, ambiguous") so callers / skills can surface a
-    helpful error without having to re-query the API.
+_cached_project_uuid: str | None = None
+
+
+def _resolve_project_uuid(client: OvermindClient) -> str | None:
+    """Best-effort lookup of the project UUID accessible to this API key.
+
+    Returns ``None`` when the call fails or no project is visible — callers
+    are expected to treat that as a soft failure (skip the remote write).
+    Cached in-process so we pay the network cost at most once.
     """
-
-    def __init__(self, message: str, *, candidates: list[tuple[str, str]] | None = None) -> None:
-        super().__init__(message)
-        self.candidates = candidates or []
-
-
-# Process-wide cache so repeated calls don't pay the projects_list cost.
-_resolved_project_id: str | None = None
-
-
-def resolve_project_id(client: OvermindClient | None = None) -> str:
-    """Return the project UUID this client should write to.
-
-    Resolution order:
-      1. ``OVERMIND_PROJECT_ID`` env var (UUID or slug) — explicit override
-         for keys with access to multiple projects. UUIDs are accepted
-         as-is; slugs are resolved against ``projects_list()``.
-      2. Single accessible project auto-resolved from ``projects_list()``.
-      3. :class:`ProjectResolutionError` if zero or multiple projects.
-
-    The result is cached in-process so repeated calls don't pay the network
-    cost.
-    """
-    global _resolved_project_id
-
-    if _resolved_project_id:
-        return _resolved_project_id
-
-    env_project = (os.environ.get("OVERMIND_PROJECT_ID") or "").strip()
-    if env_project:
-        try:
-            UUID(env_project)
-            _resolved_project_id = env_project
-            logger.info(f"resolve_project_id: pinned from OVERMIND_PROJECT_ID env id={env_project}")
-            return env_project
-        except ValueError:
-            pass
-
-    if client is None:
-        client = get_client()
-    if client is None:
-        raise ProjectResolutionError("Cannot resolve project: OVERMIND_API_KEY is not set.")
-
+    global _cached_project_uuid
+    if _cached_project_uuid:
+        return _cached_project_uuid
     try:
-        page = client.projects_list(page_size=20 if env_project else 2)
-    except Exception as exc:
-        raise ProjectResolutionError("Cannot resolve project: projects_list() call failed.") from exc
-
+        page = client.projects_list(page_size=1)
+    except Exception:
+        logger.debug("_resolve_project_uuid: projects_list failed", exc_info=True)
+        return None
     results = list(page.results or [])
     if not results:
-        raise ProjectResolutionError(
-            "The configured OVERMIND_API_KEY has no accessible projects. "
-            "Generate a project-scoped key from the Overmind console and try again."
-        )
-
-    if env_project:
-        match = next(
-            (p for p in results if (getattr(p, "slug", "") or getattr(p, "name", "")) == env_project),
-            None,
-        )
-        if match is not None:
-            pid = str(match.id)
-            _resolved_project_id = pid
-            logger.info(f"resolve_project_id: matched OVERMIND_PROJECT_ID slug={env_project} id={pid}")
-            return pid
-        slugs = ", ".join(getattr(p, "slug", "") or getattr(p, "name", "?") for p in results)
-        raise ProjectResolutionError(
-            f"OVERMIND_PROJECT_ID={env_project!r} does not match any accessible project. "
-            f"Available slugs: {slugs}"
-        )
-
-    if len(results) == 1:
-        pid = str(results[0].id)
-        _resolved_project_id = pid
-        logger.info(f"resolve_project_id: auto-resolved single project id={pid}")
-        return pid
-
-    candidates = [(str(p.id), getattr(p, "slug", "") or getattr(p, "name", "")) for p in results]
-    listed = ", ".join(f"{slug or '?'}={pid}" for pid, slug in candidates)
-    raise ProjectResolutionError(
-        "OVERMIND_API_KEY can access multiple projects — set OVERMIND_PROJECT_ID "
-        f"(UUID or slug) to disambiguate, or use a project-scoped key. Candidates: {listed}",
-        candidates=candidates,
-    )
-
-
-def _reset_project_id_cache() -> None:
-    """Test helper: clear the in-process project-id cache."""
-    global _resolved_project_id
-    _resolved_project_id = None
+        return None
+    _cached_project_uuid = str(results[0].id)
+    return _cached_project_uuid
 
 
 # ---------------------------------------------------------------------------
@@ -416,48 +301,6 @@ def agent_slug_from_path(agent_path: str) -> str:
     parent = p.parent.name
     name = f"{parent}-{stem}" if parent else stem
     return _make_slug(name)
-
-
-# ---------------------------------------------------------------------------
-# Per-agent project.toml helpers
-# ---------------------------------------------------------------------------
-
-
-def _project_toml_path(agent_path: str) -> Path:
-    """Return the path to the per-agent project.toml file."""
-    return Path(agent_path).resolve().parent / "project.toml"
-
-
-def write_project_toml(agent_path: str, data: dict) -> None:
-    """Write *data* to the per-agent project.toml, merging with any existing content."""
-    p = _project_toml_path(agent_path)
-    try:
-        existing: tomlkit.TOMLDocument
-        if p.exists():
-            existing = tomlkit.loads(p.read_text(encoding="utf-8"))
-        else:
-            existing = tomlkit.document()
-            existing.add(tomlkit.comment("Overmind — auto-generated per-agent config"))
-            existing.add(tomlkit.nl())
-
-        def _deep_set(doc: Any, keys: list[str], value: Any) -> None:
-            for key in keys[:-1]:
-                if key not in doc:
-                    doc.add(key, tomlkit.table())
-                doc = doc[key]
-            doc[keys[-1]] = value
-
-        def _flatten_and_set(doc: Any, d: dict, prefix: list[str]) -> None:
-            for k, v in d.items():
-                if isinstance(v, dict):
-                    _flatten_and_set(doc, v, prefix + [k])
-                else:
-                    _deep_set(doc, prefix + [k], v)
-
-        _flatten_and_set(existing, data, [])
-        p.write_text(tomlkit.dumps(existing), encoding="utf-8")
-    except Exception:  # noqa: S110
-        pass
 
 
 # ---------------------------------------------------------------------------
@@ -485,7 +328,6 @@ def _agent_shared_fields(spec: dict, agent_path: str) -> dict[str, Any]:
 
 def upsert_agent(
     client: OvermindClient,
-    project_id: str,
     agent_path: str,
     spec: dict,
     *,
@@ -503,6 +345,9 @@ def upsert_agent(
     ``overmind.agent.name`` — preventing duplicate agents with different slugs
     (e.g. "support-triage" vs "support-triage-agent").
 
+    The project is inferred server-side from the API key; the SDK only needs
+    to attach a UUID to the create payload (see :func:`_resolve_project_uuid`).
+
     Returns the Agent object (typed model from the OpenAPI client).
     """
     if agent_name:
@@ -512,31 +357,17 @@ def upsert_agent(
     description = (spec.get("agent_description") or "")[:512] or None
     name = (description or agent_name or slug)[:255]
 
-    logger.info(f"upsert_agent: slug={slug} project_id={project_id}")
+    logger.info(f"upsert_agent: slug={slug}")
 
     existing = None
     try:
-        page = client.agents_list(project=UUID(project_id))
+        page = client.agents_list()
         for ag in page.results or []:
             if ag.slug == slug or ag.agent_path == agent_path:
                 existing = ag
                 break
     except Exception:
-        logger.debug(
-            "upsert_agent: filtered list failed, falling back to unfiltered",
-            exc_info=True,
-        )
-        try:
-            page = client.agents_list()
-            for ag in page.results or []:
-                ag_project = str(getattr(ag, "project", "") or "")
-                if ag_project != str(project_id):
-                    continue
-                if ag.slug == slug or ag.agent_path == agent_path:
-                    existing = ag
-                    break
-        except Exception:
-            logger.warning("upsert_agent: unfiltered list also failed", exc_info=True)
+        logger.warning("upsert_agent: agents_list failed", exc_info=True)
 
     shared = _agent_shared_fields(spec, agent_path)
 
@@ -544,10 +375,18 @@ def upsert_agent(
         patch = PatchedAgentRequest(**shared)
         result = client.agents_partial_update(id=existing.id, patched_agent_request=patch)
         logger.info(f"upsert_agent: updated existing agent id={existing.id} slug={slug}")
-    else:
-        req = AgentRequest(name=name, slug=slug, project=UUID(project_id), **shared)
-        result = client.agents_create(agent_request=req)
-        logger.info(f"upsert_agent: created new agent id={getattr(result, 'id', '?')} slug={slug}")
+        return result
+
+    project_uuid = _resolve_project_uuid(client)
+    if not project_uuid:
+        raise RuntimeError(
+            "upsert_agent: could not resolve a project UUID for the configured "
+            "OVERMIND_API_KEY. Generate a project-scoped key from the Overmind "
+            "console and try again."
+        )
+    req = AgentRequest(name=name, slug=slug, project=UUID(project_uuid), **shared)
+    result = client.agents_create(agent_request=req)
+    logger.info(f"upsert_agent: created new agent id={getattr(result, 'id', '?')} slug={slug}")
     return result
 
 
@@ -656,52 +495,8 @@ def delete_dataset(client: OvermindClient, dataset_id: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Job / iteration helpers (used by ApiReporter)
+# Job patch helper (used by the surviving ApiReporter terminal stamps).
 # ---------------------------------------------------------------------------
-
-
-def _create_job(
-    client: OvermindClient,
-    agent_id: str,
-    analyzer_model: str,
-    num_iterations: int,
-    candidates_per_iteration: int,
-) -> str | None:
-    """Create a Job record and return its UUID string, or None on failure.
-
-    The backend silently orphans Jobs whose POST body omits ``project`` —
-    the resulting row never surfaces in project-scoped lists or by-id GETs,
-    so ``overmind optimize`` looks like it created a Job (201 Created) but
-    the UI shows nothing. Pinning ``project`` via :func:`resolve_project_id`
-    binds the Job to the correct project so iteration spans actually attach.
-    """
-    try:
-        project_id: UUID | None = None
-        try:
-            project_id = UUID(resolve_project_id(client))
-        except ProjectResolutionError:
-            logger.warning(
-                "_create_job: could not resolve project; Job will be created "
-                "without project binding and may not appear in the UI."
-            )
-        req = JobRequest(
-            project=project_id,
-            agent=UUID(agent_id),
-            status=JobStatusEnum.RUNNING,
-            analyzer_model=analyzer_model[:128],
-            num_iterations=num_iterations,
-            candidates_per_iteration=candidates_per_iteration,
-            data_source="dataset",
-        )
-        job = client.jobs_create(job_request=req)
-        logger.info(
-            f"_create_job: created job id={job.id} agent_id={agent_id} "
-            f"project_id={project_id} iterations={num_iterations}"
-        )
-        return str(job.id)
-    except Exception:
-        logger.exception(f"_create_job: failed to create job for agent_id={agent_id}")
-        return None
 
 
 def _patch_job(client: OvermindClient, job_id: str, **fields: Any) -> None:
@@ -713,58 +508,25 @@ def _patch_job(client: OvermindClient, job_id: str, **fields: Any) -> None:
         logger.exception(f"_patch_job: failed job_id={job_id}")
 
 
-def _create_iteration(
-    client: OvermindClient,
-    job_id: str,
-    order: int,
-    name: str,
-    avg_score: float,
-    status: JobIterationStatusEnum,
-    description: str,
-    agent_code: str | None,
-    dimension_scores: dict | None,
-) -> str | None:
-    try:
-        req = JobIterationRequest(
-            job=UUID(job_id),
-            iteration_name=name[:64],
-            order=order,
-            avg_score=avg_score,
-            status=status,
-            description=(description or "")[:500],
-            agent_code=agent_code or "",
-            dimension_scores=dimension_scores or {},
-        )
-        iteration = client.job_iterations_create(job_iteration_request=req)
-        logger.info(f"_create_iteration: job_id={job_id} order={order} status={status} avg_score={avg_score:.4f}")
-        return str(iteration.id)
-    except Exception:
-        logger.exception(f"_create_iteration: failed job_id={job_id} order={order}")
-        return None
-
-
 # ---------------------------------------------------------------------------
-# ApiReporter — streams optimize progress to the backend in real time
+# ApiReporter — terminal-state stamps for an OTLP-ingested Job.
 # ---------------------------------------------------------------------------
 
 
 class ApiReporter:
-    """Streams optimize lifecycle events to the Overmind backend.
+    """Stamps the final ``best_agent_code`` / ``report_markdown`` on a Job.
 
-    Telemetry (per-span attributes, tool calls, LLM usage, iteration
-    analytics) is emitted by the OpenTelemetry pipeline and parsed by
-    ``overbae.api.otlp`` — this reporter only owns the small set of
-    Job / JobIteration writes the OTLP path cannot model cleanly:
+    All in-flight telemetry (per-span attributes, tool calls, LLM usage,
+    iteration analytics) is emitted by the OpenTelemetry pipeline and
+    parsed by ``overbae.api.otlp`` — the OTLP root span creates the
+    ``Job`` row from a locally-minted UUID, and every subsequent span
+    carrying the same :data:`overmind.attrs.JOB_ID` is bound to it.
 
-    * Creating the parent :class:`Job` row up front so subsequent
-      iteration spans have something to attach to.
-    * Updating ``Job`` status, ``current_iteration`` and rolling logs
-      while the run is in flight.
-    * Stamping the final ``best_agent_code`` / ``report_markdown`` on
-      the Job when the run completes.
-
-    All writes go through :func:`_fire` / :func:`_submit_async` so the
-    optimizer loop never blocks on network I/O.
+    This reporter only owns the **two terminal writes** the OTLP path
+    cannot model cleanly: a final PATCH stamping the Job as completed
+    (with the report markdown + best agent code) or failed.  Both writes
+    go through :func:`_fire` so the optimizer loop never blocks on the
+    network at shutdown.
     """
 
     def __init__(
@@ -779,56 +541,20 @@ class ApiReporter:
         self._logs: list[dict] = []
 
     @classmethod
-    def create(
-        cls,
-        agent_id: str,
-        analyzer_model: str,
-        num_iterations: int,
-        candidates_per_iteration: int,
-    ) -> ApiReporter | None:
-        """Build a reporter if the API is configured.  Returns None otherwise.
-
-        .. deprecated::
-            Eagerly creates a ``Job`` row via REST. The OTLP ingest pipeline
-            cannot retroactively attach span-derived ``baseline_score`` /
-            iteration rows to a REST-created Job whose UUID it did not mint
-            itself, so callers using this path see an empty Job in the UI.
-            Prefer :meth:`attach_to_job` and let the OTLP root span create
-            the Job from a locally-generated UUID.
-        """
-        client = get_client()
-        if not client or not agent_id:
-            return None
-
-        job_id = _create_job(
-            client,
-            agent_id=agent_id,
-            analyzer_model=analyzer_model,
-            num_iterations=num_iterations,
-            candidates_per_iteration=candidates_per_iteration,
-        )
-        if not job_id:
-            return None
-
-        return cls(client, agent_id, job_id)
-
-    @classmethod
     def attach_to_job(
         cls,
         agent_id: str,
         job_id: str,
     ) -> ApiReporter | None:
-        """Build a reporter for an existing or about-to-be-OTLP-created Job.
+        """Build a reporter for a Job whose UUID was minted locally.
 
-        Use when the caller mints ``job_id`` locally and tags the workflow
-        root span with ``attrs.JOB_ID = job_id`` — the backend's OTLP ingest
-        will then create the ``Job`` row from the span (with project context
-        inherited from the OTel resource) and bind every subsequent span
-        carrying the same ``JOB_ID`` to it. ``baseline_score``,
-        ``current_iteration``, and ``JobIteration`` rows populate from span
-        attributes, not from REST writes. The reporter's :meth:`on_complete`
-        / :meth:`on_failed` PATCH the same row by UUID for terminal stamps
-        (``best_agent_code``, ``report_markdown``).
+        The caller tags the workflow root span with
+        ``attrs.JOB_ID = job_id`` — the backend's OTLP ingest then
+        creates the ``Job`` row from the span (project inherited from
+        the OTel resource) and binds every subsequent span carrying the
+        same ``JOB_ID`` to it.  ``baseline_score``, ``current_iteration``,
+        and ``JobIteration`` rows populate from span attributes — not
+        from REST writes.
 
         Returns ``None`` when the API is not configured.
         """
@@ -841,74 +567,6 @@ class ApiReporter:
     def job_id(self) -> str:
         return self._job_id
 
-    def on_log(self, message: str, level: str = "info") -> None:
-        """Append a log entry and push the current log buffer to the backend."""
-        import time
-
-        self._logs.append({"ts": time.time(), "level": level, "msg": message})
-        _fire(_patch_job, self._client, self._job_id, logs=list(self._logs))
-
-    def on_progress(self, current_iteration: int, best_score: float | None = None) -> None:
-        """Update the job's current iteration and optionally its best score."""
-        fields: dict[str, Any] = {"current_iteration": current_iteration}
-        if best_score is not None:
-            fields["best_score"] = best_score
-        _fire(_patch_job, self._client, self._job_id, **fields)
-
-    def on_baseline(self, score: float) -> None:
-        """Called once the baseline has been evaluated."""
-        import time
-
-        self._logs.append({"ts": time.time(), "level": "info", "msg": f"Baseline evaluated: score {score:.2f}"})
-        _fire(
-            _patch_job,
-            self._client,
-            self._job_id,
-            baseline_score=score,
-            best_score=score,
-            status=JobStatusEnum.RUNNING,
-            logs=list(self._logs),
-        )
-
-    def on_iteration(
-        self,
-        order: int,
-        avg_score: float,
-        decision: str,
-        agent_code: str | None = None,
-        description: str = "",
-        dimension_scores: dict | None = None,
-    ) -> None:
-        """Called after each iteration is accepted or rejected."""
-        import time
-
-        status = JobIterationStatusEnum.KEEP if decision == "keep" else JobIterationStatusEnum.DISCARD
-        _fire(
-            _create_iteration,
-            self._client,
-            self._job_id,
-            order,
-            f"Experiment {order}",
-            avg_score,
-            status,
-            description,
-            agent_code,
-            dimension_scores,
-        )
-        # Update job's current iteration and best score in real time
-        patch_fields: dict[str, Any] = {"current_iteration": order}
-        if decision == "keep":
-            patch_fields["best_score"] = avg_score
-        decision_label = "accepted" if decision == "keep" else "discarded"
-        self._logs.append({
-            "ts": time.time(),
-            "level": "info",
-            "msg": f"Experiment {order}: {decision_label} (score {avg_score:.2f})"
-            + (f" — {description}" if description else ""),
-        })
-        patch_fields["logs"] = list(self._logs)
-        _fire(_patch_job, self._client, self._job_id, **patch_fields)
-
     def on_complete(
         self,
         best_score: float,
@@ -917,7 +575,7 @@ class ApiReporter:
         best_agent_code: str | None = None,
         backtest_results: dict | None = None,
     ) -> None:
-        """Called when the full optimization run is done."""
+        """Stamp the Job as completed."""
         import time
 
         improvement = best_score - baseline_score
@@ -940,17 +598,8 @@ class ApiReporter:
             fields["backtest_results"] = backtest_results
         _fire(_patch_job, self._client, self._job_id, **fields)
 
-    def on_holdout(self, holdout_results: dict) -> None:
-        """Called after holdout evaluation to store holdout metrics on the Job."""
-        _fire(
-            _patch_job,
-            self._client,
-            self._job_id,
-            backtest_results={"holdout": holdout_results},
-        )
-
     def on_failed(self, reason: str = "") -> None:
-        """Called if the optimization run aborts with an error."""
+        """Stamp the Job as failed."""
         import time
 
         self._logs.append({"ts": time.time(), "level": "error", "msg": f"Run failed: {reason}"})

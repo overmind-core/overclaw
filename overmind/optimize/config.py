@@ -17,7 +17,6 @@ from rich.table import Table
 
 from overmind.core.constants import overmind_rel
 from overmind.core.paths import (
-    agent_env_path,
     agent_experiments_dir,
     agent_setup_spec_dir,
     load_overmind_dotenv,
@@ -686,12 +685,7 @@ def collect_config(
                 default_model=DEFAULT_ANALYZER_MODEL,
                 no_catalog_prompt="  Enter analyzer model",
             )
-            ensure_provider_api_keys(
-                cfg.analyzer_model,
-                agent_env_path(cfg.agent_name),
-                cfg.agent_name,
-                console,
-            )
+            ensure_provider_api_keys(cfg.analyzer_model, console)
     else:
         console.print(f"  [yellow]No ANALYZER_MODEL found in {overmind_rel('.env')}[/yellow]")
         cfg.analyzer_model = prompt_for_catalog_litellm_model(
@@ -701,7 +695,7 @@ def collect_config(
             default_model=DEFAULT_ANALYZER_MODEL,
             no_catalog_prompt="  Enter analyzer model",
         )
-        ensure_provider_api_keys(cfg.analyzer_model, agent_env_path(cfg.agent_name), cfg.agent_name, console)
+        ensure_provider_api_keys(cfg.analyzer_model, console)
 
     # ---- LLM-as-Judge ----
     console.print()

@@ -5,7 +5,10 @@ The project root is the directory that contains the Overmind state directory
 :data:`~overmind.core.constants.OVERMIND_DIR_NAME`). Agent code stays where you
 put it (e.g. ``agents/...``). The registry of agent names and entrypoints is
 ``<state>/agents.toml``. Per-agent data lives under ``<state>/agents/<name>/``.
-Environment variables are stored in ``<state>/.env``.
+Environment variables are stored in a **single** file at ``<state>/.env`` —
+there is intentionally no per-agent ``.env``: a placeholder in a per-agent file
+would override the real value in the project ``.env`` (``override=True`` on
+``load_dotenv``) and silently break ``setup`` / ``optimize``.
 """
 
 from __future__ import annotations
@@ -65,11 +68,6 @@ def agent_run_state_path(agent_name: str) -> Path:
     return agent_overmind_dir(agent_name) / "run_state.json"
 
 
-def agent_env_path(agent_name: str) -> Path:
-    """Per-agent ``.env`` at ``<state>/agents/<name>/.env``."""
-    return agent_overmind_dir(agent_name) / ".env"
-
-
 def load_overmind_dotenv() -> None:
     """Load state-directory ``.env`` into the process environment (no-op if missing)."""
     path = overmind_env_path()
@@ -77,13 +75,14 @@ def load_overmind_dotenv() -> None:
         load_dotenv(path)
 
 
-def load_agent_dotenv(agent_name: str) -> None:
-    """Load per-agent ``.env`` into the process environment, overriding any existing values.
+def load_agent_dotenv(agent_name: str) -> None:  # noqa: ARG001 — kept for backwards-compat
+    """Deprecated no-op.
 
-    No-op if the file does not exist.  Agent-specific vars take precedence over
-    the global ``.overmind/.env`` so credentials saved during ``overmind setup``
-    are always used when the agent is run or optimized.
+    Overmind no longer maintains a per-agent ``.env`` under
+    ``<state>/agents/<name>/.env``.  Provider credentials and model defaults
+    live exclusively in the project-level ``.overmind/.env`` (loaded by
+    :func:`load_overmind_dotenv`).  This shim exists only so older call sites
+    keep working until they are removed; new code should call
+    :func:`load_overmind_dotenv` directly.
     """
-    path = agent_env_path(agent_name)
-    if path.is_file():
-        load_dotenv(path, override=True)
+    return None

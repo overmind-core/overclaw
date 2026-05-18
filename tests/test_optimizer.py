@@ -398,14 +398,6 @@ class TestPrintBaselineDiagnostics:
         opt._print_baseline_diagnostics(evaluation, items)
 
 
-class TestLoadAgentModule:
-    def test_loads_module(self, tmp_path):
-        agent = tmp_path / "agent.py"
-        agent.write_text("def run(x): return {'ok': True}\n")
-        mod = Optimizer._load_agent_module(str(agent))
-        assert mod.run({"x": 1}) == {"ok": True}
-
-
 class TestAnimateCodeUpdate:
     def test_no_changes(self, tmp_path):
         cfg = _make_config(tmp_path)

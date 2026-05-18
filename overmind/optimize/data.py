@@ -25,7 +25,6 @@ import contextvars
 import json
 import logging
 import random
-import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -46,6 +45,7 @@ from overmind.prompts.data import (
 from overmind.tracing import force_flush_traces, observe_safe, start_child_span
 from overmind.utils.display import BRAND, make_spinner_progress
 from overmind.utils.llm import llm_completion
+from overmind.utils.llm_parse import parse_json_object, repair_json_string
 
 logger = logging.getLogger(__name__)
 
@@ -571,86 +571,25 @@ def validate_case_against_spec(case: dict, eval_spec: dict) -> list[str]:
 # ---------------------------------------------------------------------------
 # JSON parsing helpers
 # ---------------------------------------------------------------------------
+# JSON-from-LLM extraction is consolidated in :mod:`overmind.utils.llm_parse`.
+# The thin wrappers below preserve the legacy ``None``-on-failure contract that
+# existing call sites rely on.
 
 
 def _safe_parse_json(text: str) -> Any:
-    """Best-effort JSON extraction from LLM output.
+    """Best-effort JSON extraction from LLM output (returns ``None`` on failure).
 
-    Handles common LLM quirks: markdown fences, leading commentary,
-    unescaped control characters inside string literals, and trailing commas.
+    Thin wrapper around :func:`overmind.utils.llm_parse.parse_json_object` that
+    preserves the historic ``None``-on-failure contract.
     """
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    fenced = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
-    if fenced:
-        try:
-            return json.loads(fenced.group(1).strip())
-        except json.JSONDecodeError:
-            # Try repairing the fenced content too
-            repaired = _repair_json_string(fenced.group(1).strip())
-            if repaired is not None:
-                return repaired
-
-    for open_ch, close_ch in [("{", "}"), ("[", "]")]:
-        start = text.find(open_ch)
-        end = text.rfind(close_ch)
-        if start >= 0 and end > start:
-            candidate = text[start : end + 1]
-            try:
-                return json.loads(candidate)
-            except json.JSONDecodeError:
-                repaired = _repair_json_string(candidate)
-                if repaired is not None:
-                    return repaired
-
-    repaired = text.replace("'", '"')
-    repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
-    try:
-        return json.loads(repaired)
-    except json.JSONDecodeError:
-        pass
-
-    return None
+    if not isinstance(text, str):
+        return None
+    return parse_json_object(text, on_fail="default", default=None)
 
 
 def _repair_json_string(text: str) -> Any:
-    """Try to fix common JSON issues from LLM output.
-
-    Handles: unescaped newlines/tabs inside string values, trailing commas,
-    single quotes used as string delimiters.
-    """
-    # Escape literal newlines and tabs that appear inside JSON string values.
-    # Walk character by character to only fix characters inside quotes.
-    result: list[str] = []
-    in_string = False
-    i = 0
-    while i < len(text):
-        ch = text[i]
-        if ch == '"' and (i == 0 or text[i - 1] != "\\"):
-            in_string = not in_string
-            result.append(ch)
-        elif in_string and ch == "\n":
-            result.append("\\n")
-        elif in_string and ch == "\r":
-            result.append("\\r")
-        elif in_string and ch == "\t":
-            result.append("\\t")
-        else:
-            result.append(ch)
-        i += 1
-    repaired = "".join(result)
-
-    # Remove trailing commas before } or ]
-    repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
-
-    try:
-        return json.loads(repaired)
-    except json.JSONDecodeError:
-        return None
+    """Try to fix common JSON issues from LLM output (returns ``None`` on failure)."""
+    return repair_json_string(text)
 
 
 # Max concurrent shard calls per persona (each shard is one LLM request).

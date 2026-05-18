@@ -96,7 +96,7 @@ _PATTERNS: list[tuple[FailureMode, re.Pattern[str], str, str, bool]] = [
             re.IGNORECASE,
         ),
         "Agent failed because an LLM provider API key was missing or invalid.",
-        "Add the required API key to the agent's .env file or environment. "
+        "Add the required API key to .overmind/.env (run `overmind init`) or to the shell environment. "
         "Overmind will also try shadow execution with cassette replay — if "
         "the LLM call was recorded on a prior successful run, optimization "
         "can still proceed without a live key.",

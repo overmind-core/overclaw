@@ -31,7 +31,6 @@ from overmind import SpanType, attrs, set_tag
 from overmind.core.paths import (
     agent_experiments_dir,
     agent_setup_spec_dir,
-    load_agent_dotenv,
 )
 from overmind.core.registry import get_agent_id, resolve_agent
 from overmind.optimize.config import Config, apply_eval_spec_scope
@@ -66,6 +65,117 @@ def _coerce_into_config_kwargs(raw: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _resolve_agent_id(
+    agent_name: str,
+    agent_path: str,
+    fn_name: str,
+) -> str | None:
+    """Resolve the backend agent UUID, self-healing the local registry.
+
+    Path B's terminal ``ApiReporter.on_complete`` / ``on_failed``
+    PATCHes are addressed by ``agent_id`` + ``job_id``. The local
+    ``.overmind/agents.toml`` registry only has an ``id`` field when
+    something previously wrote it back from the backend; for
+    historical agents registered before that flow existed the column
+    is empty, which forced ``optimize-step`` to no-op the terminal
+    PATCH and leave the Job stuck in ``running`` forever.
+
+    Resolution order:
+
+    1. ``.overmind/agents.toml`` (already-persisted backend UUID).
+    2. The currently-configured storage backend's ``get_agent_id()``
+       (already-fetched-this-process UUID).
+    3. A best-effort ``storage.save_spec(spec)`` round-trip to ask
+       the backend (the same upsert the skill's sync block does).
+       On success we persist the returned UUID back to
+       ``agents.toml`` via :func:`save_agent` so subsequent invocations
+       resolve at step 1 with zero network cost.
+
+    Returns ``None`` only when storage cannot be configured (e.g. no
+    ``OVERMIND_API_KEY``) — in that case the run continues with
+    OTLP-only telemetry, identical to Path A's behaviour.
+    """
+    cached = get_agent_id(agent_name)
+    if cached:
+        return cached
+
+    try:
+        from overmind.storage import (
+            StorageNotConfiguredError,
+            configure_storage,
+            get_storage,
+        )
+
+        configure_storage(agent_path=agent_path, agent_name=agent_name)
+        try:
+            storage = get_storage()
+        except StorageNotConfiguredError:
+            logger.debug(
+                "init: storage not configured; agent_id will be None"
+            )
+            return None
+        resolved = storage.get_agent_id()
+        if not resolved:
+            spec_path = agent_setup_spec_dir(agent_name) / "eval_spec.json"
+            if spec_path.is_file():
+                try:
+                    spec = json.loads(spec_path.read_text())
+                    storage.save_spec(spec)
+                    resolved = storage.get_agent_id()
+                except Exception:
+                    logger.debug(
+                        "init: save_spec round-trip failed; agent_id stays None",
+                        exc_info=True,
+                    )
+        if resolved:
+            try:
+                from overmind.core.registry import (
+                    _read_registry_entries,
+                    save_agent,
+                )
+
+                # Reuse the entrypoint string already on disk so we
+                # only patch the missing ``id`` column.  ``save_agent``
+                # rewrites the whole row, so without this lookup we'd
+                # silently rewrite a working dotted-module entrypoint
+                # (``scripts.overmind_entrypoint:run``) into a bare
+                # file-stem form (``overmind_entrypoint:run``) that
+                # subsequent ``resolve_agent`` calls might not find.
+                existing_entry = next(
+                    (
+                        e
+                        for e in _read_registry_entries()
+                        if e.get("name") == agent_name
+                    ),
+                    None,
+                )
+                entrypoint_spec = (existing_entry or {}).get("entrypoint")
+                if not entrypoint_spec:
+                    entrypoint_spec = (
+                        f"{Path(agent_path).stem}:{fn_name}"
+                        if Path(agent_path).suffix == ".py"
+                        else agent_path
+                    )
+                save_agent(agent_name, entrypoint_spec, id=resolved)
+                logger.info(
+                    f"init: persisted agent_id={resolved} into agents.toml "
+                    f"for agent={agent_name}"
+                )
+            except Exception:
+                logger.debug(
+                    "init: save_agent persistence failed; agent_id resolved "
+                    "in-process only",
+                    exc_info=True,
+                )
+        return resolved or None
+    except Exception:
+        logger.debug(
+            "init: agent_id resolution raised; agent_id will be None",
+            exc_info=True,
+        )
+        return None
+
+
 @observe_safe(span_name="overmind.optimize.init", type=SpanType.FUNCTION)
 def run_init(
     *,
@@ -87,8 +197,6 @@ def run_init(
 
             {"status": "ok", "state_path": "...", "summary": {...}}
     """
-    load_agent_dotenv(agent_name)
-
     try:
         agent_path, fn_name = resolve_agent(agent_name)
     except SystemExit:
@@ -145,7 +253,7 @@ def run_init(
     cfg_kwargs.setdefault("agent_name", agent_name)
     cfg_kwargs.setdefault("agent_path", agent_path)
     cfg_kwargs.setdefault("entrypoint_fn", fn_name)
-    cfg_kwargs.setdefault("agent_id", get_agent_id(agent_name))
+    cfg_kwargs.setdefault("agent_id", _resolve_agent_id(agent_name, agent_path, fn_name))
     cfg_kwargs.setdefault("language", _detect_language(agent_path))
     cfg_kwargs.setdefault("eval_spec_path", str(spec_path))
     cfg_kwargs.setdefault("data_path", str(data_path))

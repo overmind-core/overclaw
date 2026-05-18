@@ -13,7 +13,6 @@ from overmind.optimize.evaluator import (
     _JUDGE_FALLBACK_SCORE,
     SpecEvaluator,
     has_entrypoint,
-    has_run_entrypoint,
     load_evaluator,
 )
 
@@ -23,7 +22,7 @@ def setup(self):
 
 
 # ---------------------------------------------------------------------------
-# has_entrypoint / has_run_entrypoint
+# has_entrypoint
 # ---------------------------------------------------------------------------
 
 
@@ -42,12 +41,6 @@ class TestHasEntrypoint:
 
     def test_substring_not_matched(self):
         assert has_entrypoint("def runner(x):", "run") is False
-
-
-class TestHasRunEntrypoint:
-    def test_delegates(self):
-        assert has_run_entrypoint("def run(x):") is True
-        assert has_run_entrypoint("def other(x):") is False
 
 
 # ---------------------------------------------------------------------------

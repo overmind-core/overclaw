@@ -147,10 +147,6 @@ class SubprocessBackend:
         cassette: Cassette | None = None,
     ) -> None:
         self._runner = runner
-        # Use ``is None`` rather than ``or`` — :class:`Cassette` is a
-        # collection-like object whose ``__len__`` returns 0 when empty,
-        # so a truthiness check would silently substitute a NullCassette
-        # and skip cassette recording.
         self._cassette = cassette if cassette is not None else open_cassette(None)
         self._prepared = False
 

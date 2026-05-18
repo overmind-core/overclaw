@@ -216,7 +216,13 @@ def _process_llm_spans(spans: list[dict], result: ParsedTrace) -> None:
     for span in spans:
         attrs = _attrs_to_dict(span.get("attributes", []))
 
-        total_tokens = attrs.get("llm.usage.total_tokens", 0)
+        # Prefer the OTel GenAI semconv key the SDK emits; fall back to the
+        # legacy ``llm.usage.total_tokens`` for spans produced by older
+        # auto-instrumentors.
+        total_tokens = attrs.get(
+            "gen_ai.usage.total_tokens",
+            attrs.get("llm.usage.total_tokens", 0),
+        )
         if isinstance(total_tokens, str):
             try:
                 total_tokens = int(total_tokens)
@@ -229,8 +235,16 @@ def _process_llm_spans(spans: list[dict], result: ParsedTrace) -> None:
             "model": attrs.get("gen_ai.request.model", ""),
             "response_model": attrs.get("gen_ai.response.model", ""),
             "total_tokens": total_tokens,
-            "input_tokens": attrs.get("gen_ai.usage.input_tokens", 0),
-            "output_tokens": attrs.get("gen_ai.usage.output_tokens", 0),
+            # Auto-instrumentors sometimes emit the older
+            # ``prompt_tokens`` / ``completion_tokens`` names; accept both.
+            "input_tokens": attrs.get(
+                "gen_ai.usage.input_tokens",
+                attrs.get("gen_ai.usage.prompt_tokens", 0),
+            ),
+            "output_tokens": attrs.get(
+                "gen_ai.usage.output_tokens",
+                attrs.get("gen_ai.usage.completion_tokens", 0),
+            ),
             "finish_reason": attrs.get("gen_ai.completion.0.finish_reason", ""),
             "span_id": span.get("span_id"),
             "parent_span_id": span.get("parent_span_id"),

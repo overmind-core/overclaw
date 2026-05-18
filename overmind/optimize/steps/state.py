@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from overmind.optimize.config import Config
+from overmind.utils.atomic_io import atomic_write_json
 
 
 @dataclass
@@ -122,12 +123,7 @@ class SkillRunState:
         return cls(**kwargs)
 
     def save(self, path: str | Path | None = None) -> Path:
-        target = Path(path or self.state_path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        # Atomic write so a crashed step never leaves a half-written state file.
-        tmp = target.with_suffix(target.suffix + ".tmp")
-        tmp.write_text(json.dumps(asdict(self), indent=2, default=str))
-        tmp.replace(target)
+        target = atomic_write_json(path or self.state_path, asdict(self))
         self.state_path = str(target)
         return target
 

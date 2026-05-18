@@ -12,6 +12,7 @@ from overmind.core.registry import project_root, project_root_from_agent_file
 from overmind.optimize.optimizer import Optimizer
 from overmind.optimize.steps.state import SkillRunState
 from overmind.tracing import force_flush_traces, observe_safe
+from overmind.utils.atomic_io import atomic_write_json
 
 logger = logging.getLogger("overmind.optimize.steps.evaluate")
 
@@ -124,7 +125,7 @@ def run_evaluate(
         }
 
     score_path = worktree / "score.json"
-    score_path.write_text(json.dumps(result, indent=2, default=str))
+    atomic_write_json(score_path, result)
 
     avg_total = float(result["avg_total"])
     set_tag(attrs.OPTIMIZE_CANDIDATE_SCORE, avg_total)

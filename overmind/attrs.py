@@ -4,11 +4,27 @@ Every tag attached to an Overmind trace span (via ``overmind.set_tag`` or
 ``start_span(..., attributes=...)``) is defined here so the schema of
 attributes we emit is auditable from a single file.  Add new tags here
 first, then import the constant at the call site — never inline a raw
-``"overmind.*"`` / ``"llm.*"`` / ``"tool.*"`` string elsewhere.
+``"overmind.*"`` / ``"gen_ai.*"`` / ``"tool.*"`` string elsewhere.
 
-Keys under ``overmind.*`` use dotted segments (``overmind.agent.id``,
-``overmind.error.type``, …) — never a single underscore-blob like
-``overmind.agent_id``.  Keep ``overbae/api/overmind_attrs.py`` in lockstep.
+Naming rule
+-----------
+Keys under ``overmind.*`` use dotted segments
+(``overmind.agent.id``, ``overmind.error.type``, …); never a single
+underscore-blob like ``overmind.agent_id``.
+
+Deprecations
+------------
+Some constants exist as **legacy aliases** for backward compatibility
+with older OTLP payloads.  Each deprecation is documented inline next
+to the constant; new call sites must prefer the canonical key.  Current
+legacy aliases:
+
+* :data:`ERROR` → use :data:`ERROR_SUMMARY`.
+* :data:`OPTIMIZE_REPORT_BEST_SCORE` → use
+  :data:`OPTIMIZE_FINAL_BEST_SCORE`.
+
+Keep ``overbae/api/overmind_attrs.py`` in lockstep with this file when
+adding or renaming keys.
 """
 
 from __future__ import annotations
@@ -35,17 +51,20 @@ DURATION_SECONDS = "overmind.duration.seconds"  # walltime of the wrapped span
 # Top-level resource / context tags (link spans to server-side entities).
 # ---------------------------------------------------------------------------
 AGENT_ID = "overmind.agent.id"
-PROJECT_ID = "overmind.project.id"
 JOB_ID = "overmind.job.id"
-ITERATION_ID = "overmind.iteration.id"
-EXPERIMENT_ID = "overmind.experiment.id"
-EXPERIMENT_NAME = "overmind.experiment.name"
 
 # ---------------------------------------------------------------------------
 # Agent registry / `overmind agent ...` commands
 # (overmind/commands/agent_cmd.py)
 # ---------------------------------------------------------------------------
 AGENT_NAME = "overmind.agent.name"
+# Tracelo­op-compatible workflow label attached to every downstream span by
+# the on-start processor.  Stored in the OTel context so child spans pick
+# it up automatically.
+WORKFLOW_NAME = "overmind.workflow.name"
+# Stable per-conversation identifier used by chat agents to group multiple
+# traces under the same user-visible session.
+CONVERSATION_ID = "overmind.conversation.id"
 AGENT_ENTRYPOINT = "overmind.agent.entrypoint"
 AGENT_NEW_ENTRYPOINT = "overmind.agent.new_entrypoint"
 AGENT_OLD_ENTRYPOINT = "overmind.agent.old_entrypoint"
@@ -68,21 +87,9 @@ INIT_ANALYZER_MODEL = "overmind.init.analyzer_model"
 INIT_HAS_SYNTHETIC_DATAGEN_MODEL = "overmind.init.has_synthetic_datagen_model"
 
 # ---------------------------------------------------------------------------
-# `overmind doctor` (overmind/commands/doctor_cmd.py)
-# ---------------------------------------------------------------------------
-DOCTOR_AGENT_NAME = "overmind.doctor.agent_name"
-DOCTOR_BUNDLE_BUILT = "overmind.doctor.bundle_built"
-DOCTOR_BUNDLE_FILES = "overmind.doctor.bundle_files"
-DOCTOR_BUNDLE_RAW_CHARS = "overmind.doctor.bundle_raw_chars"
-DOCTOR_BUNDLE_PROMPT_CHARS = "overmind.doctor.bundle_prompt_chars"
-DOCTOR_HAS_EVAL_SPEC = "overmind.doctor.has_eval_spec"
-DOCTOR_HAS_INSTRUMENTED_COPY = "overmind.doctor.has_instrumented_copy"
-
-# ---------------------------------------------------------------------------
 # `overmind setup` (overmind/commands/setup_cmd.py +
 # overmind/setup/{questionnaire,policy_generator}.py)
 # ---------------------------------------------------------------------------
-SETUP_AGENT_NAME = "overmind.setup.agent_name"
 SETUP_FAST = "overmind.setup.fast"
 SETUP_MODEL = "overmind.setup.model"
 SETUP_HAS_POLICY = "overmind.setup.has_policy"
@@ -105,16 +112,11 @@ SETUP_CRITERIA_SOURCE = "overmind.setup.criteria_source"
 SETUP_POLICY_SOURCE = "overmind.setup.policy_source"
 SETUP_AGENT_POLICY_MARKDOWN = "overmind.agent.policy.markdown"
 SETUP_AGENT_POLICY_DATA = "overmind.agent.policy.data"
-# Alternate policy keys emitted under the setup namespace (older flows use
-# the agent_policy_* keys above; newer flows prefer these).
-SETUP_POLICY_MARKDOWN = "overmind.setup.policy_markdown"
-SETUP_POLICY_DATA = "overmind.setup.policy_data"
 # Agent description and full eval spec snapshot (text / JSON string).
 SETUP_AGENT_DESCRIPTION = "overmind.setup.agent_description"
 SETUP_EVAL_SPEC = "overmind.setup.eval_spec"
 # Post-analysis artefacts from the setup pipeline.
 SETUP_PROPOSED_CRITERIA = "overmind.setup.proposed_criteria"
-SETUP_REFINED_CRITERIA = "overmind.setup.refined_criteria"
 SETUP_TOOL_ANALYSIS = "overmind.setup.tool_analysis"
 SETUP_INPUT_SCHEMA = "overmind.setup.input_schema"
 SETUP_OUTPUT_SCHEMA = "overmind.setup.output_schema"
@@ -123,7 +125,6 @@ SETUP_TOOLS_SUMMARY = "overmind.setup.tools_summary"
 SETUP_DECISION_LOGIC = "overmind.setup.decision_logic"
 SETUP_SCOPE = "overmind.setup.scope"
 SETUP_OPTIMIZABLE_ELEMENTS = "overmind.setup.optimizable_elements"
-SETUP_FIXED_ELEMENTS = "overmind.setup.fixed_elements"
 
 # ---------------------------------------------------------------------------
 # `overmind optimize` (overmind/commands/optimize_cmd.py)
@@ -161,11 +162,9 @@ OPTIMIZE_DATASET_TOTAL = "overmind.optimize.dataset_total"
 OPTIMIZE_DATASET_TRAIN = "overmind.optimize.dataset_train"
 OPTIMIZE_DATASET_HOLDOUT = "overmind.optimize.dataset_holdout"
 OPTIMIZE_BASELINE_SCORE = "overmind.optimize.baseline_score"
-OPTIMIZE_RUN_NAME = "overmind.optimize.run_name"
 OPTIMIZE_ITERATION = "overmind.optimize.iteration"
 OPTIMIZE_TOTAL_ITERATIONS = "overmind.optimize.total_iterations"
 OPTIMIZE_BEST_SCORE_BEFORE = "overmind.optimize.best_score_before"
-OPTIMIZE_BEST_SCORE_AFTER = "overmind.optimize.best_score_after"
 OPTIMIZE_STALL_COUNT = "overmind.optimize.stall_count"
 OPTIMIZE_TEMPERATURE = "overmind.optimize.temperature"
 OPTIMIZE_N_CANDIDATES_GENERATED = "overmind.optimize.n_candidates_generated"
@@ -175,8 +174,6 @@ OPTIMIZE_CANDIDATE_METHOD = "overmind.optimize.candidate_method"
 OPTIMIZE_CANDIDATE_SCORE = "overmind.optimize.candidate_score"
 OPTIMIZE_CANDIDATE_ADJUSTED_SCORE = "overmind.optimize.candidate_adjusted_score"
 OPTIMIZE_COMPLEXITY_PENALTY = "overmind.optimize.complexity_penalty"
-OPTIMIZE_DATA_LEAKAGE_COUNT = "overmind.optimize.data_leakage_count"
-OPTIMIZE_REGRESSION_FAILURES = "overmind.optimize.regression_failures"
 OPTIMIZE_ITERATION_DECISION = "overmind.optimize.iteration_decision"
 OPTIMIZE_ITERATION_SCORE = "overmind.optimize.iteration_score"
 OPTIMIZE_ITERATION_IMPROVEMENT = "overmind.optimize.iteration_improvement"
@@ -225,9 +222,10 @@ OPTIMIZE_TOTAL_REJECTED = "overmind.optimize.total_rejected"
 # Final headline improvement (``best_score - baseline_score``) — drives
 # ``Job.improvement`` in the OTLP ingest.
 OPTIMIZE_REPORT_IMPROVEMENT = "overmind.optimize.report_improvement"
-# Final report's ``best_score`` value, redundant with
-# ``OPTIMIZE_FINAL_BEST_SCORE`` but kept for backward compatibility with
-# the legacy ``ApiReporter.on_complete`` payload.
+# DEPRECATED: redundant with ``OPTIMIZE_FINAL_BEST_SCORE``.  Kept for
+# backward compatibility with the legacy ``ApiReporter.on_complete``
+# payload; new call sites should emit only ``OPTIMIZE_FINAL_BEST_SCORE``.
+# Plan p6-1 retires this once OTLP ingest stops reading it.
 OPTIMIZE_REPORT_BEST_SCORE = "overmind.optimize.report_best_score"
 OPTIMIZE_BACKTEST_MODEL = "overmind.optimize.backtest_model"
 OPTIMIZE_BACKTEST_SCORE = "overmind.optimize.backtest_score"
@@ -368,42 +366,37 @@ CODING_AGENT_LOOP_STEPS = "overmind.coding_agent.loop_steps"
 CODING_AGENT_EXIT_REASON = "overmind.coding_agent.exit_reason"
 
 # ---------------------------------------------------------------------------
-# LLM call metadata (overmind/core/tracer.py + overmind/utils/llm.py)
+# LLM call metadata (overmind/utils/llm.py)
+#
+# Aligned with the OpenTelemetry GenAI semantic conventions so the keys
+# the SDK emits match what trace consumers (the optimizer's trace_reader,
+# backend ingest, third-party auto-instrumentors like
+# ``opentelemetry-instrumentation-openai``) expect.  Token counts use
+# ``input_tokens`` / ``output_tokens`` per the semconv (NOT
+# ``prompt_tokens`` / ``completion_tokens``).
 # ---------------------------------------------------------------------------
-LLM_MODEL = "genai.model"
-LLM_PROVIDER = "genai.provider"
-LLM_MESSAGES_COUNT = "genai.messages_count"
-LLM_TOOLS_PROVIDED = "genai.tools_provided"
-LLM_TOOL_CALLS = "genai.tool_calls"
-LLM_PROMPT_TOKENS = "genai.prompt_tokens"
-LLM_COMPLETION_TOKENS = "genai.completion_tokens"
-LLM_TOTAL_TOKENS = "genai.total_tokens"
-LLM_COST = "genai.cost"
-LLM_ERROR = "genai.error"
-LLM_ELAPSED_SECONDS = "genai.elapsed_seconds"
-LLM_REQUEST_MESSAGE_COUNT = "genai.request.message_count"
-LLM_REQUEST_MESSAGE_CHARS = "genai.request.message_chars"
-LLM_REQUEST_TOOL_COUNT = "genai.request.tool_count"
-LLM_REQUEST_KWARGS = "genai.request.kwargs"
-LLM_USAGE_PROMPT_TOKENS = "genai.usage.prompt_tokens"
-LLM_USAGE_COMPLETION_TOKENS = "genai.usage.completion_tokens"
-LLM_USAGE_TOTAL_TOKENS = "genai.usage.total_tokens"
+LLM_MODEL = "gen_ai.request.model"
+LLM_PROVIDER = "gen_ai.system"
+LLM_ERROR = "gen_ai.error.type"
+LLM_ELAPSED_SECONDS = "gen_ai.elapsed_seconds"
+LLM_REQUEST_MESSAGE_COUNT = "gen_ai.request.message_count"
+LLM_REQUEST_MESSAGE_CHARS = "gen_ai.request.message_chars"
+LLM_REQUEST_TOOL_COUNT = "gen_ai.request.tool_count"
+LLM_REQUEST_KWARGS = "gen_ai.request.kwargs"
+LLM_USAGE_PROMPT_TOKENS = "gen_ai.usage.input_tokens"
+LLM_USAGE_COMPLETION_TOKENS = "gen_ai.usage.output_tokens"
+LLM_USAGE_TOTAL_TOKENS = "gen_ai.usage.total_tokens"
 
 # ---------------------------------------------------------------------------
-# Tool call metadata (overmind/core/tracer.py)
+# Span-level classification / error summary
 # ---------------------------------------------------------------------------
-TOOL_NAME = "tool.name"
-TOOL_ARG_KEYS = "tool.arg_keys"
-TOOL_ERROR = "tool.error"
-
-# ---------------------------------------------------------------------------
-# Span-level input / output / scoring / classification
-# (set via overmind.set_tag or the @observe decorator on any span)
-# ---------------------------------------------------------------------------
-INPUT_DATA = "overmind.input.data"
-OUTPUT_DATA = "overmind.output.data"
-SCORE = "overmind.score"
-ERROR = "overmind.error"
+# Human-readable summary string attached when a span fails. ``ERROR_TYPE``
+# and ``ERROR_MESSAGE`` carry the structured (class name + scrubbed
+# message) pair; ``ERROR_SUMMARY`` is the free-form line the UI renders
+# next to the failed iteration.  Aliased as ``ERROR`` for backward
+# compatibility with older spans.
+ERROR_SUMMARY = "overmind.error"
+ERROR = ERROR_SUMMARY  # Legacy alias — prefer ``ERROR_SUMMARY``.
 # Explicit span-type override — set to SpanType values when the heuristic
 # classification would be wrong (e.g. "entry_point", "tool", "workflow").
 SPAN_TYPE = "overmind.span.type"

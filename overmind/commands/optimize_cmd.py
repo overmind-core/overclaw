@@ -10,7 +10,6 @@ import logging
 
 from overmind import SpanType, attrs, set_tag
 from overmind.client import ApiReporter
-from overmind.core.paths import load_agent_dotenv
 from overmind.core.registry import get_agent_id
 from overmind.optimize.config import collect_config
 from overmind.optimize.optimizer import Optimizer
@@ -69,11 +68,6 @@ def main(
     max_chars: int | None = None,
 ) -> None:
     logger.info(f"optimize: start agent={agent_name} fast={fast}")
-
-    # Load agent-specific .env before anything else so the agent's credentials
-    # are available throughout the entire optimize run (config collection,
-    # agent execution, and evaluation).
-    load_agent_dotenv(agent_name)
 
     config = collect_config(
         agent_name=agent_name,

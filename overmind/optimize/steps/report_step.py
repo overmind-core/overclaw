@@ -88,7 +88,19 @@ def run_report(state: SkillRunState) -> dict[str, Any]:
 
     # Terminal lifecycle marker — flips ``Job.status`` to ``completed``.
     set_tag(attrs.OPTIMIZE_RUN_STATUS, "completed")
-    force_flush_traces(timeout_millis=3000)
+
+    # Match Path A's tail behaviour: flush OTel with a generous timeout
+    # so the trailing iteration / report spans land in the UI before
+    # we issue the terminal REST PATCH below.
+    force_flush_traces(timeout_millis=5_000)
+
+    # Mirror Path A's ``_finalize_completed_job`` — fire the terminal
+    # REST PATCH so the Job row in the UI flips ``running`` →
+    # ``completed`` with the rendered report markdown and the final
+    # best-agent code. OTLP-driven span attributes update the same
+    # columns on the happy path, but the explicit PATCH guarantees the
+    # transition even if the BatchSpanProcessor drops the tail.
+    _finalize_completed_step(state, report_path)
 
     return {
         "status": "ok",
@@ -99,3 +111,75 @@ def run_report(state: SkillRunState) -> dict[str, Any]:
         "iterations_completed": state.iteration,
         "early_stopping_triggered": state.early_stopping_triggered,
     }
+
+
+def _finalize_completed_step(state: SkillRunState, report_path: str) -> None:
+    """Push terminal Job state to the backend after a successful Path B run.
+
+    Mirrors :func:`overmind.commands.optimize_cmd._finalize_completed_job`
+    so the UI sees Path A and Path B end-of-run states identically.
+    Failures are logged and swallowed — the rendered ``report.md`` is
+    already on disk for the user even if the network PATCH never lands.
+    """
+    job_id = state.job_id or ""
+    agent_id = (state.config or {}).get("agent_id") or ""
+    if not job_id or not agent_id:
+        logger.debug(
+            "report: state missing job_id/agent_id; skipping terminal PATCH"
+        )
+        return
+    try:
+        from overmind.client import ApiReporter
+
+        reporter = ApiReporter.attach_to_job(
+            agent_id=str(agent_id), job_id=str(job_id)
+        )
+    except Exception:
+        logger.debug(
+            "report: ApiReporter.attach_to_job raised; no terminal PATCH",
+            exc_info=True,
+        )
+        return
+    if reporter is None:
+        logger.debug("report: ApiReporter unavailable; no terminal PATCH")
+        return
+
+    baseline_score = float(state.baseline_score or state.best_score or 0.0)
+    best_score = float(state.best_score or baseline_score)
+
+    report_markdown: str | None = None
+    try:
+        rp = Path(report_path)
+        if rp.is_file():
+            report_markdown = rp.read_text(encoding="utf-8")
+    except Exception:
+        logger.debug("report: failed to read report.md for PATCH", exc_info=True)
+
+    best_agent_code: str | None = None
+    try:
+        if state.best_code_path and Path(state.best_code_path).is_file():
+            best_agent_code = Path(state.best_code_path).read_text(
+                encoding="utf-8"
+            )
+    except Exception:
+        logger.debug(
+            "report: failed to read best_code_path for PATCH", exc_info=True
+        )
+
+    try:
+        reporter.on_complete(
+            best_score=best_score,
+            baseline_score=baseline_score,
+            report_markdown=report_markdown,
+            best_agent_code=best_agent_code,
+        )
+        logger.info(
+            f"report: terminal PATCH sent — job_id={job_id} "
+            f"best_score={best_score:.2f} "
+            f"improvement={best_score - baseline_score:+.2f}"
+        )
+    except Exception:
+        logger.debug(
+            "report: reporter.on_complete failed; continuing",
+            exc_info=True,
+        )

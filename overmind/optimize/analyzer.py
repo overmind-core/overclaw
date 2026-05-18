@@ -21,6 +21,7 @@ import os
 import random
 import re
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
 from overmind import SpanType, attrs, set_tag
@@ -42,12 +43,69 @@ from overmind.prompts.analyzer import (
 )
 from overmind.tracing import observe_safe
 from overmind.utils.llm import llm_completion
+from overmind.utils.llm_parse import parse_json_object
 
 if TYPE_CHECKING:
     from overmind.optimize.failure_registry import FailureRegistry
     from overmind.utils.code import AgentBundle
 
 _log = logging.getLogger("overmind.optimize.analyzer")
+
+
+# ---------------------------------------------------------------------------
+# Argument-bundle dataclasses
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DiagnosisContext:
+    """Inputs to :func:`_run_diagnosis` that stay constant across iterations.
+
+    The diagnosis prompt is parameterised by a long list of inputs — agent
+    code, per-case results, eval spec, policy text, prior attempts, etc.
+    Bundling them in this dataclass lets callers build the context once and
+    pass it through to every diagnosis call, instead of threading a dozen
+    keyword arguments through ``generate_candidates`` and the codegen
+    helpers.
+
+    Iteration-specific knobs (focus area, case fraction, max-cases budget)
+    stay as explicit parameters on :func:`_run_diagnosis` so callers can
+    vary them per call.
+    """
+
+    agent_code: str
+    case_results: list[dict]
+    evaluation_results: dict
+    model: str
+    entrypoint_fn: str
+    eval_spec: dict | None = None
+    failed_attempts: list[dict] | None = None
+    successful_changes: list[dict] | None = None
+    allow_model_change: bool = False
+    temperature: float = 0.7
+    iteration_seed: int = 42
+    policy_context: str = ""
+    bundle: "AgentBundle | None" = None
+    cluster_context: str = ""
+    component_weights_context: str = ""
+
+
+@dataclass
+class CodegenSettings:
+    """Inputs to the codegen phase used by :func:`generate_candidates`.
+
+    Separated from :class:`DiagnosisContext` because the codegen step has
+    its own model and step-budget knobs that the diagnosis step doesn't
+    need.
+    """
+
+    codegen_model: str = ""
+    codegen_max_steps: int = 50
+    policy_constraints: str = ""
+    agent_files: dict[str, str] | None = None
+    num_candidates: int = 3
+    return_plans_only: bool = False
+    focus_weights: dict[str, float] | None = field(default=None)
 
 
 # ---------------------------------------------------------------------------
@@ -948,31 +1006,29 @@ def _extract_code_and_analysis(
 
     json_m = re.search(r"```json\s*\n(.*?)```", text, re.DOTALL)
     if json_m:
-        try:
-            parsed = json.loads(json_m.group(1).strip())
+        parsed = parse_json_object(json_m.group(1).strip(), on_fail="default", default=None)
+        if isinstance(parsed, dict):
             analysis = parsed.get("analysis", parsed.get("root_cause", ""))
             suggestions = parsed.get(
                 "suggestions",
                 [c.get("action", "") for c in parsed.get("changes", [])],
             )
-        except json.JSONDecodeError:
-            pass
 
     if not analysis:
-        try:
-            start = text.find("{")
-            end = text.rfind("}")
-            if start >= 0 and end > start:
-                candidate = text[start : end + 1]
-                if not _matches_fingerprint(candidate, fingerprints) and len(candidate) < 3000:
-                    parsed = json.loads(candidate)
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            candidate = text[start : end + 1]
+            # Skip candidates that look like agent code or are excessively long —
+            # they'd otherwise blow up parsing or smuggle code into the analysis.
+            if not _matches_fingerprint(candidate, fingerprints) and len(candidate) < 3000:
+                parsed = parse_json_object(candidate, on_fail="default", default=None)
+                if isinstance(parsed, dict):
                     analysis = parsed.get("analysis", parsed.get("root_cause", ""))
                     suggestions = parsed.get(
                         "suggestions",
                         [c.get("action", "") for c in parsed.get("changes", [])],
                     )
-        except (json.JSONDecodeError, ValueError):
-            pass
 
     code: str | None = None
 
@@ -1053,15 +1109,13 @@ def _parse_file_updates(
 
     json_m = re.search(r"```json\s*\n(.*?)```", text, re.DOTALL)
     if json_m:
-        try:
-            parsed = json.loads(json_m.group(1).strip())
+        parsed = parse_json_object(json_m.group(1).strip(), on_fail="default", default=None)
+        if isinstance(parsed, dict):
             analysis = parsed.get("analysis", parsed.get("root_cause", ""))
             suggestions = parsed.get(
                 "suggestions",
                 [c.get("action", "") for c in parsed.get("changes", [])],
             )
-        except json.JSONDecodeError:
-            pass
 
     file_updates: dict[str, str] = {}
 
@@ -1086,46 +1140,6 @@ def _parse_file_updates(
                 file_updates[file_path] = code
 
     return analysis, suggestions, file_updates
-
-
-def _parse_bundle_updates(
-    text: str,
-) -> tuple[str, list[str], dict[str, str], list[tuple[str, str]]]:
-    """Legacy parser for piece-ID format. Delegates to ``_parse_file_updates``
-    first, falling back to piece-ID parsing for backward compatibility.
-
-    Returns ``(analysis, suggestions, piece_updates, new_pieces)``.
-    """
-    analysis, suggestions, file_updates = _parse_file_updates(text)
-    if file_updates:
-        return analysis, suggestions, file_updates, []
-
-    piece_updates: dict[str, str] = {}
-    new_pieces: list[tuple[str, str]] = []
-
-    exact_pattern = r"###\s*\[P(\d+)\]\s*\n```[a-zA-Z]*\s*\n(.*?)```"
-    for m in re.finditer(exact_pattern, text, re.DOTALL):
-        pid = f"P{m.group(1)}"
-        code = m.group(2).strip()
-        if code:
-            piece_updates[pid] = code
-
-    if not piece_updates:
-        relaxed_pattern = r"\[P(\d+)\]\s*\n```[a-zA-Z]*\s*\n(.*?)```"
-        for m in re.finditer(relaxed_pattern, text, re.DOTALL):
-            pid = f"P{m.group(1)}"
-            code = m.group(2).strip()
-            if code:
-                piece_updates[pid] = code
-
-    new_pattern = r"###\s*\[NEW\]\s*IN:\s*(\S+)\s*\n```[a-zA-Z]*\s*\n(.*?)```"
-    for m in re.finditer(new_pattern, text, re.DOTALL):
-        file_path = m.group(1).strip()
-        code = m.group(2).strip()
-        if code:
-            new_pieces.append((file_path, code))
-
-    return analysis, suggestions, piece_updates, new_pieces
 
 
 def _build_agent_code_section(
@@ -1166,54 +1180,52 @@ def _get_entry_file(
 
 
 def _run_diagnosis(
-    agent_code: str,
-    case_results: list[dict],
-    evaluation_results: dict,
-    model: str,
-    eval_spec: dict | None,
-    failed_attempts: list[dict] | None,
-    successful_changes: list[dict] | None,
-    allow_model_change: bool,
-    temperature: float,
+    *args: Any,
+    ctx: DiagnosisContext | None = None,
     focus_area: str | None = None,
     case_fraction: float = 1.0,
-    iteration_seed: int = 42,
-    policy_context: str = "",
-    *,
-    entrypoint_fn: str,
     max_cases: int = 20,
-    bundle: AgentBundle | None = None,
-    cluster_context: str = "",
-    component_weights_context: str = "",
+    **kwargs: Any,
 ) -> dict | None:
-    """Pass 1: Produce a structured diagnosis.
+    """Pass 1: produce a structured diagnosis from the per-case results.
 
-    If *focus_area* is set, the diagnosis is steered to prioritize changes
-    targeting that element (e.g. "tool_description", "agent_logic").
-    When *bundle* is provided, the prompt uses the virtual bundle
-    representation instead of a flat code string.
+    The function accepts two equivalent call shapes:
+
+    * A pre-built :class:`DiagnosisContext` (preferred for new code)::
+
+          _run_diagnosis(ctx=DiagnosisContext(...), focus_area="tool_description")
+
+    * Legacy keyword arguments that the rest of the codebase / tests use::
+
+          _run_diagnosis(agent_code=..., case_results=..., ..., entrypoint_fn="run")
+
+    The legacy keyword form is folded into a :class:`DiagnosisContext`
+    internally so there's exactly one execution path below.
     """
-    agent_model, capability = _detect_agent_model(agent_code)
-    weak_name, weak_score, weak_max = _find_weakest_dimension(evaluation_results, eval_spec)
+    if ctx is None:
+        ctx = _build_diagnosis_context_from_kwargs(args, kwargs)
+
+    agent_model, capability = _detect_agent_model(ctx.agent_code)
+    weak_name, weak_score, weak_max = _find_weakest_dimension(ctx.evaluation_results, ctx.eval_spec)
 
     mcr = (
         "You MAY suggest changing the MODEL constant."
-        if allow_model_change
+        if ctx.allow_model_change
         else "Do NOT suggest changing the MODEL constant."
     )
 
-    prompt_chars, prompt_lines = _measure_system_prompt(agent_code)
+    prompt_chars, prompt_lines = _measure_system_prompt(ctx.agent_code)
 
     def _build_prompt(_max_cases: int) -> str:
-        ac_section = _build_agent_code_section(agent_code, bundle)
+        ac_section = _build_agent_code_section(ctx.agent_code, ctx.bundle)
         per_case = _format_per_case_results(
-            case_results,
-            eval_spec,
+            ctx.case_results,
+            ctx.eval_spec,
             max_cases=_max_cases,
             case_fraction=case_fraction,
-            iteration_seed=iteration_seed,
+            iteration_seed=ctx.iteration_seed,
         )
-        tu_section = _format_tool_usage_analysis(case_results)
+        tu_section = _format_tool_usage_analysis(ctx.case_results)
         if os.environ.get("OVERMIND_ANALYZER_DEBUG_PROMPT"):
             import sys as _sys
             _sys.stderr.write(
@@ -1224,34 +1236,34 @@ def _run_diagnosis(
             )
         p = DIAGNOSIS_PROMPT.format(
             agent_code_section=ac_section,
-            entry_file=_get_entry_file(agent_code, bundle),
-            entrypoint_fn=entrypoint_fn,
-            scoring_mechanics=_format_scoring_mechanics(eval_spec),
+            entry_file=_get_entry_file(ctx.agent_code, ctx.bundle),
+            entrypoint_fn=ctx.entrypoint_fn,
+            scoring_mechanics=_format_scoring_mechanics(ctx.eval_spec),
             per_case_results=per_case,
             tool_usage_analysis=tu_section,
-            policy_context=policy_context or "(no policy defined)",
-            avg_score=evaluation_results.get("avg_total", 0),
+            policy_context=ctx.policy_context or "(no policy defined)",
+            avg_score=ctx.evaluation_results.get("avg_total", 0),
             weakest_dimension=weak_name,
             weakest_dim_score=weak_score,
             weakest_dim_max=weak_max,
-            score_breakdown=_format_score_breakdown(evaluation_results, eval_spec),
-            successful_changes=_format_successful_changes(successful_changes),
-            failed_attempts=_format_failed_attempts(failed_attempts),
+            score_breakdown=_format_score_breakdown(ctx.evaluation_results, ctx.eval_spec),
+            successful_changes=_format_successful_changes(ctx.successful_changes),
+            failed_attempts=_format_failed_attempts(ctx.failed_attempts),
             model_change_rule=mcr,
             agent_model=agent_model,
             model_capability=capability,
             prompt_char_count=prompt_chars,
             prompt_line_count=prompt_lines,
         )
-        if bundle is not None and bundle.is_multi_file():
+        if ctx.bundle is not None and ctx.bundle.is_multi_file():
             p += MULTI_FILE_AWARENESS_SECTION
-        if cluster_context:
-            p += FAILURE_CLUSTERS_SECTION.format(formatted_clusters=cluster_context)
-        if component_weights_context:
-            p += COMPONENT_IMPACT_SECTION.format(component_lines=component_weights_context)
+        if ctx.cluster_context:
+            p += FAILURE_CLUSTERS_SECTION.format(formatted_clusters=ctx.cluster_context)
+        if ctx.component_weights_context:
+            p += COMPONENT_IMPACT_SECTION.format(component_lines=ctx.component_weights_context)
         if focus_area:
             labels = {
-                k: v.format(entrypoint_fn=entrypoint_fn) if "{" in v else v
+                k: v.format(entrypoint_fn=ctx.entrypoint_fn) if "{" in v else v
                 for k, v in FOCUS_LABELS.items()
             }
             focus_desc = labels.get(focus_area, focus_area)
@@ -1262,47 +1274,39 @@ def _run_diagnosis(
         return p
 
     system_msg = DIAGNOSIS_SYSTEM_PROMPT.format(
-        scoring_mechanics=_format_scoring_mechanics(eval_spec),
-        optimizable_elements=_format_optimizable_elements(eval_spec),
-        fixed_elements=_format_fixed_elements(eval_spec),
+        scoring_mechanics=_format_scoring_mechanics(ctx.eval_spec),
+        optimizable_elements=_format_optimizable_elements(ctx.eval_spec),
+        fixed_elements=_format_fixed_elements(ctx.eval_spec),
     )
 
     # Retry-on-context-window-exceeded: even after the proactive budget
     # guard, the model's actual tokenizer can disagree with our
     # chars/token estimate (Anthropic's tokenizer treats code denser
-    # than English).  If the API rejects with ContextWindowExceededError
-    # — or a sibling provider error whose message says "prompt is too
-    # long" — halve the char budget and re-render with fewer cases.
-    # Capped at 3 retries to bound latency on a hard misconfig.
-    budget_chars = _budget_chars_for(model)
+    # than English).  Halve the char budget on overflow and re-render
+    # with fewer cases; capped at 3 retries to bound latency.
+    budget_chars = _budget_chars_for(ctx.model)
     last_exc: Exception | None = None
     for attempt in range(4):
         prompt = _render_within_budget(
             _build_prompt,
             initial_max_cases=max_cases,
-            model=model,
+            model=ctx.model,
             budget_chars=budget_chars,
         )
         try:
             resp = llm_completion(
-                model,
+                ctx.model,
                 [
                     {"role": "system", "content": system_msg},
                     {"role": "user", "content": prompt},
                 ],
-                temperature=max(temperature * 0.5, 0.1),
+                temperature=max(ctx.temperature * 0.5, 0.1),
                 max_tokens=4000,
             )
             content = resp.choices[0].message.content or ""
-            json_m = re.search(r"```json\s*\n(.*?)```", content, re.DOTALL)
-            if json_m:
-                return json.loads(json_m.group(1).strip())
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            if start >= 0 and end > start:
-                return json.loads(content[start:end])
-            # Response was parseable but contained no JSON object —
-            # treat as a single non-retryable failure.
+            parsed = parse_json_object(content, on_fail="default", default=None)
+            if parsed is not None:
+                return parsed
             last_exc = RuntimeError("Diagnosis response contained no JSON object.")
             break
         except Exception as exc:
@@ -1320,7 +1324,7 @@ def _run_diagnosis(
                 _log.warning(
                     "analyzer prompt rejected by model (attempt %d, model=%s): "
                     "%s — halving char budget %d → %d and retrying.",
-                    attempt + 1, model, str(exc)[:200],
+                    attempt + 1, ctx.model, str(exc)[:200],
                     budget_chars, new_budget,
                 )
                 budget_chars = new_budget
@@ -1328,19 +1332,61 @@ def _run_diagnosis(
             break
 
     if last_exc is not None:
-        # Auth failures, JSON parse errors, network blips, exhausted
-        # overflow retries — surface in the log and remember the last
-        # one on the module so callers (and ultimately
-        # ``optimize-step diagnose``) include a hint in the JSON
-        # envelope instead of silently degrading to a single
-        # ``method: "failed"`` placeholder candidate.
         global _LAST_DIAGNOSIS_ERROR
         _LAST_DIAGNOSIS_ERROR = f"{type(last_exc).__name__}: {last_exc}"
         _log.warning(
             "diagnosis LLM call failed model=%s focus=%s error=%s: %s",
-            model, focus_area, type(last_exc).__name__, str(last_exc)[:300],
+            ctx.model, focus_area, type(last_exc).__name__, str(last_exc)[:300],
         )
     return None
+
+
+# Legacy positional-parameter names, in declaration order, used to fold the
+# pre-dataclass kwargs surface into a :class:`DiagnosisContext`.  Kept in
+# sync with the long-form signature documented in the test suite.
+_LEGACY_DIAGNOSIS_POSITIONAL = (
+    "agent_code",
+    "case_results",
+    "evaluation_results",
+    "model",
+    "eval_spec",
+    "failed_attempts",
+    "successful_changes",
+    "allow_model_change",
+    "temperature",
+)
+
+
+def _build_diagnosis_context_from_kwargs(
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> DiagnosisContext:
+    """Fold the legacy keyword surface of ``_run_diagnosis`` into a context.
+
+    Accepts both positional and keyword arguments in the historical order
+    so test callers and the optimizer's existing call sites keep working
+    while the body uses a single :class:`DiagnosisContext`.
+    """
+    merged: dict[str, Any] = dict(zip(_LEGACY_DIAGNOSIS_POSITIONAL, args, strict=False))
+    merged.update(kwargs)
+
+    return DiagnosisContext(
+        agent_code=merged["agent_code"],
+        case_results=merged["case_results"],
+        evaluation_results=merged["evaluation_results"],
+        model=merged["model"],
+        entrypoint_fn=merged["entrypoint_fn"],
+        eval_spec=merged.get("eval_spec"),
+        failed_attempts=merged.get("failed_attempts"),
+        successful_changes=merged.get("successful_changes"),
+        allow_model_change=merged.get("allow_model_change", False),
+        temperature=merged.get("temperature", 0.7),
+        iteration_seed=merged.get("iteration_seed", 42),
+        policy_context=merged.get("policy_context", ""),
+        bundle=merged.get("bundle"),
+        cluster_context=merged.get("cluster_context", ""),
+        component_weights_context=merged.get("component_weights_context", ""),
+    )
 
 
 _LAST_DIAGNOSIS_ERROR: str | None = None
@@ -1379,8 +1425,8 @@ def _run_codegen(
     str
         Complete file code (single-file mode).
     dict
-        ``{"piece_updates": {pid: code}, "new_pieces": [(file, code)]}``
-        when operating in bundle mode.
+        ``{"file_updates": {rel_path: complete_new_source}}`` when
+        operating in bundle mode.
     None
         On failure.
     """
@@ -1425,14 +1471,9 @@ def _run_codegen(
             _, _, file_updates = _parse_file_updates(content)
             if file_updates:
                 return {"file_updates": file_updates}
-            # Fallback: try legacy piece-ID parsing
-            _, _, piece_updates, new_pieces = _parse_bundle_updates(content)
-            if piece_updates:
-                return {
-                    "piece_updates": piece_updates,
-                    "new_pieces": new_pieces,
-                }
-            # Last resort: try single-file extraction
+            # Last resort: single-file extraction (the LLM ignored the
+            # whole-file bundle instruction and returned a single code
+            # fence — accept it for the entry file).
             _, _, code = _extract_code_and_analysis(content, agent_code)
             return code
 
@@ -1953,24 +1994,6 @@ def generate_candidates(
                             "files_updated": len(file_updates),
                         },
                     }
-                # Fallback: try legacy piece-ID format
-                _, _, piece_updates, new_pieces = _parse_bundle_updates(raw)
-                if piece_updates:
-                    return {
-                        "analysis": analysis_str if analysis_str else "",
-                        "suggestions": suggs if suggs else [],
-                        "updated_code": None,
-                        "bundle_updates": {
-                            "piece_updates": piece_updates,
-                            "new_pieces": new_pieces,
-                        },
-                        "method": "single_pass_bundle_legacy",
-                        "_debug": {
-                            "response_len": len(raw),
-                            "finish_reason": finish_reason,
-                            "pieces_updated": len(piece_updates),
-                        },
-                    }
 
             analysis_str, suggs, code = _extract_code_and_analysis(raw, agent_code)
             return {
@@ -2009,25 +2032,28 @@ def generate_candidates(
     trimmed_successful = successful_changes[-adaptive_history_cap:] if successful_changes else None
 
     # --- Shared diagnosis (single LLM call) ---
-    diag = _run_diagnosis(
-        agent_code,
-        case_results,
-        evaluation_results,
-        model,
-        eval_spec,
-        trimmed_failed,
-        trimmed_successful,
-        allow_model_change,
-        temperature,
-        focus_area=None,
-        case_fraction=diagnosis_case_fraction,
+    shared_diag_ctx = DiagnosisContext(
+        agent_code=agent_code,
+        case_results=case_results,
+        evaluation_results=evaluation_results,
+        model=model,
+        entrypoint_fn=entrypoint_fn,
+        eval_spec=eval_spec,
+        failed_attempts=trimmed_failed,
+        successful_changes=trimmed_successful,
+        allow_model_change=allow_model_change,
+        temperature=temperature,
         iteration_seed=iteration_seed,
         policy_context=policy_context,
-        entrypoint_fn=entrypoint_fn,
-        max_cases=adaptive_max_cases,
         bundle=bundle,
         cluster_context=cluster_context,
         component_weights_context=component_weights_context,
+    )
+    diag = _run_diagnosis(
+        ctx=shared_diag_ctx,
+        focus_area=None,
+        case_fraction=diagnosis_case_fraction,
+        max_cases=adaptive_max_cases,
     )
 
     if not diag:
@@ -2050,25 +2076,28 @@ def generate_candidates(
     # temperature so it explores a different improvement direction.
     independent_diag: dict | None = None
     if num_candidates >= 3:
-        independent_diag = _run_diagnosis(
-            agent_code,
-            case_results,
-            evaluation_results,
-            model,
-            eval_spec,
-            trimmed_failed,
-            trimmed_successful,
-            allow_model_change,
-            min(temperature + 0.15, 1.0),
-            focus_area=None,
-            case_fraction=max(0.5, diagnosis_case_fraction - 0.2),
+        independent_diag_ctx = DiagnosisContext(
+            agent_code=agent_code,
+            case_results=case_results,
+            evaluation_results=evaluation_results,
+            model=model,
+            entrypoint_fn=entrypoint_fn,
+            eval_spec=eval_spec,
+            failed_attempts=trimmed_failed,
+            successful_changes=trimmed_successful,
+            allow_model_change=allow_model_change,
+            temperature=min(temperature + 0.15, 1.0),
             iteration_seed=iteration_seed + 9973,
             policy_context=policy_context,
-            entrypoint_fn=entrypoint_fn,
-            max_cases=adaptive_max_cases,
             bundle=bundle,
             cluster_context=cluster_context,
             component_weights_context=component_weights_context,
+        )
+        independent_diag = _run_diagnosis(
+            ctx=independent_diag_ctx,
+            focus_area=None,
+            case_fraction=max(0.5, diagnosis_case_fraction - 0.2),
+            max_cases=adaptive_max_cases,
         )
 
     # --- Parallel codegen forks with different focus areas ---
@@ -2252,7 +2281,6 @@ def generate_candidates(
                     "shared_diagnosis": not is_independent,
                     "focus": focus,
                     "files_updated": len(result.get("file_updates", {})),
-                    "pieces_updated": len(result.get("piece_updates", {})),
                 },
             }
 
@@ -2343,39 +2371,3 @@ def generate_candidates(
     return all_results
 
 
-def analyze_and_improve(
-    agent_code: str,
-    traces: list[dict],
-    evaluation_results: dict,
-    model: str,
-    eval_spec: dict | None = None,
-    failed_attempts: list[dict] | None = None,
-    successful_changes: list[dict] | None = None,
-    allow_model_change: bool = False,
-    case_results: list[dict] | None = None,
-    num_candidates: int = 1,
-    temperature: float = 0.7,
-    policy_context: str = "",
-    policy_constraints: str = "",
-    *,
-    entrypoint_fn: str,
-    bundle: AgentBundle | None = None,
-) -> dict:
-    """Backward-compatible single-candidate wrapper."""
-    candidates = generate_candidates(
-        agent_code=agent_code,
-        case_results=case_results or [],
-        evaluation_results=evaluation_results,
-        model=model,
-        eval_spec=eval_spec,
-        failed_attempts=failed_attempts,
-        successful_changes=successful_changes,
-        allow_model_change=allow_model_change,
-        num_candidates=num_candidates,
-        temperature=temperature,
-        policy_context=policy_context,
-        policy_constraints=policy_constraints,
-        entrypoint_fn=entrypoint_fn,
-        bundle=bundle,
-    )
-    return candidates[0]
