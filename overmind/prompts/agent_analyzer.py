@@ -83,9 +83,7 @@ Return a JSON object with this exact structure:
   "decision_logic": "Brief description of the agent's decision-making process",
   "scope": {{
     "optimizable_paths": ["glob patterns relative to project root for files the optimizer may edit"],
-    "read_only_paths": ["glob patterns for files in the bundle that candidates MUST NOT edit (registered entrypoint harness, fixture data, runtime adapters)"],
-    "context_paths": ["glob patterns for read-only context files (prompts, schemas) not in import closure"],
-    "exclude_paths": ["glob patterns to skip entirely (tests, third-party vendored code, infra)"]
+    "read_only_paths": ["glob patterns for files in the bundle that candidates MUST NOT edit (registered entrypoint harness, fixture data, runtime adapters, eval templates, JSON schemas, README, pyproject.toml)"]
   }},
   "optimizable_elements": ["element1", "element2"],
   "fixed_elements": ["element1", "element2"]
@@ -155,18 +153,16 @@ worse than an over-broad include.
 - read_only_paths: Files that MUST be present in the bundle (so candidates can import / \
 execute them) but MUST NOT be edited by candidates. The registered Overmind entrypoint (the \
 file containing `{entrypoint_fn}`) belongs here — it is an interaction harness, not agent \
-logic. Test fixtures, snapshot files, and runtime adapters the agent loads at startup also \
-belong here. The accept step enforces this with a byte-equality diff; mutations are rejected \
-before scoring. Listing a path in BOTH `optimizable_paths` and `read_only_paths` is a \
-configuration error.
-- context_paths: Important read-only context (eval templates, JSON schemas, README, \
-pyproject.toml) the optimizer should see but must not edit. Distinct from `read_only_paths`: \
-context files are advisory (steering for the analyzer prompt), whereas `read_only_paths` is \
-enforced at accept time. Omit if empty.
-- exclude_paths: Tests, benchmarks, docs, examples, scripts, docker/k8s, web servers, \
-database adapters, true third-party vendored trees, build artefacts (``*.egg-info``, \
-``__pycache__``, ``uv.lock``, ``poetry.lock``). Be aggressive about *infra*, but never \
-exclude a sibling package that the entrypoint imports.
+logic. Test fixtures, snapshot files, runtime adapters the agent loads at startup, eval \
+templates, JSON schemas, README, and pyproject.toml all belong here. The accept step \
+enforces this with a byte-equality diff; mutations are rejected before scoring. Listing a \
+path in BOTH `optimizable_paths` and `read_only_paths` is a configuration error.
+- Project-level drops (test directories, benchmarks, docs, true third-party vendored trees, \
+build artefacts like ``*.egg-info`` / ``__pycache__`` / ``uv.lock`` / ``poetry.lock``) do NOT \
+go in the spec. Most are already covered by Overmind's hard-coded skip list (``.git``, \
+``.venv``, ``__pycache__``, ``node_modules``, etc.). Project-specific drops go in an \
+``.overmindignore`` file at the project root (gitignore-style globs). NEVER drop a sibling \
+package that the entrypoint imports — it would silently break candidate worktrees.
 - search_paths: sys.path-style directories the import resolver should treat as package \
 roots. Auto-discovery covers ``src/``, ``[tool.setuptools.package-dir]`` in \
 ``pyproject.toml``, and any directory added via a static ``sys.path.insert(...)`` / \

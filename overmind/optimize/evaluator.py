@@ -217,7 +217,40 @@ class SpecEvaluator:
         else:
             self._effective_judge_weight = 0.0
 
+        # Names of configured-but-unscorable dimensions we've already
+        # warned about in this evaluator's lifetime. Prevents per-case
+        # log spam when the entire dataset has no trace data.
+        self._warned_unscored: set[str] = set()
+
         self._validate_spec()
+
+    def _warn_dimension_unscored(self, dim_name: str) -> None:
+        """Emit a one-time warning that *dim_name* is configured but can't be scored.
+
+        Triggered the first time a scoring path receives empty inputs for a
+        dimension that the spec wants scored (e.g. ``tool_usage`` with an
+        ``expected_tools`` list but an empty ``tool_trace``). Subsequent
+        cases stay silent. The remediation hint is intentionally generic
+        so it applies across runtimes.
+        """
+        if dim_name in self._warned_unscored:
+            return
+        self._warned_unscored.add(dim_name)
+        if dim_name == "tool_usage":
+            logger.warning(
+                "Dimension 'tool_usage' is configured (weight=%s) but no tool-trace "
+                "spans were captured this run, so it is being SKIPPED rather than "
+                "scored as 0. To enable scoring: (1) run with one of the supported "
+                "auto-instrumented providers (openai, anthropic, google, agno), (2) "
+                "decorate tool functions with overmind.observe(kind='tool'), or "
+                "(3) set tool_usage_weight: 0 in eval_spec.json to silence this.",
+                self.spec.get("tool_usage_weight", 0),
+            )
+        else:
+            logger.warning(
+                "Dimension %r is configured but no scoring inputs are available; skipping.",
+                dim_name,
+            )
 
     def _validate_spec(self) -> None:
         """Sanity-check that spec weights are internally consistent."""
@@ -326,7 +359,8 @@ class SpecEvaluator:
         # --- Tool usage scoring ---
         tool_score = self._score_tool_usage(tool_trace)
         tool_weight = self.spec.get("tool_usage_weight", 0)
-        scores["tool_usage"] = tool_score * tool_weight
+        if tool_score is not None:
+            scores["tool_usage"] = tool_score * tool_weight
 
         # --- LLM-as-Judge (blended in if configured) ---
         judge_weight = self._effective_judge_weight
@@ -383,7 +417,8 @@ class SpecEvaluator:
 
         tool_score = self._score_tool_usage(tool_trace)
         tool_weight = self.spec.get("tool_usage_weight", 0)
-        scores["tool_usage"] = tool_score * tool_weight
+        if tool_score is not None:
+            scores["tool_usage"] = tool_score * tool_weight
 
         judge_weight = self._effective_judge_weight
         if not _skip_judge and self.llm_judge_model and judge_weight > 0 and input_data:
@@ -460,10 +495,19 @@ class SpecEvaluator:
                     f"Fallback score {_JUDGE_FALLBACK_SCORE:.1f} used for failed cases."
                 )
 
-        keys = [k for k in all_scores[0] if k != "total" and not k.startswith("_")]
+        # Dimensions may be present in some cases and absent in others
+        # (e.g. ``tool_usage`` is omitted whenever ``_score_tool_usage``
+        # returns ``None`` for a given case because no trace data was
+        # captured). Build the key set as the union across all cases and
+        # average each dimension over only the cases that actually scored
+        # it — otherwise an absent dimension would silently average to
+        # zero and reintroduce the bug this method is here to avoid.
+        keys = {k for s in all_scores for k in s if k != "total" and not k.startswith("_")}
         avg: dict[str, float] = {}
         for k in keys:
-            avg[f"avg_{k}"] = sum(s.get(k, 0) for s in all_scores) / len(all_scores)
+            present = [s[k] for s in all_scores if k in s]
+            if present:
+                avg[f"avg_{k}"] = sum(present) / len(present)
         avg["avg_total"] = sum(s["total"] for s in all_scores) / len(all_scores)
         avg["count"] = len(all_scores)
         avg["individual_scores"] = all_scores  # type: ignore[assignment]
@@ -677,17 +721,35 @@ class SpecEvaluator:
     # Tool usage scoring
     # ------------------------------------------------------------------
 
-    def _score_tool_usage(self, tool_trace: list[dict] | None) -> float:
-        """Score tool usage quality from trace data (0.0–1.0)."""
-        if not tool_trace:
-            return 0.0
+    def _score_tool_usage(self, tool_trace: list[dict] | None) -> float | None:
+        """Score tool usage quality from trace data.
 
+        Returns ``0.0–1.0`` when *tool_trace* contains usable spans, or
+        ``None`` to signal that the dimension is *unscorable for this
+        case* — typically because the optimizer ran the agent in a
+        subprocess that emitted no OTel spans (no instrumented provider,
+        or trace capture disabled). Callers MUST treat ``None`` as "skip
+        this dimension" rather than ``0``; awarding ``0`` would silently
+        penalise every agent the same amount and corrupt the analyzer's
+        weakest-dimension targeting (it would always pick ``tool_usage``
+        with gap = 1.0 and pin every iteration's focus on tools).
+
+        When the spec defines no tool-config at all (``expected_tools``,
+        ``param_constraints``, ``dependencies`` all empty), the dimension
+        is intentionally inert and ``1.0`` is returned so callers carry
+        the full ``tool_usage_weight`` through as a constant — same as
+        before.
+        """
         expected_tools = self.tool_config.get("expected_tools", [])
         param_constraints = self.tool_config.get("param_constraints", {})
         dependencies = self.tool_config.get("dependencies", [])
 
         if not expected_tools and not param_constraints and not dependencies:
             return 1.0
+
+        if not tool_trace:
+            self._warn_dimension_unscored("tool_usage")
+            return None
 
         sub_scores: list[float] = []
 

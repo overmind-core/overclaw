@@ -609,14 +609,64 @@ class TestTypeCorrectness:
 
 
 class TestToolScoring:
-    def test_no_trace(self, sample_eval_spec_with_tools):
+    def test_no_trace_returns_none_when_config_present(self, sample_eval_spec_with_tools):
         ev = SpecEvaluator(sample_eval_spec_with_tools)
-        assert ev._score_tool_usage(None) == 0.0
-        assert ev._score_tool_usage([]) == 0.0
+        # Empty trace + scoring config present → dimension is unscorable.
+        # We return None (skip) rather than 0 (fail) so we don't silently
+        # penalise every agent the same amount and corrupt focus targeting.
+        assert ev._score_tool_usage(None) is None
+        assert ev._score_tool_usage([]) is None
 
     def test_no_config_returns_1(self, sample_eval_spec):
         ev = SpecEvaluator(sample_eval_spec)
+        # No tool-usage config at all → dimension is intentionally inert,
+        # caller receives full credit so the constant doesn't change between
+        # agents.
         assert ev._score_tool_usage([{"name": "any"}]) == 1.0
+        assert ev._score_tool_usage(None) == 1.0
+        assert ev._score_tool_usage([]) == 1.0
+
+    def test_evaluate_output_omits_tool_usage_when_unscored(self, sample_eval_spec_with_tools):
+        ev = SpecEvaluator(sample_eval_spec_with_tools)
+        scores = ev.evaluate_output(
+            {"result": "anything"},
+            {"result": "anything"},
+            tool_trace=[],
+        )
+        assert "tool_usage" not in scores, "unscored dimension must be omitted"
+        # avg_total cannot include tool_usage_weight when the dimension was skipped
+        assert scores["total"] <= 100 - 30 + 0.0001
+
+    def test_evaluate_batch_skips_unscored_dimension(self, sample_eval_spec_with_tools):
+        ev = SpecEvaluator(sample_eval_spec_with_tools)
+        results = [
+            {"output": {"result": "ok"}, "expected": {"result": "ok"}, "tool_trace": []},
+            {"output": {"result": "ok"}, "expected": {"result": "ok"}, "tool_trace": None},
+        ]
+        batch = ev.evaluate_batch(results)
+        # No case had a populated tool_trace, so the aggregated dimension
+        # must be absent rather than averaging to 0 (which would later
+        # confuse the analyzer's weakest-dim selection).
+        assert "avg_tool_usage" not in batch
+        # And the averaged total should not be depressed by tool_usage_weight.
+        assert batch["avg_total"] > 50
+
+    def test_evaluate_batch_averages_only_present_cases(self, sample_eval_spec_with_tools):
+        ev = SpecEvaluator(sample_eval_spec_with_tools)
+        good_trace = [
+            {"name": "search", "args": {"query_type": "web"}, "result": {"results": "data"}},
+            {"name": "analyze", "args": {"data": "data"}, "result": {}},
+        ]
+        results = [
+            {"output": {"result": "ok"}, "expected": {"result": "ok"}, "tool_trace": good_trace},
+            {"output": {"result": "ok"}, "expected": {"result": "ok"}, "tool_trace": []},
+        ]
+        batch = ev.evaluate_batch(results)
+        # Only one case scored tool_usage; the average must reflect that
+        # single case, not (case1_score + 0) / 2.
+        assert "avg_tool_usage" in batch
+        scored = batch["individual_scores"][0]["tool_usage"]
+        assert batch["avg_tool_usage"] == pytest.approx(scored)
 
     def test_completeness(self, sample_eval_spec_with_tools):
         ev = SpecEvaluator(sample_eval_spec_with_tools)

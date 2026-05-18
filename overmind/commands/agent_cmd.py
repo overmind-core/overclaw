@@ -45,6 +45,56 @@ from overmind.tracing import observe_safe
 from overmind.utils.display import BRAND, confirm_option, rel, select_option
 
 
+def _sync_agent_id_to_registry(
+    name: str,
+    entrypoint: str,
+    agent_path: str,
+    *,
+    description: str | None = None,
+) -> str | None:
+    """Best-effort: upsert a minimal Agent record in the Overmind backend
+    and persist the returned UUID into ``.overmind/agents.toml`` so later
+    commands (``optimize``, ``setup``, ``optimize-step``) can attribute
+    runs to the right Agent record without re-querying the API.
+
+    Returns the UUID string on success, ``None`` on any failure (missing
+    API key, project resolution failure, network error). All failures are
+    swallowed — the local registry write already succeeded, so a missing
+    backend record only affects UI visibility, not local registration.
+    """
+    try:
+        from overmind.storage import configure_storage, get_storage, StorageNotConfiguredError
+    except Exception:  # pragma: no cover - defensive import guard
+        return None
+
+    try:
+        configure_storage(agent_path=agent_path, agent_name=name)
+    except Exception:
+        return None
+    try:
+        storage = get_storage()
+    except StorageNotConfiguredError:
+        return None
+    except Exception:
+        return None
+
+    minimal_spec: dict = {"agent_description": (description or name)[:512]}
+    try:
+        storage.save_spec(minimal_spec)
+    except Exception:
+        return None
+
+    agent_id = storage.get_agent_id() or None
+    if not agent_id:
+        return None
+
+    try:
+        save_agent(name, entrypoint, id=agent_id)
+    except Exception:
+        return agent_id
+    return agent_id
+
+
 def _other_agents_with_entrypoint(
     registry: dict[str, dict[str, str]],
     entrypoint: str,
@@ -407,13 +457,17 @@ def cmd_register(name: str, entrypoint: str) -> None:
         entrypoint, file_path, fn = result
 
         save_agent(name, entrypoint)
+        agent_id = _sync_agent_id_to_registry(name, entrypoint, agent_path)
         console.print(
             f"\n  [bold green]\u2713[/bold green]  "
             f"Agent '[bold]{name}[/bold]' registered.\n"
             f"  [dim]Entrypoint:[/dim] {entrypoint}\n"
             f"  [dim]File:[/dim]      {file_path}\n"
             f"  [dim]Function:[/dim]  {fn}\n"
+            + (f"  [dim]Agent ID:[/dim]  {agent_id}\n" if agent_id else "")
         )
+        if agent_id:
+            set_tag(attrs.AGENT_ID, agent_id)
         _print_post_register_next_step(console, name)
         return
 
@@ -454,12 +508,15 @@ def cmd_register(name: str, entrypoint: str) -> None:
 
     # ---- 4. Save to registry ----
     save_agent(name, entrypoint)
+    agent_id = _sync_agent_id_to_registry(name, entrypoint, agent_path)
 
     # ``file_path`` is usually a Path; stringify defensively so the
     # span attribute carries a plain string regardless of where the
     # caller resolved it from.
     set_tag(attrs.AGENT_FILE_PATH, str(file_path))
     set_tag(attrs.AGENT_FUNCTION_NAME, fn)
+    if agent_id:
+        set_tag(attrs.AGENT_ID, agent_id)
 
     console.print(
         f"\n  [bold green]\u2713[/bold green]  "
@@ -467,6 +524,7 @@ def cmd_register(name: str, entrypoint: str) -> None:
         f"  [dim]Entrypoint:[/dim] {entrypoint}\n"
         f"  [dim]File:[/dim]      {file_path}\n"
         f"  [dim]Function:[/dim]  {fn}\n"
+        + (f"  [dim]Agent ID:[/dim]  {agent_id}\n" if agent_id else "")
     )
     _print_post_register_next_step(console, name)
 

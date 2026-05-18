@@ -80,6 +80,7 @@ from overmind.optimize.runner import AgentRunner, Language, RunnerConfig
 from overmind.optimize.trace_reader import (
     ParsedTrace,
     attach_shadow_provenance,
+    parse_trace_file,
 )
 from overmind.tracing import force_flush_traces, observe_safe
 from overmind.utils.code import AgentBundle
@@ -2682,11 +2683,18 @@ class Optimizer:
         runner = self._build_runner(agent_path, self.config.entrypoint_fn)
         runner.ensure_environment()
 
-        # All traces flow through OTel to the remote backend — no local
-        # ``OVERMIND_TRACE_FILE`` is written.  Backends still accept a
-        # ``trace_file`` arg for their shadow / record modes; we always
-        # pass ``None`` so they fall back to the OTel-only path.
-        trace_path: Path | None = None
+        # Per-run trace directory. Each case's subprocess writes its OTel
+        # spans to ``trace_dir / case_<idx>.jsonl`` via the local
+        # ``JsonlFileSpanExporter`` installed by the wrapper bootstrap when
+        # ``OVERMIND_TRACE_FILE`` is set. The parent reads those files back
+        # in :meth:`_build_eval_results` so tool / LLM traces are available
+        # to :class:`SpecEvaluator` (Tool Usage, llm token counts, etc.)
+        # without any backend roundtrip. Set to ``None`` to disable local
+        # capture (shadow/cassette modes do this themselves).
+        trace_dir: Path | None = self.traces_dir / run_name
+        if trace_dir is not None:
+            trace_dir.mkdir(parents=True, exist_ok=True)
+        trace_path = trace_dir  # legacy alias used by some logging paths
 
         cassette_path = self._cassette_path_for(run_name)
         shadow_prov_dir = self._shadow_prov_dir_for(run_name)
@@ -2924,6 +2932,11 @@ class Optimizer:
         non-retryable failure (missing API key, import error, …).  The
         returned :class:`BackendOutput` carries provenance tags and a
         :class:`Confidence` that the evaluator/optimizer can inspect.
+
+        *trace_path* is the run-level trace directory (``traces_dir/<run>/``);
+        we derive a per-case file ``case_<idx>.jsonl`` under it so concurrent
+        worker subprocesses never share an append target. Pass ``None`` to
+        disable local trace capture entirely.
         """
         # Stamp per-case context up front so the span carries it even if
         # the run raises before we get to the "after" tags below.
@@ -2937,6 +2950,10 @@ class Optimizer:
             input_chars = len(str(input_data))
         set_tag(attrs.RUN_CASE_INPUT_CHARS, int(input_chars))
 
+        case_trace_file: Path | None = None
+        if trace_path is not None:
+            case_trace_file = trace_path / f"case_{idx:04d}.jsonl"
+
         if plan is None or len(plan) == 0:
             raise RuntimeError("BackendPlan missing — cannot run case")
 
@@ -2946,7 +2963,7 @@ class Optimizer:
         for i, backend in enumerate(plan):
             backend.prepare()
             backends_tried.append(backend.name)
-            out = backend.run(input_data, trace_file=trace_path)
+            out = backend.run(input_data, trace_file=case_trace_file)
             last_output = out
             if out.success:
                 if i > 0:
@@ -2991,6 +3008,32 @@ class Optimizer:
             except Exception:
                 self._logger.debug("run_case: failed to serialise confidence", exc_info=True)
 
+    def _load_case_traces(self, trace_dir: Path | None, n_cases: int) -> list[ParsedTrace]:
+        """Read back per-case ``ParsedTrace``s from the run's trace directory.
+
+        Each ``trace_dir / case_<idx>.jsonl`` was written by the agent
+        subprocess (via :class:`JsonlFileSpanExporter` installed in the
+        wrapper bootstrap when ``OVERMIND_TRACE_FILE`` was set). Missing
+        or unreadable files yield an empty :class:`ParsedTrace` so the
+        caller always gets a list of length *n_cases*.
+        """
+        if trace_dir is None:
+            return [ParsedTrace() for _ in range(n_cases)]
+
+        results: list[ParsedTrace] = []
+        for idx in range(n_cases):
+            case_file = Path(trace_dir) / f"case_{idx:04d}.jsonl"
+            if case_file.exists():
+                try:
+                    results.append(parse_trace_file(case_file))
+                    continue
+                except Exception as exc:
+                    self._logger.warning(
+                        f"_load_case_traces: failed to parse {case_file}: {exc}"
+                    )
+            results.append(ParsedTrace())
+        return results
+
     @observe_safe("optimizer.build_eval_results")
     def _build_eval_results(
         self,
@@ -3002,10 +3045,12 @@ class Optimizer:
     ) -> tuple[dict, list[ParsedTrace], list[dict]]:
         """Build per-case eval items from agent outputs and shadow provenance.
 
-        Traces from the agent subprocess are streamed straight to the
-        remote backend via OTel — we no longer read any local trace
-        file here, so ``trace_path`` is kept only for backward
-        compatibility and is otherwise ignored.
+        When *trace_path* is a directory, each case's per-process trace
+        file (``trace_path / case_<idx>.jsonl``) is parsed back into a
+        :class:`ParsedTrace` so :class:`SpecEvaluator` sees the actual
+        ``tool_trace`` for Tool Usage scoring and the LLM token counts.
+        Missing or empty files yield an empty :class:`ParsedTrace` and
+        the evaluator falls back to its "dimension unscorable" path.
 
         When *provenance_by_idx* is provided (populated by the shadow
         backend), each :class:`ParsedTrace` is decorated with per-call
@@ -3018,7 +3063,7 @@ class Optimizer:
         traces: list[ParsedTrace] = []
         eval_items: list[dict] = []
 
-        per_line_traces: list[ParsedTrace] = [ParsedTrace() for _ in range(len(dataset))]
+        per_line_traces: list[ParsedTrace] = self._load_case_traces(trace_path, len(dataset))
 
         # Attach shadow provenance tags in bulk — keeps ParsedTrace and
         # tool_trace rows in sync with what actually ran.

@@ -319,9 +319,7 @@ def _display_analysis(analysis: dict, console: Console):
         for key, label in (
             ("optimizable_paths", "Optimizable (editable)"),
             ("read_only_paths", "Read-only (in bundle, not editable)"),
-            ("context_paths", "Context (read-only)"),
             ("search_paths", "Search paths (sys.path-style)"),
-            ("exclude_paths", "Exclude"),
         ):
             paths = scope.get(key) or []
             if not paths:

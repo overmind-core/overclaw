@@ -35,7 +35,7 @@ User: *“Generate eval spec + dataset for `hotel-agent`.”* You resolve the re
 ## Operating principles
 
 - **Codebase is the source of truth**: every input field, output key, and tool comes from the registered Overmind entrypoint and the modules it imports. Do not invent fields.
-- **Entrypoint contract is fixed**: The registered Overmind entrypoint harness must stay **out of** `optimizable_paths` and treated as fixed interaction glue — same default as `/overmind-register-agent`. **`/overmind-optimize-agent` compatibility:** If an **existing** eval spec already includes the harness path (legacy misconfiguration), optimization may still touch it only when Overmind’s scope and candidate prompts allow; after such a run, **repair** the spec here so the harness returns to `exclude_paths` / `fixed_elements`.
+- **Entrypoint contract is fixed**: The registered Overmind entrypoint harness must stay **out of** `optimizable_paths` and **in** `read_only_paths` (the accept step enforces a byte-equality diff). **`/overmind-optimize-agent` compatibility:** If an existing eval spec already includes the harness path under `optimizable_paths` (legacy misconfiguration), optimization may still touch it only when Overmind’s scope and candidate prompts allow; after such a run, **repair** the spec here so the harness returns to `read_only_paths` / `fixed_elements`.
 - **Evaluator-compatible types only**: output `type` must be one of `text`, `enum`, `number`, `boolean`. Never `string`, `object`, `array`, `dict`, `list`, `json`.
 - **Top-level scoring only**: nested dicts and list outputs are normalized in the entrypoint into top-level fields before reaching the evaluator.
 - **Schema agreement is mandatory**: every dataset row's `input` keys must equal the eval spec's `input_schema` keys; every `expected_output` key must appear in `output_fields`.
@@ -165,8 +165,13 @@ spec = {
     "tool_config":      {"expected_tools": [...], "dependencies": [...], "param_constraints": {...}},
     "tool_usage_weight":10,                # only if tools exist
     "llm_judge_weight": 10,                # only if any text field is critical/important OR a policy exists
-    "consistency_rules":[...],
-    "scope":            {"optimizable_paths": [...], "context_paths": [...], "exclude_paths": [...]},
+    "consistency_rules":[  # [] is fine; each entry must be a dict, never a prose string
+        # {"field_a": "<output_fields key>", "field_b": "<output_fields key>",
+        #  "type": "correlation"|"ordering",     # optional
+        #  "operator": "<="|"<"|">="|">",         # optional, ordering only
+        #  "penalty": <number>}                   # optional
+    ],
+    "scope":            {"optimizable_paths": [...], "read_only_paths": [...]},
     "optimizable_elements": [...],
     "fixed_elements": [...],
     "policy":           <structured policy dict from Step 3>,
@@ -185,25 +190,41 @@ for f in output_fields:
 weight[first] += remaining - sum(weight.values())
 ```
 
-**Scope construction**:
+**Scope construction** — two lists only:
 
 ```
 optimizable_paths = [<native agent files imported by entrypoint>]
-context_paths     = []                    # README, docs, pyproject.toml if present
-exclude_paths     = [
-    <entrypoint_rel_path>,                # entrypoint is ALWAYS excluded
-    ".overmind/**", ".venv/**", ".github/**",
-    "tests/**", "benchmarks/**", "scripts/**",
-    "**/__pycache__/**", "**/*.egg-info/**",
-    "uv.lock", "poetry.lock", "Dockerfile",
+read_only_paths   = [
+    <entrypoint_rel_path>,                # registered harness, never editable
+    # Plus: fixture data, runtime adapters, README, docs, pyproject.toml,
+    # eval templates, JSON schemas — anything the bundle needs at runtime
+    # but candidates must not edit. The accept step enforces a byte-equality
+    # diff against these.
 ]
 ```
+
+Project-level drops (test directories, build artefacts, vendored code, infra) do NOT go in the spec. The hard-coded skip list already handles `.git`, `.venv`, `__pycache__`, `node_modules`, `.pytest_cache`, `dist`, `build`, etc. For project-specific drops, add a `.overmindignore` file at the project root (gitignore-style globs). NEVER drop a sibling package the entrypoint imports — it would silently break candidate worktrees with `ModuleNotFoundError`.
 
 For each sibling package, append to the right scope list per the user's answer in Step 2.
 
 If the user wants to score only a subset of outputs, keep unscored outputs visible as diagnostic or skipped fields instead of silently removing them. Do not assign scoring weights to fields the evaluator cannot score.
 
 **Validation gates** — assert before showing the user:
+
+- **Canonical spec-shape preflight (mandatory, runs first)**: import the same validator the `overmind optimize` / `overmind optimize-step` CLI runs and call it against the in-memory spec dict. Treat `SpecValidationError` as a hard stop — the message carries a JSON path (`consistency_rules[0]`, `output_fields.<name>.weight`, `scope.optimizable_paths`, etc.) — show it verbatim, fix the offending field, then re-run this gate. Do not write the Step 5 preview file until this passes.
+
+  ```python
+  from overmind.optimize.config import validate_eval_spec, SpecValidationError
+  try:
+      validate_eval_spec(spec)
+  except SpecValidationError as exc:
+      raise SystemExit(f"eval_spec preflight failed: {exc}")
+  ```
+
+  Notes for common shapes the validator pins (so the authoring step doesn't trip them):
+  - `consistency_rules` must be `[{field_a, field_b, type?, operator?, penalty?}]`. **Never a list of prose strings.** Natural-language assertions belong in `policies.md`. Empty list `[]` is the correct default when no output-vs-output covariation is meaningful.
+  - `scope.*_paths` must be `list[str]`.
+  - `output_fields[name].weight` must be numeric; `values` must be a list when present.
 
 - Every `input_schema` key is a real entrypoint parameter, a decomposed typed-dict/model/dataclass field, or a user-confirmed input.
 - Every `output_fields` key appears in at least one normalized entrypoint `return` statement or was user-confirmed.
@@ -214,7 +235,7 @@ If the user wants to score only a subset of outputs, keep unscored outputs visib
 - The weight sum check passes (exactly 100).
 - `policy["domain_rules"]` is non-empty, or low-confidence areas are explicitly marked because the codebase lacks domain signal.
 - Every detected sibling local package appears in exactly one scope category.
-- The registered entrypoint is **absent** from `optimizable_paths` and **present** in `exclude_paths` or `fixed_elements`.
+- The registered entrypoint is **absent** from `optimizable_paths` and **present** in `read_only_paths` (and ideally `fixed_elements` for documentation).
 
 ### Step 5 — Preview artifacts, summarize, approve (no save until confirmed)
 
@@ -244,10 +265,18 @@ from pathlib import Path
 
 import overmind
 from overmind.core.paths import load_overmind_dotenv
+from overmind.optimize.config import validate_eval_spec, SpecValidationError
 from overmind.storage import configure_storage, get_storage, StorageNotConfiguredError
 
 load_overmind_dotenv()
 overmind.init()
+
+# Belt + braces: re-run the canonical validator in case `spec` mutated
+# between Step 4 approval and this save. Same call the CLI subprocess runs.
+try:
+    validate_eval_spec(spec)
+except SpecValidationError as exc:
+    raise SystemExit(f"eval_spec preflight failed before save: {exc}")
 
 base = Path(".overmind/agents") / agent_name / "setup_spec"
 base.mkdir(parents=True, exist_ok=True)
@@ -510,6 +539,7 @@ The diff must be concrete, showing current and proposed values rather than vague
 - **Sibling package excluded accidentally**: Ask whether it is optimizable, context-only, or excluded, and place it in exactly one scope category.
 - **Entrypoint appears in optimizable scope**: Remove it immediately and place it in excluded or fixed scope. Optimize native agent behavior files instead.
 - **Output field type is `string`**: Replace it with `text`.
+- **`consistency_rules[i]: each rule must be an object with field_a/field_b keys`**: You authored natural-language prose where the schema wants structured cross-field invariants. Move the prose into `policies.md`. Either leave `consistency_rules: []`, or convert pairs of output fields into entries like `{"field_a": "<key>", "field_b": "<key>", "type": "correlation"}` (both keys must already exist in `output_fields`). Re-run the Step 4 canonical spec-shape preflight and re-sync.
 - **Native output is a list or nested object**: Repair the separate entrypoint file to normalize outputs into top-level evaluator-compatible fields before generating the eval spec or dataset.
 - **Many generated cases dropped**: Tighten the schema prompt, reduce batch size, generate per persona, or add seed data.
 - **Smoke check unexpected keyword error**: The dataset input field names do not match the Overmind entrypoint signature; repair the dataset schema or repair the separate entrypoint file.

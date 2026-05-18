@@ -32,7 +32,7 @@ import ast
 import sys
 import textwrap
 from collections import deque
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -61,12 +61,13 @@ class BundleConfigError(ValueError):
     broken bundle.
 
     Currently fires when the entry file matches an ignore pattern
-    (``exclude_paths`` / ``.overmindignore``). Without this guard the
-    BFS bails on the first file, the bundle silently collapses to
-    single-file mode, and the user spends an afternoon wondering why
-    candidate worktrees only contain ``overmind_entrypoint.py``.
-    Inheriting from :class:`ValueError` preserves call-site error
-    handling for code that already catches ``ValueError``.
+    (``.overmindignore`` or one of Overmind's hard-coded env-level
+    skips). Without this guard the BFS bails on the first file, the
+    bundle silently collapses to single-file mode, and the user spends
+    an afternoon wondering why candidate worktrees only contain
+    ``overmind_entrypoint.py``. Inheriting from :class:`ValueError`
+    preserves call-site error handling for code that already catches
+    ``ValueError``.
     """
 
 
@@ -803,10 +804,10 @@ def resolve_local_files(
     if should_ignore_rel and should_ignore_rel(entry_rel):
         raise BundleConfigError(
             f"Entry file {entry_rel!r} is matched by an ignore pattern "
-            f"(scope.exclude_paths or .overmindignore). The entry must be "
-            f"reachable so the dependency BFS can walk from it; if the entry "
-            f"is the optimization harness and should not be edited, list it "
-            f"in scope.read_only_paths instead."
+            f"(.overmindignore or one of Overmind's env-level skips). The "
+            f"entry must be reachable so the dependency BFS can walk from "
+            f"it; if the entry is the optimization harness and should not "
+            f"be edited, list it in scope.read_only_paths instead."
         )
 
     queue.append((entry, 0))
@@ -1059,7 +1060,6 @@ class AgentBundle:
         max_total_chars: int = 150_000,
         max_resolved_files: int | None = None,
         should_ignore_rel: Callable[[str], bool] | None = None,
-        prefetched_files: Mapping[str, str] | None = None,
         search_paths: Sequence[str | Path] | None = None,
     ) -> AgentBundle:
         """Build a bundle by resolving all local dependencies from *entry_path*.
@@ -1092,9 +1092,6 @@ class AgentBundle:
             entry point (breadth-first). ``None`` means no limit.
         should_ignore_rel:
             Skip matching paths during BFS (see :func:`resolve_local_files`).
-        prefetched_files:
-            Extra ``{rel_path: source}`` merged after BFS (e.g. read-only context
-            files from scope globs). Ignored paths are dropped.
         search_paths:
             Extra sys.path-style directories under *project_root* the
             resolver should treat as package roots. Forwarded to
@@ -1113,13 +1110,6 @@ class AgentBundle:
             should_ignore_rel=should_ignore_rel,
             search_paths=search_paths,
         )
-
-        if prefetched_files:
-            for rel, src in prefetched_files.items():
-                rel = rel.replace("\\", "/")
-                if should_ignore_rel and should_ignore_rel(rel):
-                    continue
-                local_files.setdefault(rel, src)
 
         if optimizable_paths is None:
             opt_set = set(local_files.keys())

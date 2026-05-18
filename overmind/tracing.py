@@ -365,6 +365,26 @@ def init(
         enable_tracing(providers)
         return
 
+    # When running inside the optimize-step subprocess, the runner wrapper
+    # configures a local JSONL TracerProvider via ``OVERMIND_TRACE_FILE`` and
+    # deliberately strips ``OVERMIND_API_KEY`` from the env so spans land in a
+    # file instead of the cloud backend. Any ``overmind.init()`` calls that
+    # were instrumented into the agent entrypoint should reuse that already-
+    # configured provider rather than crashing on the missing API key or
+    # silently replacing the wrapper's exporter.
+    if os.environ.get("OVERMIND_TRACE_FILE") and not (overmind_api_key or os.environ.get("OVERMIND_API_KEY")):
+        from overmind import __version__ as _SDK_VERSION
+        logger.debug(
+            "Overmind SDK init() skipped: OVERMIND_TRACE_FILE is set and no "
+            "OVERMIND_API_KEY available; reusing the local file-exporter "
+            "TracerProvider configured by the optimize runner wrapper.",
+        )
+        _tracer = trace.get_tracer("overmind", _SDK_VERSION)
+        enable_tracing(providers)
+        _attach_remote_parent_if_present()
+        _initialized = True
+        return
+
     environment = (
         environment or os.environ.get("OVERMIND_ENVIRONMENT") or os.environ.get("ENVIRONMENT") or "development"
     )

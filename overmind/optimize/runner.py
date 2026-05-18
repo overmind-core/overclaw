@@ -774,7 +774,34 @@ import json, sys, os, io, asyncio, inspect, importlib.util, traceback
 _cwd = os.getcwd()
 if _cwd not in sys.path:
     sys.path.insert(0, _cwd)
-if os.environ.get("OVERMIND_API_KEY"):
+
+# Tracing setup. Two mutually-exclusive modes:
+#   * OVERMIND_TRACE_FILE set (optimizer eval path) → install a local-only
+#     TracerProvider whose only exporter writes OTLP-JSON to that file, then
+#     auto-instrument the supported providers (openai, anthropic, google, agno)
+#     so the parent can read tool / LLM spans back via
+#     ``trace_reader.parse_trace_file_per_line``. No API key required.
+#   * OVERMIND_API_KEY set (production / SDK use) → call overmind.init() and
+#     stream spans to the remote backend over OTLP HTTP.
+_ocl_trace_file = os.environ.get("OVERMIND_TRACE_FILE")
+if _ocl_trace_file:
+    try:
+        from opentelemetry import trace as _ocl_otel_trace
+        from opentelemetry.sdk.resources import Resource as _OclResource
+        from opentelemetry.sdk.trace import TracerProvider as _OclTracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor as _OclBatchSpanProcessor
+        from overmind.tracing_file_exporter import JsonlFileSpanExporter as _OclJsonlFileSpanExporter
+        from overmind.tracing import enable_tracing as _ocl_enable_tracing
+        _ocl_provider = _OclTracerProvider(resource=_OclResource.create({{"service.name": "overmind-optimize-subprocess"}}))
+        _ocl_provider.add_span_processor(_OclBatchSpanProcessor(_OclJsonlFileSpanExporter(_ocl_trace_file)))
+        _ocl_otel_trace.set_tracer_provider(_ocl_provider)
+        _ocl_enable_tracing(providers=[])
+    except Exception:
+        # Tracing is best-effort. If anything in the local setup fails, the
+        # agent still runs — Tool Usage just falls back to its "unscored"
+        # path in the evaluator. Print to stderr so the failure is visible.
+        traceback.print_exc()
+elif os.environ.get("OVERMIND_API_KEY"):
     try:
         from overmind import init as overmind_init
         overmind_init()

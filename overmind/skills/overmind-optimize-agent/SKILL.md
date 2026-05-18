@@ -1,12 +1,15 @@
 ______________________________________________________________________
 
-## name: overmind-optimize-agent description: "Drive the full host-agent controlled overmind optimize loop for a registered Overmind agent. Use when the user wants to optimize an agent, run iterative improvement, fan out multiple candidate edits in parallel worktrees, evaluate candidates with overmind optimize-step, accept the best improvement, stop early on stalls, and render an optimization report." metadata: version: "2.4" product: "Overmind"
+## name: overmind-optimize-agent description: "Optimize a registered Overmind agent. Use when the user wants to run iterative improvement on an agent — either via the autonomous `overmind optimize` CLI run in a fresh terminal window (recommended default) or via the native host coding agent driving an `overmind optimize-step` loop with subagent fan-out." metadata: version: "2.6" product: "Overmind"
 
 # Optimize an Overmind Agent
 
-Use this skill to drive the `overmind optimize-step` JSON CLI from a host coding agent such as Cursor, Codex, Claude Code, or another code-editing agent. Overmind owns state, baseline evaluation, diagnosis, worktree materialisation, candidate evaluation, acceptance gates, and report rendering. The host coding agent owns loop control, **multi-agent fan-out** (several subagents across iterations and candidates), parallel candidate fan-out, per-candidate code edits, and early stopping.
+Use this skill to optimize a registered Overmind agent end-to-end. **Exactly two execution paths are supported** — the user must explicitly pick one before any long-running step:
 
-**Audience:** Fan-out, worktree editing, and `optimize-step` orchestration below are instructions for **you, the coding agent executing this skill** — not steps you assign to the human user unless the host truly cannot spawn subagents or run background work (then say so explicitly).
+- **Path A — Overmind CLI in a new IDE terminal (recommended default).** Launch `overmind optimize <agent-name> [--fast]` in a fresh **IDE-integrated terminal** (the host coding agent's terminal panel — e.g. Cursor's terminal pane — *not* a separate macOS / Linux desktop terminal window). Wrap the command in `script -q /dev/null <cmd>` (BSD/macOS) or `unbuffer <cmd>` (Linux + `expect`) so Rich is handed a pseudo-TTY and renders colours / progress bars correctly. **Then stop.** Overmind owns the entire loop end-to-end in that terminal (baseline, diagnosis, candidates, evaluate, accept, early stop, final report) and pushes its own live UI updates to the Overmind dashboard via OTLP. The host coding agent's responsibility ends at launch — **no REST polling, no Job UUID resolution, no monitor script, no progress chatter in this chat**. The user watches the IDE terminal directly; the dashboard updates itself. If the user later asks for a status snapshot, only then query the REST API.
+- **Path B — Native coding agent (host-driven `overmind optimize-step` loop with subagent fan-out).** The host coding agent (Cursor / Codex / Claude Code) drives the loop step-by-step in-chat via the `overmind optimize-step` JSON CLI, fans out **one subagent per candidate worktree** for parallel edits, and orchestrates evaluation and acceptance. Use this path when the user wants per-candidate editorial control, custom diagnosis prompts, or external subagent parallelism beyond what the CLI offers.
+
+**Audience:** Path B's fan-out, worktree editing, and `optimize-step` orchestration below are instructions for **you, the coding agent executing this skill** — not steps you assign to the human user unless the host truly cannot spawn subagents or run background work (then say so explicitly). Path A's launch (terminal pop-up) + monitor (REST polling) is also yours to execute.
 
 This skill optimizes the agent files selected by the existing Overmind eval spec and optimizer scope. It should not add extra setup restrictions that prevent `overmind optimize-step` from running.
 
@@ -24,7 +27,8 @@ This skill optimizes the agent files selected by the existing Overmind eval spec
 - **Evaluation owns truth**: Do not manually choose a winner. Evaluate all candidates through `overmind optimize-step evaluate`, then accept through `overmind optimize-step accept`.
 - **Investigate zero baselines**: A baseline score of 0 may indicate a broken entrypoint, invalid dataset, unscorable eval spec, provider failure, or genuine total task failure. Investigate before running candidate optimization.
 - **Use subagents when useful**: Use parallel sub-coding-agents for candidate edits when the host supports them. Also use focused investigation subagents when baseline failures, confusing score reports, or large codebase context would benefit from isolated analysis.
-- **Multi-agent iteration fan-out (default when the host supports it)**: Do not drive the entire multi-iteration optimize loop alone in one bloated session. Spin out **several coding subagents** (for example 2–4) across the run: after `diagnose` for iteration `i`, delegate **each candidate worktree’s editing** to its own subagent (see **Spawn candidate coding agents**). Prefer a **fresh subagent** (or round-robin across a small pool) for each iteration’s edit leg so prior-iteration transcripts do not accumulate in one context. **One** coordinator must still run `overmind optimize-step` **in order** on the same `STATE_PATH` — iterations are sequential in the state file; parallelism is on **candidate branches** and on **which subagent** owns the editing leg. If the host cannot spawn subagents, state that you are falling back to single-agent sequential mode.
+- **Loop host is an explicit user choice (no silent default)**: Before any long-running step, ask the user — via a single `AskQuestion` call — whether to run **Path A (Overmind CLI, recommended)** or **Path B (host-driven `optimize-step` with subagent fan-out)**. **Recommend Path A by default** because it is autonomous, faster to launch, has fewer integration failure modes, and produces identical UI artifacts (`Job` + `JobIteration` rows). Only skip the question when the user's invoke message already names the path verbatim (e.g. "run optimize via the CLI" or "use host-driven optimize-step"). Never infer the path from "default behavior" — ask.
+- **Multi-agent iteration fan-out (Path B only)**: When the user selects Path B, do not drive the entire multi-iteration optimize loop alone in one bloated session. Spin out **several coding subagents** (for example 2–4) across the run: after `diagnose` for iteration `i`, delegate **each candidate worktree’s editing** to its own subagent (see **Spawn candidate coding agents**). Prefer a **fresh subagent** (or round-robin across a small pool) for each iteration’s edit leg so prior-iteration transcripts do not accumulate in one context. **One** coordinator must still run `overmind optimize-step` **in order** on the same `STATE_PATH` — iterations are sequential in the state file; parallelism is on **candidate branches** and on **which subagent** owns the editing leg. If the host cannot spawn subagents while running Path B, state that you are falling back to single-agent sequential mode (or recommend switching to Path A).
 - **Surface analyzer failures**: If diagnosis returns a warning because analyzer generation failed, stop and report the warning. Do not silently proceed with manual placeholder edits.
 - **Mandatory configuration branch (no silent defaults)**: Before `overmind optimize-step init`, the user must explicitly choose **Set optimization parameters** or **Run with defaults** — unless they already stated that exact choice in the **same message** that invoked this skill, in which case **echo the choice once** (“Using run-with-defaults from your message”) and continue. Never invent the branch from context alone.
 - **Entrypoint cold-start**: Overmind evaluates agents in isolated processes. The host should ensure the registered entrypoint performs expensive construction once per interpreter process and keeps per-call work limited to mapping inputs, invoking the agent, and normalizing outputs. Do not rely on increasing smoke-test case counts to fix baseline cold-start; smoke tests filter candidates after a non-zero baseline exists.
@@ -45,7 +49,27 @@ If any prerequisite is missing, stop and tell the user which setup skill or conf
 
 ## Configuration
 
-### Required first question (explicit branch)
+### Required first question — Loop host (explicit branch)
+
+Before any other configuration step, ask the user exactly one question (via `AskQuestion`) to pick the orchestration path. There are **exactly two** options. **Default / recommended: Path A (Overmind CLI in a new terminal).**
+
+| Option                                                          | What runs                                                                                                                                                                                                                                                                                                                                  | What the user sees                                                                                                              | When to pick it                                                                                                                          |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **A. Overmind CLI in a new IDE terminal (recommended)**         | A fresh **IDE-integrated terminal** (host's terminal pane — e.g. Cursor's terminal panel) pops open and runs `script -q /dev/null overmind optimize <agent> [--fast]` (the `script` wrapper gives Rich a pseudo-TTY so colours and progress bars render). Overmind owns the loop end-to-end inside that terminal. **Host coding agent does nothing else** — no REST polling, no Job UUID resolution, no monitor script. The Overmind dashboard updates itself via OTLP. | **Live Rich UI in the IDE terminal pane** — progress bars, candidate score tables, accept/reject animations, final report rendering. Dashboard also updates live. | Default. The agent is registered and the user wants a fast autonomous run with full live visibility in the terminal + dashboard. |
+| **B. Native coding agent (host-driven `optimize-step` + subagents)** | The host coding agent runs `overmind optimize-step init → baseline → (diagnose → spawn N candidate subagents → evaluate → accept)* → report` in-chat, fanning out one coding subagent per candidate worktree each iteration.                                                                                                              | In-chat tool calls and assistant messages summarizing each step.                                                                | The user wants per-candidate editorial control via subagents, custom diagnosis follow-ups, or external parallelism beyond what the CLI offers. |
+
+**Phrase the question like this** (verbatim is fine):
+
+> Which optimization loop should I run? **A. Overmind CLI in a new IDE terminal (recommended)** — I'll pop open a fresh terminal in your IDE pane, run `overmind optimize <agent>` there (wrapped in `script` so Rich progress bars render), and then **stop**. The terminal and the Overmind dashboard show everything live; I won't poll anything from this chat. **B. Native coding agent** — I drive `overmind optimize-step` here in-chat and spawn a coding subagent per candidate worktree each iteration.
+
+**In-thread shortcut:** If the user's invoke message already names the path verbatim ("use the overmind CLI", "run via optimize-step with subagents", "run it natively here", "open a terminal in the IDE and run optimize"), echo the choice once ("Using Path A — Overmind CLI in a new IDE terminal from your message") and continue. Never infer the path from defaults wording alone — when in doubt, ask.
+
+Once the path is selected:
+
+- **Path A** → proceed to **Required second question** below (parameters branch), then jump to **Workflow → Path A**.
+- **Path B** → proceed to **Required second question** below (parameters branch), then jump to **Workflow → Path B**.
+
+### Required second question (explicit branch)
 
 Before initializing optimization, obtain exactly one of:
 
@@ -184,9 +208,69 @@ These rules are invariant-focused so they apply to any language or agent framewo
 
 ## Workflow
 
-## Required command sequence (non-interactive)
+The workflow branches on the loop-host choice captured in **Configuration → Required first question**. Run **Path A** *or* **Path B**, never both.
 
-Use this exact command sequence. Do not skip required parameters.
+### Path A — Overmind CLI in a new IDE terminal (recommended default)
+
+Use this path when the user picked **A. Overmind CLI in a new IDE terminal**. The host coding agent's job is **only** to do the three things below, then **stop and hand off to the user**.
+
+**Hard rules for Path A:**
+
+- Do **not** poll the Overmind REST API for Job / JobIteration status.
+- Do **not** resolve the Job UUID.
+- Do **not** spawn a monitor script or background poller.
+- Do **not** narrate progress in this chat while the run is going.
+- Do **not** use a separate desktop terminal window (no `osascript`, no `open -a Terminal`, no `iTerm` AppleScript).
+- Do **not** redirect stdout/stderr to a log file — that strips the TTY and Rich falls back to plain non-interactive output.
+
+The user watches the IDE terminal directly; the Overmind dashboard updates itself live via OTLP. If the user explicitly asks for a status snapshot later, only then query the REST API.
+
+#### Step 1 — Sync setup artifacts to the backend
+
+Run the **Sync setup artifacts** Python snippet from earlier in this skill. Required so the `Job` row created by the optimizer attaches to a fully-populated `Agent` record. Fail fast on any exception.
+
+#### Step 2 — Preflight `ANALYZER_MODEL`
+
+Run the Python preflight snippet from **Deterministic preflight before `optimize-step init`** above. It must print `ok`. If it fails, stop and tell the user to fix `ANALYZER_MODEL` in `.overmind/.env`.
+
+#### Step 3 — Open an IDE terminal and run `overmind optimize`, then stop
+
+Launch via the host's Shell tool in **background mode** (e.g. Cursor's Shell tool with `block_until_ms: 0`) so the terminal entry persists in the IDE terminal pane and the user can click it to watch live progress. Wrap the command in `script` (BSD/macOS) or `unbuffer` (Linux) so Rich gets a pseudo-TTY and progress bars / colours render.
+
+- **macOS / BSD** (default for this repo):
+
+  ```bash
+  cd <project-root> && \
+    source .venv/bin/activate && \
+    script -q /dev/null overmind optimize "<agent-name>" --fast
+  ```
+
+- **Linux with `expect` available**:
+
+  ```bash
+  cd <project-root> && \
+    source .venv/bin/activate && \
+    unbuffer overmind optimize "<agent-name>" --fast
+  ```
+
+- **Fallback when no TTY emulator is available**: run `overmind optimize "<agent-name>" --fast` directly — the UI degrades to plain text but the run still works. Tell the user this happened.
+
+Command variants:
+
+- Drop `--fast` for the full defaults branch (LLM judge / backtesting available).
+- When the user picked **Set optimization parameters**, pass overrides as CLI flags (`--iterations`, `--candidates-per-iteration`, `--analyzer-model`, `--llm-judge-model`, `--early-stopping-patience`, etc.) — verify with `overmind optimize --help`. Advanced settings without flags flow through `.overmind/agents/<name>/.env`.
+
+After launching, post **one** short message in chat: *"Optimizer running in the new IDE terminal — click it to watch live progress. The Overmind dashboard will also update in real time. I'll wait here; ping me when you want a status check or once it finishes."* Then **stop**.
+
+**Troubleshooting Path A** (only if the user reports a problem):
+
+- **IDE terminal shows plain text without colours or progress bars** → the `script` / `unbuffer` wrapper isn't taking effect. Verify `which script` (macOS ships it at `/usr/bin/script`) or install `expect` (`brew install expect` / `apt install expect`) and rerun.
+- **CLI exits immediately with an entrypoint / dataset / analyzer error** → read the IDE terminal output, fix the underlying setup issue (entrypoint import, dataset shape, analyzer key), and relaunch step 3.
+- **The user reports a stuck `running` Job in the dashboard hours after the terminal exited** → only then query `PATCH /api/jobs/{id}/ {"status":"failed"}` to clear it. Never sweep proactively.
+
+### Path B — Host-driven `overmind optimize-step` loop
+
+Use this path when the user picked **B. Host-driven loop with subagent fan-out**. Follow the exact non-interactive command sequence below. Do not skip required parameters.
 
 1. **Init state**
 
@@ -230,6 +314,8 @@ Rules:
 - Every command after init must use the same `STATE_PATH`.
 - If a required parameter is missing, stop and repair inputs before continuing.
 - Never use interactive CLI prompts for optimization steps.
+
+The remaining sections in this file (**Resolve the project and agent**, **Check setup artifacts**, **Diagnose and materialise candidate worktrees**, **Spawn candidate coding agents**, **Evaluate candidates**, **Accept**, **Early stopping**, **Report**) apply to **Path B only**. **Path A delegates all of these to the `overmind optimize` process** — do not run them manually on top of an active Path A run.
 
 ### Resolve the project and agent
 

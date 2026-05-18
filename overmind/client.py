@@ -319,15 +319,30 @@ _resolved_project_id: str | None = None
 def resolve_project_id(client: OvermindClient | None = None) -> str:
     """Return the project UUID this client should write to.
 
-    Calls ``client.projects_list()`` and uses the single accessible project.
+    Resolution order:
+      1. ``OVERMIND_PROJECT_ID`` env var (UUID or slug) — explicit override
+         for keys with access to multiple projects. UUIDs are accepted
+         as-is; slugs are resolved against ``projects_list()``.
+      2. Single accessible project auto-resolved from ``projects_list()``.
+      3. :class:`ProjectResolutionError` if zero or multiple projects.
+
     The result is cached in-process so repeated calls don't pay the network
-    cost.  Raises :class:`ProjectResolutionError` when the key has no
-    accessible projects or the API call fails.
+    cost.
     """
     global _resolved_project_id
 
     if _resolved_project_id:
         return _resolved_project_id
+
+    env_project = (os.environ.get("OVERMIND_PROJECT_ID") or "").strip()
+    if env_project:
+        try:
+            UUID(env_project)
+            _resolved_project_id = env_project
+            logger.info(f"resolve_project_id: pinned from OVERMIND_PROJECT_ID env id={env_project}")
+            return env_project
+        except ValueError:
+            pass
 
     if client is None:
         client = get_client()
@@ -335,7 +350,7 @@ def resolve_project_id(client: OvermindClient | None = None) -> str:
         raise ProjectResolutionError("Cannot resolve project: OVERMIND_API_KEY is not set.")
 
     try:
-        page = client.projects_list(page_size=2)
+        page = client.projects_list(page_size=20 if env_project else 2)
     except Exception as exc:
         raise ProjectResolutionError("Cannot resolve project: projects_list() call failed.") from exc
 
@@ -344,6 +359,22 @@ def resolve_project_id(client: OvermindClient | None = None) -> str:
         raise ProjectResolutionError(
             "The configured OVERMIND_API_KEY has no accessible projects. "
             "Generate a project-scoped key from the Overmind console and try again."
+        )
+
+    if env_project:
+        match = next(
+            (p for p in results if (getattr(p, "slug", "") or getattr(p, "name", "")) == env_project),
+            None,
+        )
+        if match is not None:
+            pid = str(match.id)
+            _resolved_project_id = pid
+            logger.info(f"resolve_project_id: matched OVERMIND_PROJECT_ID slug={env_project} id={pid}")
+            return pid
+        slugs = ", ".join(getattr(p, "slug", "") or getattr(p, "name", "?") for p in results)
+        raise ProjectResolutionError(
+            f"OVERMIND_PROJECT_ID={env_project!r} does not match any accessible project. "
+            f"Available slugs: {slugs}"
         )
 
     if len(results) == 1:
@@ -355,8 +386,8 @@ def resolve_project_id(client: OvermindClient | None = None) -> str:
     candidates = [(str(p.id), getattr(p, "slug", "") or getattr(p, "name", "")) for p in results]
     listed = ", ".join(f"{slug or '?'}={pid}" for pid, slug in candidates)
     raise ProjectResolutionError(
-        "OVERMIND_API_KEY can access multiple projects — use a project-scoped key "
-        f"to avoid ambiguity. Candidates: {listed}",
+        "OVERMIND_API_KEY can access multiple projects — set OVERMIND_PROJECT_ID "
+        f"(UUID or slug) to disambiguate, or use a project-scoped key. Candidates: {listed}",
         candidates=candidates,
     )
 
@@ -636,9 +667,25 @@ def _create_job(
     num_iterations: int,
     candidates_per_iteration: int,
 ) -> str | None:
-    """Create a Job record and return its UUID string, or None on failure."""
+    """Create a Job record and return its UUID string, or None on failure.
+
+    The backend silently orphans Jobs whose POST body omits ``project`` —
+    the resulting row never surfaces in project-scoped lists or by-id GETs,
+    so ``overmind optimize`` looks like it created a Job (201 Created) but
+    the UI shows nothing. Pinning ``project`` via :func:`resolve_project_id`
+    binds the Job to the correct project so iteration spans actually attach.
+    """
     try:
+        project_id: UUID | None = None
+        try:
+            project_id = UUID(resolve_project_id(client))
+        except ProjectResolutionError:
+            logger.warning(
+                "_create_job: could not resolve project; Job will be created "
+                "without project binding and may not appear in the UI."
+            )
         req = JobRequest(
+            project=project_id,
             agent=UUID(agent_id),
             status=JobStatusEnum.RUNNING,
             analyzer_model=analyzer_model[:128],
@@ -647,7 +694,10 @@ def _create_job(
             data_source="dataset",
         )
         job = client.jobs_create(job_request=req)
-        logger.info(f"_create_job: created job id={job.id} agent_id={agent_id} iterations={num_iterations}")
+        logger.info(
+            f"_create_job: created job id={job.id} agent_id={agent_id} "
+            f"project_id={project_id} iterations={num_iterations}"
+        )
         return str(job.id)
     except Exception:
         logger.exception(f"_create_job: failed to create job for agent_id={agent_id}")
@@ -736,7 +786,16 @@ class ApiReporter:
         num_iterations: int,
         candidates_per_iteration: int,
     ) -> ApiReporter | None:
-        """Build a reporter if the API is configured.  Returns None otherwise."""
+        """Build a reporter if the API is configured.  Returns None otherwise.
+
+        .. deprecated::
+            Eagerly creates a ``Job`` row via REST. The OTLP ingest pipeline
+            cannot retroactively attach span-derived ``baseline_score`` /
+            iteration rows to a REST-created Job whose UUID it did not mint
+            itself, so callers using this path see an empty Job in the UI.
+            Prefer :meth:`attach_to_job` and let the OTLP root span create
+            the Job from a locally-generated UUID.
+        """
         client = get_client()
         if not client or not agent_id:
             return None
@@ -751,6 +810,31 @@ class ApiReporter:
         if not job_id:
             return None
 
+        return cls(client, agent_id, job_id)
+
+    @classmethod
+    def attach_to_job(
+        cls,
+        agent_id: str,
+        job_id: str,
+    ) -> ApiReporter | None:
+        """Build a reporter for an existing or about-to-be-OTLP-created Job.
+
+        Use when the caller mints ``job_id`` locally and tags the workflow
+        root span with ``attrs.JOB_ID = job_id`` — the backend's OTLP ingest
+        will then create the ``Job`` row from the span (with project context
+        inherited from the OTel resource) and bind every subsequent span
+        carrying the same ``JOB_ID`` to it. ``baseline_score``,
+        ``current_iteration``, and ``JobIteration`` rows populate from span
+        attributes, not from REST writes. The reporter's :meth:`on_complete`
+        / :meth:`on_failed` PATCH the same row by UUID for terminal stamps
+        (``best_agent_code``, ``report_markdown``).
+
+        Returns ``None`` when the API is not configured.
+        """
+        client = get_client()
+        if not client or not agent_id or not job_id:
+            return None
         return cls(client, agent_id, job_id)
 
     @property

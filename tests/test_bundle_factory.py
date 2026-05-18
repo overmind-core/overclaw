@@ -358,114 +358,137 @@ class TestNestedPackageResolution:
 
 
 # ---------------------------------------------------------------------------
-# context_scope wiring
+# Legacy context_paths migration via apply_eval_spec_scope
 # ---------------------------------------------------------------------------
 #
-# ``scope.context_paths`` in eval_spec.json is supposed to materialise
-# read-only context files into the bundle (and into candidate
-# worktrees). Earlier versions stopped at ``Config`` —
-# ``build_agent_bundle`` never forwarded ``cfg.context_scope`` to
-# ``AgentBundle.from_entry_point``'s ``prefetched_files`` slot. These
-# tests pin the end-to-end behaviour so the field stays live.
+# ``scope.context_paths`` was the user-facing "advisory read-only" knob
+# in older eval_spec.json files. It is now collapsed into
+# ``scope.read_only_paths`` (strictly safer: enforced at accept time)
+# via a migration shim in :func:`apply_eval_spec_scope`. These tests
+# exercise the legacy field end-to-end through the spec loader and
+# confirm the files land in the bundle with the right editability.
 
 
-class TestContextScopeWiring:
-    def test_single_file_in_context_scope_is_bundled(self, project: Path):
+class TestContextPathsLegacyMigration:
+    def _spec(self, **scope) -> dict:
+        return {
+            "scope": scope,
+            "input_schema": {"x": {"type": "text"}},
+            "output_fields": {"y": {"type": "text"}},
+        }
+
+    def test_single_file_in_context_paths_is_bundled(self, project: Path):
+        from overmind.optimize.config import apply_eval_spec_scope
+
         (project / "policies.md").write_text("# Policies\nbe nice\n")
-        cfg = _make_config(
-            project,
-            optimizable_scope=["agent_logic.py"],
-            context_scope=["policies.md"],
+        cfg = _make_config(project)
+        apply_eval_spec_scope(
+            cfg,
+            self._spec(
+                optimizable_paths=["agent_logic.py"],
+                context_paths=["policies.md"],
+            ),
         )
         bundle = build_agent_bundle(cfg)
         assert bundle is not None
         assert "policies.md" in bundle.original_files
         assert bundle.original_files["policies.md"].startswith("# Policies")
 
-    def test_context_scope_files_are_not_optimizable(self, project: Path):
-        """``context_paths`` is advisory: include the file, but candidates
-        shouldn't see it as editable."""
+    def test_context_paths_files_become_enforced_read_only(self, project: Path):
+        """Migrated context_paths are now in ``read_only_files`` (enforced
+        at accept time), strictly safer than the previous advisory
+        behaviour."""
+        from overmind.optimize.config import apply_eval_spec_scope
+
         (project / "policies.md").write_text("rules\n")
-        cfg = _make_config(
-            project,
-            optimizable_scope=["agent_logic.py"],
-            context_scope=["policies.md"],
+        cfg = _make_config(project)
+        apply_eval_spec_scope(
+            cfg,
+            self._spec(
+                optimizable_paths=["agent_logic.py"],
+                context_paths=["policies.md"],
+            ),
         )
         bundle = build_agent_bundle(cfg)
         assert bundle is not None
+        assert "policies.md" in bundle.read_only_files
         assert "policies.md" not in bundle.optimizable_files
 
-    def test_glob_pattern_expanded(self, project: Path):
+    def test_migration_emits_deprecation_warning(
+        self, project: Path, caplog
+    ):
+        import logging
+
+        from overmind.optimize.config import apply_eval_spec_scope
+
+        caplog.set_level(logging.WARNING)
+        (project / "policies.md").write_text("rules\n")
+        cfg = _make_config(project)
+        apply_eval_spec_scope(
+            cfg,
+            self._spec(
+                optimizable_paths=["agent_logic.py"],
+                context_paths=["policies.md"],
+            ),
+        )
+        assert any(
+            "scope.context_paths is deprecated" in rec.message
+            for rec in caplog.records
+        )
+
+    def test_context_paths_glob_expanded_through_read_only(self, project: Path):
+        from overmind.optimize.config import apply_eval_spec_scope
+
         (project / "docs").mkdir()
         (project / "docs" / "a.md").write_text("A\n")
         (project / "docs" / "b.md").write_text("B\n")
-        cfg = _make_config(
-            project,
-            optimizable_scope=["agent_logic.py"],
-            context_scope=["docs/*.md"],
+        cfg = _make_config(project)
+        apply_eval_spec_scope(
+            cfg,
+            self._spec(
+                optimizable_paths=["agent_logic.py"],
+                context_paths=["docs/*.md"],
+            ),
         )
         bundle = build_agent_bundle(cfg)
         assert bundle is not None
         assert "docs/a.md" in bundle.original_files
         assert "docs/b.md" in bundle.original_files
 
-    def test_context_scope_combines_with_optimizable(self, project: Path):
-        """The two scopes are independent: context files appear alongside
-        the optimizable closure without displacing anything."""
+    def test_context_paths_combines_with_optimizable(self, project: Path):
+        from overmind.optimize.config import apply_eval_spec_scope
+
         (project / "policies.md").write_text("rules\n")
-        cfg = _make_config(
-            project,
-            optimizable_scope=["agent_logic.py"],
-            context_scope=["policies.md"],
+        cfg = _make_config(project)
+        apply_eval_spec_scope(
+            cfg,
+            self._spec(
+                optimizable_paths=["agent_logic.py"],
+                context_paths=["policies.md"],
+            ),
         )
         bundle = build_agent_bundle(cfg)
         assert bundle is not None
-        assert "entrypoint.py" in bundle.original_files  # entry survives
-        assert "agent_logic.py" in bundle.original_files  # optimizable survives
-        assert "policies.md" in bundle.original_files  # context added
+        assert "entrypoint.py" in bundle.original_files
+        assert "agent_logic.py" in bundle.original_files
+        assert "policies.md" in bundle.original_files
 
-    def test_empty_context_scope_default(self, project: Path):
-        cfg = _make_config(project, optimizable_scope=["agent_logic.py"])
-        bundle = build_agent_bundle(cfg)
-        assert bundle is not None
-        # Nothing exotic: just the BFS closure + entry + optimizable.
-        assert {"entrypoint.py", "helper.py", "agent_logic.py"} <= set(
-            bundle.original_files
-        )
+    def test_missing_context_paths_pattern_does_not_crash(self, project: Path):
+        from overmind.optimize.config import apply_eval_spec_scope
 
-    def test_missing_pattern_does_not_crash(self, project: Path):
-        """A typo'd or stale glob shouldn't break bundle construction."""
-        cfg = _make_config(
-            project,
-            optimizable_scope=["agent_logic.py"],
-            context_scope=["does/not/exist/*.md"],
+        cfg = _make_config(project)
+        apply_eval_spec_scope(
+            cfg,
+            self._spec(
+                optimizable_paths=["agent_logic.py"],
+                context_paths=["does/not/exist/*.md"],
+            ),
         )
         bundle = build_agent_bundle(cfg)
         assert bundle is not None
-        # Nothing added, nothing exploded.
         assert all(
             not p.startswith("does/not/exist") for p in bundle.original_files
         )
-
-    def test_context_scope_does_not_override_bfs_resolved_file(
-        self, project: Path
-    ):
-        """If a file is already in the bundle via BFS, listing it in
-        context_scope is a no-op — the BFS source wins. This guards
-        against accidental clobbering when authors over-declare scope."""
-        cfg = _make_config(
-            project,
-            optimizable_scope=["agent_logic.py"],
-            context_scope=["helper.py"],  # already in BFS closure
-        )
-        bundle = build_agent_bundle(cfg)
-        assert bundle is not None
-        assert "helper.py" in bundle.original_files
-        # Optimizability is decided by the BFS path, not context_scope.
-        # helper.py is reached from the entry and not in read_only_scope,
-        # so it remains in optimizable_files when optimizable_paths covers
-        # it; here only agent_logic.py is optimizable.
-        assert "helper.py" not in bundle.optimizable_files
 
 
 # ---------------------------------------------------------------------------
@@ -797,20 +820,35 @@ class TestEntryIgnoredRejected:
                 should_ignore_rel=lambda rel: rel == "entrypoint.py",
             )
 
-    def test_build_agent_bundle_returns_none_on_entry_ignore(
+    def test_build_agent_bundle_auto_promotes_entry_in_legacy_excludes(
         self, project: Path, caplog
     ):
-        cfg = _make_config(
-            project,
-            optimizable_scope=["agent_logic.py"],
-            exclude_scope=["entrypoint.py"],
-        )
+        """Listing the entry file in legacy ``scope.exclude_paths`` is
+        auto-promoted to read-only via the migration shim rather than
+        collapsing the bundle. Mirrors
+        :class:`TestRuntimeDepLegacyExcludeAutoPromotion` so all legacy
+        exclude misconfigurations converge on the same recovery."""
+        import logging
+
+        caplog.set_level(logging.WARNING)
+        cfg = _make_config(project, optimizable_scope=["agent_logic.py"])
+        cfg._legacy_exclude_paths = ["entrypoint.py"]
         bundle = build_agent_bundle(cfg)
-        assert bundle is None
+        assert bundle is not None
+        assert "entrypoint.py" in bundle.original_files
+        assert "entrypoint.py" in bundle.read_only_files
+        assert "entrypoint.py" not in bundle.optimizable_files
+        assert any(
+            "auto-promoting to read-only" in rec.message
+            for rec in caplog.records
+        )
 
     def test_non_entry_ignored_path_still_works(self, project: Path):
         """Ignoring a non-entry file (e.g. helper.py) is fine — only
-        the entry is special."""
+        the entry is special. Note that ``should_ignore_rel`` here is
+        the env-level predicate passed directly to BFS, NOT the
+        ``scope.exclude_paths`` knob (which is auto-promoted to
+        read-only — see :class:`TestRuntimeDepExcludeAutoPromotion`)."""
         # Should not raise:
         bundle = AgentBundle.from_entry_point(
             entry_path=str(project / "entrypoint.py"),
@@ -821,6 +859,128 @@ class TestEntryIgnoredRejected:
         )
         assert "entrypoint.py" in bundle.original_files
         assert "helper.py" not in bundle.original_files
+
+
+# ---------------------------------------------------------------------------
+# Legacy scope.exclude_paths on a runtime import dependency
+# ---------------------------------------------------------------------------
+#
+# Regression coverage for the silent-broken-worktree bug: when a legacy
+# eval_spec adds a transitive runtime import of the entry (e.g. a
+# sibling ``memory_store.py``) to ``scope.exclude_paths``, the BFS used
+# to drop the file from the bundle. Candidate worktrees then lacked
+# the module and every test case failed at ``importlib.exec_module``
+# time with ``ModuleNotFoundError``. The optimizer recorded a
+# uniformly-low (but non-zero, because some signals default-fill)
+# score across every candidate and surfaced no targeted diagnostic —
+# the run looked like "the analyzer plans aren't helping" when in
+# fact every candidate was crashing at import.
+#
+# The field is now deprecated. :func:`apply_eval_spec_scope` stashes
+# any legacy ``exclude_paths`` entries on ``cfg._legacy_exclude_paths``;
+# :func:`build_agent_bundle` then auto-promotes BFS-reachable matches
+# to read-only with a per-match warning. These tests pin that
+# migration behaviour so old specs keep working while the user
+# migrates them.
+
+
+class TestRuntimeDepLegacyExcludeAutoPromotion:
+    def test_runtime_dep_in_legacy_excludes_is_still_bundled(
+        self, project: Path
+    ):
+        """The entry imports ``helper``. A legacy ``exclude_paths``
+        entry for ``helper.py`` must NOT drop it from the bundle —
+        otherwise every candidate worktree would crash at import."""
+        cfg = _make_config(project, optimizable_scope=["agent_logic.py"])
+        cfg._legacy_exclude_paths = ["helper.py"]
+        bundle = build_agent_bundle(cfg)
+        assert bundle is not None
+        assert "helper.py" in bundle.original_files, (
+            "Runtime import dep was dropped by legacy exclude_paths — "
+            "candidate worktrees would ModuleNotFoundError at evaluate time."
+        )
+
+    def test_runtime_dep_in_legacy_excludes_is_not_editable(
+        self, project: Path
+    ):
+        """Auto-promotion preserves user intent: the file is in the
+        bundle for runtime, but candidates may not edit it."""
+        cfg = _make_config(
+            project,
+            optimizable_scope=["agent_logic.py", "helper.py"],
+        )
+        cfg._legacy_exclude_paths = ["helper.py"]
+        bundle = build_agent_bundle(cfg)
+        assert bundle is not None
+        assert "helper.py" in bundle.read_only_files
+        assert "helper.py" not in bundle.optimizable_files
+
+    def test_auto_promotion_warning_names_offending_glob(
+        self, project: Path, caplog
+    ):
+        """The warning must point at the exact glob the user wrote so
+        they can find it in ``eval_spec.json`` without scrolling."""
+        import logging
+
+        caplog.set_level(logging.WARNING)
+        cfg = _make_config(project, optimizable_scope=["agent_logic.py"])
+        cfg._legacy_exclude_paths = ["helper.py"]
+        build_agent_bundle(cfg)
+        relevant = [
+            rec
+            for rec in caplog.records
+            if "auto-promoting to read-only" in rec.message
+        ]
+        assert relevant, "Expected an auto-promotion warning"
+        assert any("'helper.py'" in rec.message for rec in relevant)
+
+    def test_glob_pattern_matches_nested_runtime_dep(self, tmp_path: Path):
+        """Legacy ``scope.exclude_paths`` typically uses globs like
+        ``python-backend/memory_store.py``. The auto-promotion must
+        respect glob semantics, not just exact-path equality."""
+        (tmp_path / OVERMIND_DIR_NAME).mkdir(parents=True)
+        backend = tmp_path / "python-backend"
+        backend.mkdir()
+        (backend / "__init__.py").write_text("")
+        (backend / "memory_store.py").write_text("class MemoryStore: pass\n")
+        (tmp_path / "entrypoint.py").write_text(
+            textwrap.dedent("""\
+            import sys
+            from pathlib import Path
+            _HERE = Path(__file__).resolve().parent
+            sys.path.insert(0, str(_HERE / "python-backend"))
+            from memory_store import MemoryStore
+
+            def run(input_data: dict) -> dict:
+                return {"ok": isinstance(MemoryStore(), MemoryStore)}
+            """)
+        )
+        cfg = Config(
+            agent_name="t",
+            agent_path=str(tmp_path / "entrypoint.py"),
+            entrypoint_fn="run",
+        )
+        cfg.optimizable_scope = ["entrypoint.py"]
+        cfg._legacy_exclude_paths = ["python-backend/memory_store.py"]
+        bundle = build_agent_bundle(cfg)
+        assert bundle is not None
+        assert "python-backend/memory_store.py" in bundle.original_files
+        assert "python-backend/memory_store.py" in bundle.read_only_files
+        assert "python-backend/memory_store.py" not in bundle.optimizable_files
+
+    def test_non_runtime_file_in_legacy_excludes_is_not_in_bundle(
+        self, project: Path
+    ):
+        """A file matched by legacy ``exclude_paths`` that is NOT
+        BFS-reachable (and not in any other scope) doesn't end up in
+        the bundle — it was never going to. We only widen the
+        BFS-reached set; non-reached entries become no-ops."""
+        (project / "untouched_helper.py").write_text("VALUE = 99\n")
+        cfg = _make_config(project, optimizable_scope=["agent_logic.py"])
+        cfg._legacy_exclude_paths = ["untouched_helper.py"]
+        bundle = build_agent_bundle(cfg)
+        assert bundle is not None
+        assert "untouched_helper.py" not in bundle.original_files
 
 
 # ---------------------------------------------------------------------------

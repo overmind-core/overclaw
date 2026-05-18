@@ -328,15 +328,21 @@ class TestSearchPathsInjection:
 
 
 # ---------------------------------------------------------------------------
-# Reconcile entry placement across exclude/read_only
+# Two-scope output shape + legacy collapse
 # ---------------------------------------------------------------------------
 #
-# The LLM occasionally puts the entry in both ``exclude_paths`` (because
-# the docstring says "not optimization material") and the resolver then
-# refuses to ignore the entry, collapsing the bundle. ``_build_spec``
-# reconciles by moving the entry from ``exclude_paths`` into
-# ``read_only_paths`` — the correct field for "this file must be
-# present in the bundle but candidates can't edit it."
+# The spec generator always emits two scope lists
+# (``optimizable_paths`` + ``read_only_paths``). The LLM occasionally
+# still proposes the older ``context_paths`` / ``exclude_paths`` shape,
+# so ``_build_spec`` collapses those into the two-scope form:
+# ``context_paths`` merges into ``read_only_paths``; ``exclude_paths``
+# is dropped on the floor (project-level drops belong in
+# ``.overmindignore`` or are already covered by Overmind's hard-coded
+# skip list).
+#
+# It also auto-adds the entry file to ``read_only_paths`` so the
+# accept step diff-checks prevent candidates from editing the
+# registered harness even when the analyzer forgets to declare it.
 
 
 def _trivial_entry_project(tmp_path: Path) -> tuple[Path, Path]:
@@ -348,49 +354,75 @@ def _trivial_entry_project(tmp_path: Path) -> tuple[Path, Path]:
     return tmp_path, entry
 
 
-class TestEntryExcludeReadOnlyReconcile:
-    def test_entry_in_exclude_moves_to_read_only(self, tmp_path):
+class TestTwoScopeOutputShape:
+    def test_legacy_context_paths_collapse_into_read_only(self, tmp_path):
+        """``context_paths`` is no longer emitted. Anything the LLM
+        puts there is merged into ``read_only_paths`` (strictly safer:
+        enforced at accept time)."""
         root, entry = _trivial_entry_project(tmp_path)
         analysis = {
             "_agent_path": str(entry),
             "_entry_rel": "entry.py",
             "scope": {
                 "optimizable_paths": ["agent_logic.py"],
-                "exclude_paths": ["entry.py", "tests/**"],
+                "context_paths": ["README.md", "policies.md"],
             },
         }
         spec = _build_spec(analysis, {}, {}, {}, 20)
-        # Entry no longer in exclude.
-        assert "entry.py" not in spec["scope"].get("exclude_paths", [])
-        # Unrelated excludes untouched.
-        assert "tests/**" in spec["scope"]["exclude_paths"]
-        # Entry now in read_only.
+        assert "context_paths" not in spec["scope"]
+        assert "README.md" in spec["scope"]["read_only_paths"]
+        assert "policies.md" in spec["scope"]["read_only_paths"]
+
+    def test_legacy_exclude_paths_are_dropped(self, tmp_path):
+        """``exclude_paths`` is no longer emitted. Project-level drops
+        belong in ``.overmindignore``; Overmind's hard-coded skip list
+        handles env-level cases like ``__pycache__``."""
+        root, entry = _trivial_entry_project(tmp_path)
+        analysis = {
+            "_agent_path": str(entry),
+            "_entry_rel": "entry.py",
+            "scope": {
+                "optimizable_paths": ["agent_logic.py"],
+                "exclude_paths": ["tests/**", "**/__pycache__/**"],
+            },
+        }
+        spec = _build_spec(analysis, {}, {}, {}, 20)
+        assert "exclude_paths" not in spec["scope"]
+
+    def test_entry_auto_added_to_read_only(self, tmp_path):
+        """The entry is the registered harness; the accept step
+        diff-check should prevent candidate edits even when the
+        analyzer forgets to declare it. ``_build_spec`` auto-adds."""
+        root, entry = _trivial_entry_project(tmp_path)
+        analysis = {
+            "_agent_path": str(entry),
+            "_entry_rel": "entry.py",
+            "scope": {
+                "optimizable_paths": ["agent_logic.py"],
+            },
+        }
+        spec = _build_spec(analysis, {}, {}, {}, 20)
         assert "entry.py" in spec["scope"]["read_only_paths"]
 
-    def test_entry_in_optimizable_and_exclude_strips_only_exclude(
-        self, tmp_path
-    ):
-        """Single-file agent edge case: the entry IS the agent under test
-        AND the LLM also (incorrectly) put it in exclude. Strip from
-        exclude, leave in optimizable, do NOT add to read_only — the
-        candidate must be free to edit it."""
+    def test_entry_in_optimizable_is_left_editable(self, tmp_path):
+        """Single-file agent edge case: the entry IS the agent under
+        test. Don't add it to read_only — the candidate must be free
+        to edit it."""
         root, entry = _trivial_entry_project(tmp_path)
         analysis = {
             "_agent_path": str(entry),
             "_entry_rel": "entry.py",
             "scope": {
                 "optimizable_paths": ["entry.py"],
-                "exclude_paths": ["entry.py"],
             },
         }
         spec = _build_spec(analysis, {}, {}, {}, 20)
-        assert "entry.py" not in spec["scope"].get("exclude_paths", [])
         assert "entry.py" in spec["scope"]["optimizable_paths"]
         assert "entry.py" not in spec["scope"].get("read_only_paths", [])
 
     def test_clean_spec_unchanged(self, tmp_path):
-        """When the LLM gets it right (entry in read_only, not in
-        exclude), the post-process is a no-op for these fields."""
+        """When the LLM emits the new two-scope shape correctly, the
+        post-process is a no-op for these fields."""
         root, entry = _trivial_entry_project(tmp_path)
         analysis = {
             "_agent_path": str(entry),
@@ -398,12 +430,13 @@ class TestEntryExcludeReadOnlyReconcile:
             "scope": {
                 "optimizable_paths": ["agent/**/*.py"],
                 "read_only_paths": ["entry.py"],
-                "exclude_paths": ["tests/**"],
             },
         }
         spec = _build_spec(analysis, {}, {}, {}, 20)
         assert spec["scope"]["read_only_paths"] == ["entry.py"]
-        assert spec["scope"]["exclude_paths"] == ["tests/**"]
+        assert spec["scope"]["optimizable_paths"] == ["agent/**/*.py"]
+        assert "context_paths" not in spec["scope"]
+        assert "exclude_paths" not in spec["scope"]
 
 
 # ---------------------------------------------------------------------------
