@@ -18,12 +18,13 @@ import re  # noqa: F401
 import json
 
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 from typing import Any, ClassVar, Dict, List, Optional
 from typing_extensions import Annotated
 from uuid import UUID
 from overmind.openapi_client.models.datapoint import Datapoint
-from overmind.openapi_client.models.source_enum import SourceEnum
+from overmind.openapi_client.models.dataset_snapshot import DatasetSnapshot
+from overmind.openapi_client.models.dataset_source_enum import DatasetSourceEnum
 from typing import Optional, Set
 from typing_extensions import Self
 
@@ -32,17 +33,21 @@ class Dataset(BaseModel):
     Dataset
     """ # noqa: E501
     id: UUID
-    agent: UUID
+    agent: Optional[UUID] = None
+    project: Optional[UUID] = None
     version: StrictInt
     name: Optional[Annotated[str, Field(strict=True, max_length=255)]] = None
-    source: Optional[SourceEnum] = None
+    source: Optional[DatasetSourceEnum] = None
     generator_model: Optional[Annotated[str, Field(strict=True, max_length=128)]] = None
     policy_hash: Optional[Annotated[str, Field(strict=True, max_length=64)]] = None
     num_datapoints: StrictInt
     metadata: Optional[Any] = None
-    datapoints: List[Datapoint]
+    locked: StrictBool
+    is_in_use: StrictBool
+    datapoints: Optional[List[Datapoint]] = None
+    snapshots: List[DatasetSnapshot]
     created_at: datetime
-    __properties: ClassVar[List[str]] = ["id", "agent", "version", "name", "source", "generator_model", "policy_hash", "num_datapoints", "metadata", "datapoints", "created_at"]
+    __properties: ClassVar[List[str]] = ["id", "agent", "project", "version", "name", "source", "generator_model", "policy_hash", "num_datapoints", "metadata", "locked", "is_in_use", "datapoints", "snapshots", "created_at"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -78,11 +83,17 @@ class Dataset(BaseModel):
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
         """
         excluded_fields: Set[str] = set([
             "id",
             "version",
             "num_datapoints",
+            "locked",
+            "is_in_use",
+            "snapshots",
             "created_at",
         ])
 
@@ -98,6 +109,23 @@ class Dataset(BaseModel):
                 if _item_datapoints:
                     _items.append(_item_datapoints.to_dict())
             _dict['datapoints'] = _items
+        # override the default output from pydantic by calling `to_dict()` of each item in snapshots (list)
+        _items = []
+        if self.snapshots:
+            for _item_snapshots in self.snapshots:
+                if _item_snapshots:
+                    _items.append(_item_snapshots.to_dict())
+            _dict['snapshots'] = _items
+        # set to None if agent (nullable) is None
+        # and model_fields_set contains the field
+        if self.agent is None and "agent" in self.model_fields_set:
+            _dict['agent'] = None
+
+        # set to None if project (nullable) is None
+        # and model_fields_set contains the field
+        if self.project is None and "project" in self.model_fields_set:
+            _dict['project'] = None
+
         # set to None if metadata (nullable) is None
         # and model_fields_set contains the field
         if self.metadata is None and "metadata" in self.model_fields_set:
@@ -117,6 +145,7 @@ class Dataset(BaseModel):
         _obj = cls.model_validate({
             "id": obj.get("id"),
             "agent": obj.get("agent"),
+            "project": obj.get("project"),
             "version": obj.get("version"),
             "name": obj.get("name"),
             "source": obj.get("source"),
@@ -124,7 +153,10 @@ class Dataset(BaseModel):
             "policy_hash": obj.get("policy_hash"),
             "num_datapoints": obj.get("num_datapoints"),
             "metadata": obj.get("metadata"),
+            "locked": obj.get("locked"),
+            "is_in_use": obj.get("is_in_use"),
             "datapoints": [Datapoint.from_dict(_item) for _item in obj["datapoints"]] if obj.get("datapoints") is not None else None,
+            "snapshots": [DatasetSnapshot.from_dict(_item) for _item in obj["snapshots"]] if obj.get("snapshots") is not None else None,
             "created_at": obj.get("created_at")
         })
         return _obj

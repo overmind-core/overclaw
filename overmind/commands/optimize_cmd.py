@@ -66,8 +66,32 @@ def main(
     scope_globs: list[str] | None = None,
     max_files: int | None = None,
     max_chars: int | None = None,
+    local: bool = False,
 ) -> None:
-    logger.info(f"optimize: start agent={agent_name} fast={fast}")
+    logger.info(f"optimize: start agent={agent_name} fast={fast} local={local}")
+
+    if not local:
+        from overmind.client import get_project_id, is_configured
+        from overmind.workflow.runner import run_server_workflow
+
+        if is_configured() and get_project_id():
+            config: dict = {"agent_name": agent_name}
+            if scope_globs:
+                config["scope_globs"] = list(scope_globs)
+            if max_files is not None:
+                config["max_files"] = max_files
+            if max_chars is not None:
+                config["max_chars"] = max_chars
+            if fast:
+                config["max_iterations"] = 3
+                config["dataset_size"] = 5
+            run_server_workflow(
+                agent_name,
+                "optimize_full",
+                config=config,
+                fast=fast,
+            )
+            return
 
     config = collect_config(
         agent_name=agent_name,

@@ -32,7 +32,7 @@ class JobIteration(BaseModel):
     """ # noqa: E501
     id: UUID
     iteration_name: Annotated[str, Field(strict=True, max_length=64)]
-    order: Optional[Annotated[int, Field(le=9223372036854775807, strict=True, ge=-9223372036854775808)]] = None
+    order: Optional[Annotated[int, Field(le=2147483647, strict=True, ge=-2147483648)]] = None
     avg_score: Optional[Union[StrictFloat, StrictInt]] = None
     status: Optional[JobIterationStatusEnum] = None
     description: Optional[StrictStr] = None

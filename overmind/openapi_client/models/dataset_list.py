@@ -18,10 +18,10 @@ import re  # noqa: F401
 import json
 
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
+from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt, StrictStr
 from typing import Any, ClassVar, Dict, List, Optional
 from uuid import UUID
-from overmind.openapi_client.models.source_enum import SourceEnum
+from overmind.openapi_client.models.dataset_source_enum import DatasetSourceEnum
 from typing import Optional, Set
 from typing_extensions import Self
 
@@ -30,16 +30,20 @@ class DatasetList(BaseModel):
     Lightweight serializer used for list responses (no datapoints).
     """ # noqa: E501
     id: UUID
-    agent: UUID
+    agent: Optional[UUID]
+    project: Optional[UUID]
     version: StrictInt
     name: StrictStr
-    source: SourceEnum
+    source: DatasetSourceEnum
     generator_model: StrictStr
     policy_hash: StrictStr
     num_datapoints: StrictInt
     metadata: Optional[Any]
+    locked: StrictBool
+    is_in_use: StrictBool
+    snapshot_count: StrictInt
     created_at: datetime
-    __properties: ClassVar[List[str]] = ["id", "agent", "version", "name", "source", "generator_model", "policy_hash", "num_datapoints", "metadata", "created_at"]
+    __properties: ClassVar[List[str]] = ["id", "agent", "project", "version", "name", "source", "generator_model", "policy_hash", "num_datapoints", "metadata", "locked", "is_in_use", "snapshot_count", "created_at"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -81,10 +85,15 @@ class DatasetList(BaseModel):
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
         """
         excluded_fields: Set[str] = set([
             "id",
             "agent",
+            "project",
             "version",
             "name",
             "source",
@@ -92,6 +101,9 @@ class DatasetList(BaseModel):
             "policy_hash",
             "num_datapoints",
             "metadata",
+            "locked",
+            "is_in_use",
+            "snapshot_count",
             "created_at",
         ])
 
@@ -100,6 +112,16 @@ class DatasetList(BaseModel):
             exclude=excluded_fields,
             exclude_none=True,
         )
+        # set to None if agent (nullable) is None
+        # and model_fields_set contains the field
+        if self.agent is None and "agent" in self.model_fields_set:
+            _dict['agent'] = None
+
+        # set to None if project (nullable) is None
+        # and model_fields_set contains the field
+        if self.project is None and "project" in self.model_fields_set:
+            _dict['project'] = None
+
         # set to None if metadata (nullable) is None
         # and model_fields_set contains the field
         if self.metadata is None and "metadata" in self.model_fields_set:
@@ -119,6 +141,7 @@ class DatasetList(BaseModel):
         _obj = cls.model_validate({
             "id": obj.get("id"),
             "agent": obj.get("agent"),
+            "project": obj.get("project"),
             "version": obj.get("version"),
             "name": obj.get("name"),
             "source": obj.get("source"),
@@ -126,6 +149,9 @@ class DatasetList(BaseModel):
             "policy_hash": obj.get("policy_hash"),
             "num_datapoints": obj.get("num_datapoints"),
             "metadata": obj.get("metadata"),
+            "locked": obj.get("locked"),
+            "is_in_use": obj.get("is_in_use"),
+            "snapshot_count": obj.get("snapshot_count"),
             "created_at": obj.get("created_at")
         })
         return _obj

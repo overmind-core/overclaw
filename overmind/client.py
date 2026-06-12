@@ -48,18 +48,33 @@ from overmind.core.constants import DEFAULT_BASE_URL
 from overmind.openapi_client import ApiClient, Configuration
 from overmind.openapi_client.api.agents_api import AgentsApi
 from overmind.openapi_client.api.auth_api import AuthApi
+from overmind.openapi_client.api.cli_api import CliApi
 from overmind.openapi_client.api.datasets_api import DatasetsApi
 from overmind.openapi_client.api.job_iterations_api import JobIterationsApi
 from overmind.openapi_client.api.jobs_api import JobsApi
 from overmind.openapi_client.api.projects_api import ProjectsApi
 from overmind.openapi_client.api.traces_api import TracesApi
+from overmind.openapi_client.api.workflow_runs_api import WorkflowRunsApi
 from overmind.openapi_client.models.agent_request import AgentRequest
+from overmind.openapi_client.models.client_command_result_request import (
+    ClientCommandResultRequest,
+)
+from overmind.openapi_client.models.client_session_create_request import (
+    ClientSessionCreateRequest,
+)
 from overmind.openapi_client.models.datapoint_request import DatapointRequest
 from overmind.openapi_client.models.dataset_request import DatasetRequest
 from overmind.openapi_client.models.job_status_enum import JobStatusEnum
 from overmind.openapi_client.models.patched_agent_request import PatchedAgentRequest
 from overmind.openapi_client.models.patched_job_request import PatchedJobRequest
 from overmind.openapi_client.models.source_enum import SourceEnum
+from overmind.openapi_client.models.user_response_request import UserResponseRequest
+from overmind.openapi_client.models.workflow_artifact_create_request import (
+    WorkflowArtifactCreateRequest,
+)
+from overmind.openapi_client.models.workflow_run_create_request import (
+    WorkflowRunCreateRequest,
+)
 
 logger = logging.getLogger("overmind.client")
 
@@ -129,11 +144,13 @@ def flush_pending_api_updates(timeout: float = 8.0) -> None:
 class OvermindClient(
     AgentsApi,
     AuthApi,
+    CliApi,
     DatasetsApi,
     JobIterationsApi,
     JobsApi,
     ProjectsApi,
     TracesApi,
+    WorkflowRunsApi,
 ):
     """Convenience facade over the generated OpenAPI client.
 
@@ -212,6 +229,121 @@ class OvermindClient(
             metadata=metadata,
             name=name,
             make_active=make_active,
+        )
+
+    # ------------------------------------------------------------------
+    # Workflow / CLI daemon
+    # ------------------------------------------------------------------
+
+    def _api_json_post(self, path: str, body: dict) -> dict:
+        """POST JSON to an API path (for bodies with fields missing from OpenAPI models)."""
+        import json
+
+        url = self.api_client.configuration.host.rstrip("/") + path
+        headers = {
+            "Authorization": f"Bearer {self.api_client.configuration.api_key}",
+            "X-Api-Key": self.api_client.configuration.api_key or "",
+            "Content-Type": "application/json",
+        }
+        resp = self.api_client.rest_client.request(
+            method="POST",
+            url=url,
+            headers=headers,
+            body=json.dumps(body),
+        )
+        if resp.status >= 400:
+            raise RuntimeError(f"API POST {path} failed ({resp.status}): {resp.data}")
+        if not resp.data:
+            return {}
+        return json.loads(resp.data)
+
+    def create_cli_session(
+        self,
+        project_id: str,
+        *,
+        hostname: str = "",
+        cli_version: str = "",
+        agent_name: str = "",
+    ) -> Any:
+        body = ClientSessionCreateRequest(
+            hostname=hostname,
+            cli_version=cli_version,
+            agent_name=agent_name,
+        ).to_dict()
+        body["project"] = project_id
+        data = self._api_json_post("/api/cli/sessions/", body)
+        from overmind.openapi_client.models.client_session import ClientSession
+
+        return ClientSession.from_dict(data)
+
+    def start_workflow_run(
+        self,
+        project_id: str,
+        *,
+        workflow_name: str,
+        agent_id: str | None = None,
+        client_session_id: str | None = None,
+        config: dict | None = None,
+    ) -> Any:
+        body = WorkflowRunCreateRequest(
+            workflow_name=workflow_name,
+            agent_id=agent_id,
+            client_session_id=client_session_id,
+            config=config or {},
+        ).to_dict()
+        body["project"] = project_id
+        data = self._api_json_post("/api/workflow-runs/", body)
+        from overmind.openapi_client.models.workflow_run import WorkflowRun
+
+        return WorkflowRun.from_dict(data)
+
+    def submit_workflow_user_response(
+        self,
+        run_id: str,
+        *,
+        approved: bool = True,
+        feedback: dict | None = None,
+    ) -> Any:
+        return self.workflow_runs_user_response_create(
+            id=run_id,
+            user_response_request=UserResponseRequest(
+                approved=approved,
+                feedback=feedback or {},
+            ),
+        )
+
+    def submit_command_result(
+        self,
+        command_id: str,
+        *,
+        success: bool,
+        result: dict | None = None,
+        error: str = "",
+    ) -> Any:
+        return self.cli_commands_result_create(
+            id=command_id,
+            client_command_result_request=ClientCommandResultRequest(
+                success=success,
+                result=result or {},
+                error=error,
+            ),
+        )
+
+    def upload_workflow_artifact(
+        self,
+        run_id: str,
+        *,
+        kind: str,
+        content: dict,
+        name: str = "",
+    ) -> Any:
+        return self.workflow_runs_artifacts_create(
+            id=run_id,
+            workflow_artifact_create_request=WorkflowArtifactCreateRequest(
+                kind=kind,
+                content=content,
+                name=name,
+            ),
         )
 
 

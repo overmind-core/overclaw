@@ -19,8 +19,9 @@ import json
 
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, StrictStr
-from typing import Any, ClassVar, Dict, List
+from typing import Any, ClassVar, Dict, List, Optional
 from uuid import UUID
+from overmind.openapi_client.models.category_enum import CategoryEnum
 from typing import Optional, Set
 from typing_extensions import Self
 
@@ -29,9 +30,10 @@ class FeedbackCreate(BaseModel):
     FeedbackCreate
     """ # noqa: E501
     id: UUID
+    category: Optional[CategoryEnum] = None
     feedback: StrictStr
     created_at: datetime
-    __properties: ClassVar[List[str]] = ["id", "feedback", "created_at"]
+    __properties: ClassVar[List[str]] = ["id", "category", "feedback", "created_at"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -89,6 +91,7 @@ class FeedbackCreate(BaseModel):
 
         _obj = cls.model_validate({
             "id": obj.get("id"),
+            "category": obj.get("category"),
             "feedback": obj.get("feedback"),
             "created_at": obj.get("created_at")
         })

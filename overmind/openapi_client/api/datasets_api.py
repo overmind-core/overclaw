@@ -20,10 +20,26 @@ from pydantic import Field, StrictInt, StrictStr, field_validator
 from typing import Optional
 from typing_extensions import Annotated
 from uuid import UUID
+from overmind.openapi_client.models.add_datapoints_from_traces_request import AddDatapointsFromTracesRequest
+from overmind.openapi_client.models.add_datapoints_request import AddDatapointsRequest
+from overmind.openapi_client.models.compare_schemas_request_request import CompareSchemasRequestRequest
+from overmind.openapi_client.models.compare_schemas_response import CompareSchemasResponse
 from overmind.openapi_client.models.dataset import Dataset
+from overmind.openapi_client.models.dataset_context import DatasetContext
+from overmind.openapi_client.models.dataset_eval_capabilities_response import DatasetEvalCapabilitiesResponse
+from overmind.openapi_client.models.dataset_from_traces_request import DatasetFromTracesRequest
 from overmind.openapi_client.models.dataset_request import DatasetRequest
+from overmind.openapi_client.models.dataset_schema import DatasetSchema
+from overmind.openapi_client.models.dataset_snapshot import DatasetSnapshot
+from overmind.openapi_client.models.dataset_snapshot_create_request import DatasetSnapshotCreateRequest
+from overmind.openapi_client.models.generate_evals_response import GenerateEvalsResponse
+from overmind.openapi_client.models.infer_schema_request_request import InferSchemaRequestRequest
+from overmind.openapi_client.models.open_dataset_workshop_response import OpenDatasetWorkshopResponse
 from overmind.openapi_client.models.paginated_datapoint_list import PaginatedDatapointList
+from overmind.openapi_client.models.paginated_dataset_group_list import PaginatedDatasetGroupList
 from overmind.openapi_client.models.paginated_dataset_list_list import PaginatedDatasetListList
+from overmind.openapi_client.models.paginated_dataset_snapshot_list import PaginatedDatasetSnapshotList
+from overmind.openapi_client.models.remove_datapoints_request import RemoveDatapointsRequest
 
 from overmind.openapi_client.api_client import ApiClient, RequestSerialized
 from overmind.openapi_client.api_response import ApiResponse
@@ -309,9 +325,1435 @@ class DatasetsApi:
 
 
     @validate_call
+    def datasets_add_datapoints_create(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        add_datapoints_request: AddDatapointsRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> Dataset:
+        """Append datapoints to a dataset
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param add_datapoints_request: (required)
+        :type add_datapoints_request: AddDatapointsRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_add_datapoints_create_serialize(
+            id=id,
+            add_datapoints_request=add_datapoints_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_add_datapoints_create_with_http_info(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        add_datapoints_request: AddDatapointsRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[Dataset]:
+        """Append datapoints to a dataset
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param add_datapoints_request: (required)
+        :type add_datapoints_request: AddDatapointsRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_add_datapoints_create_serialize(
+            id=id,
+            add_datapoints_request=add_datapoints_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_add_datapoints_create_without_preload_content(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        add_datapoints_request: AddDatapointsRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Append datapoints to a dataset
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param add_datapoints_request: (required)
+        :type add_datapoints_request: AddDatapointsRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_add_datapoints_create_serialize(
+            id=id,
+            add_datapoints_request=add_datapoints_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_add_datapoints_create_serialize(
+        self,
+        id,
+        add_datapoints_request,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if id is not None:
+            _path_params['id'] = id
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+        if add_datapoints_request is not None:
+            _body_params = add_datapoints_request
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+        # set the HTTP header `Content-Type`
+        if _content_type:
+            _header_params['Content-Type'] = _content_type
+        else:
+            _default_content_type = (
+                self.api_client.select_header_content_type(
+                    [
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
+                        'multipart/form-data'
+                    ]
+                )
+            )
+            if _default_content_type is not None:
+                _header_params['Content-Type'] = _default_content_type
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='POST',
+            resource_path='/api/datasets/{id}/add_datapoints/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def datasets_add_datapoints_from_traces_create(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        add_datapoints_from_traces_request: AddDatapointsFromTracesRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> Dataset:
+        """Append datapoints to a dataset, derived from traces
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param add_datapoints_from_traces_request: (required)
+        :type add_datapoints_from_traces_request: AddDatapointsFromTracesRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_add_datapoints_from_traces_create_serialize(
+            id=id,
+            add_datapoints_from_traces_request=add_datapoints_from_traces_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_add_datapoints_from_traces_create_with_http_info(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        add_datapoints_from_traces_request: AddDatapointsFromTracesRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[Dataset]:
+        """Append datapoints to a dataset, derived from traces
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param add_datapoints_from_traces_request: (required)
+        :type add_datapoints_from_traces_request: AddDatapointsFromTracesRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_add_datapoints_from_traces_create_serialize(
+            id=id,
+            add_datapoints_from_traces_request=add_datapoints_from_traces_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_add_datapoints_from_traces_create_without_preload_content(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        add_datapoints_from_traces_request: AddDatapointsFromTracesRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Append datapoints to a dataset, derived from traces
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param add_datapoints_from_traces_request: (required)
+        :type add_datapoints_from_traces_request: AddDatapointsFromTracesRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_add_datapoints_from_traces_create_serialize(
+            id=id,
+            add_datapoints_from_traces_request=add_datapoints_from_traces_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_add_datapoints_from_traces_create_serialize(
+        self,
+        id,
+        add_datapoints_from_traces_request,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if id is not None:
+            _path_params['id'] = id
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+        if add_datapoints_from_traces_request is not None:
+            _body_params = add_datapoints_from_traces_request
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+        # set the HTTP header `Content-Type`
+        if _content_type:
+            _header_params['Content-Type'] = _content_type
+        else:
+            _default_content_type = (
+                self.api_client.select_header_content_type(
+                    [
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
+                        'multipart/form-data'
+                    ]
+                )
+            )
+            if _default_content_type is not None:
+                _header_params['Content-Type'] = _default_content_type
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='POST',
+            resource_path='/api/datasets/{id}/add_datapoints_from_traces/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def datasets_compare_schemas_create(
+        self,
+        compare_schemas_request_request: CompareSchemasRequestRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> CompareSchemasResponse:
+        """Compare schemas across multiple files
+
+        Infer each uploaded file's native schema and report whether the files are compatible enough to merge into one dataset. Returns `schema_mismatch: true` with a human-readable message + per-field detail when the files' schemas differ significantly (different shapes, low column overlap, or conflicting column types). Never blocks the upload — it just lets the UX warn the user before they proceed.
+
+        :param compare_schemas_request_request: (required)
+        :type compare_schemas_request_request: CompareSchemasRequestRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_compare_schemas_create_serialize(
+            compare_schemas_request_request=compare_schemas_request_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "CompareSchemasResponse",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_compare_schemas_create_with_http_info(
+        self,
+        compare_schemas_request_request: CompareSchemasRequestRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[CompareSchemasResponse]:
+        """Compare schemas across multiple files
+
+        Infer each uploaded file's native schema and report whether the files are compatible enough to merge into one dataset. Returns `schema_mismatch: true` with a human-readable message + per-field detail when the files' schemas differ significantly (different shapes, low column overlap, or conflicting column types). Never blocks the upload — it just lets the UX warn the user before they proceed.
+
+        :param compare_schemas_request_request: (required)
+        :type compare_schemas_request_request: CompareSchemasRequestRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_compare_schemas_create_serialize(
+            compare_schemas_request_request=compare_schemas_request_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "CompareSchemasResponse",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_compare_schemas_create_without_preload_content(
+        self,
+        compare_schemas_request_request: CompareSchemasRequestRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Compare schemas across multiple files
+
+        Infer each uploaded file's native schema and report whether the files are compatible enough to merge into one dataset. Returns `schema_mismatch: true` with a human-readable message + per-field detail when the files' schemas differ significantly (different shapes, low column overlap, or conflicting column types). Never blocks the upload — it just lets the UX warn the user before they proceed.
+
+        :param compare_schemas_request_request: (required)
+        :type compare_schemas_request_request: CompareSchemasRequestRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_compare_schemas_create_serialize(
+            compare_schemas_request_request=compare_schemas_request_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "CompareSchemasResponse",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_compare_schemas_create_serialize(
+        self,
+        compare_schemas_request_request,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+        if compare_schemas_request_request is not None:
+            _body_params = compare_schemas_request_request
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+        # set the HTTP header `Content-Type`
+        if _content_type:
+            _header_params['Content-Type'] = _content_type
+        else:
+            _default_content_type = (
+                self.api_client.select_header_content_type(
+                    [
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
+                        'multipart/form-data'
+                    ]
+                )
+            )
+            if _default_content_type is not None:
+                _header_params['Content-Type'] = _default_content_type
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='POST',
+            resource_path='/api/datasets/compare-schemas/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def datasets_context_refresh_create(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        dataset_request: Optional[DatasetRequest] = None,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> None:
+        """Force-refresh the DatasetContext for this dataset (async)
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param dataset_request:
+        :type dataset_request: DatasetRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_context_refresh_create_serialize(
+            id=id,
+            dataset_request=dataset_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '202': None,
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_context_refresh_create_with_http_info(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        dataset_request: Optional[DatasetRequest] = None,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[None]:
+        """Force-refresh the DatasetContext for this dataset (async)
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param dataset_request:
+        :type dataset_request: DatasetRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_context_refresh_create_serialize(
+            id=id,
+            dataset_request=dataset_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '202': None,
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_context_refresh_create_without_preload_content(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        dataset_request: Optional[DatasetRequest] = None,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Force-refresh the DatasetContext for this dataset (async)
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param dataset_request:
+        :type dataset_request: DatasetRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_context_refresh_create_serialize(
+            id=id,
+            dataset_request=dataset_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '202': None,
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_context_refresh_create_serialize(
+        self,
+        id,
+        dataset_request,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if id is not None:
+            _path_params['id'] = id
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+        if dataset_request is not None:
+            _body_params = dataset_request
+
+
+
+        # set the HTTP header `Content-Type`
+        if _content_type:
+            _header_params['Content-Type'] = _content_type
+        else:
+            _default_content_type = (
+                self.api_client.select_header_content_type(
+                    [
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
+                        'multipart/form-data'
+                    ]
+                )
+            )
+            if _default_content_type is not None:
+                _header_params['Content-Type'] = _default_content_type
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='POST',
+            resource_path='/api/datasets/{id}/context/refresh/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def datasets_context_retrieve(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> DatasetContext:
+        """Retrieve the cached DatasetContext artifact
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_context_retrieve_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "DatasetContext",
+            '404': None,
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_context_retrieve_with_http_info(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[DatasetContext]:
+        """Retrieve the cached DatasetContext artifact
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_context_retrieve_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "DatasetContext",
+            '404': None,
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_context_retrieve_without_preload_content(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Retrieve the cached DatasetContext artifact
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_context_retrieve_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "DatasetContext",
+            '404': None,
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_context_retrieve_serialize(
+        self,
+        id,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if id is not None:
+            _path_params['id'] = id
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='GET',
+            resource_path='/api/datasets/{id}/context/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
     def datasets_create(
         self,
-        dataset_request: DatasetRequest,
+        dataset_request: Optional[DatasetRequest] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -327,9 +1769,9 @@ class DatasetsApi:
     ) -> Dataset:
         """Create dataset (auto-increments version per agent)
 
-        CRUD for versioned datasets.  Datapoints are never exposed directly — they can only be read via ``GET /api/datasets/{id}/datapoints/`` or created as part of ``POST /api/datasets/``. To mutate data, POST a new dataset version.
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
 
-        :param dataset_request: (required)
+        :param dataset_request:
         :type dataset_request: DatasetRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -378,7 +1820,7 @@ class DatasetsApi:
     @validate_call
     def datasets_create_with_http_info(
         self,
-        dataset_request: DatasetRequest,
+        dataset_request: Optional[DatasetRequest] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -394,9 +1836,9 @@ class DatasetsApi:
     ) -> ApiResponse[Dataset]:
         """Create dataset (auto-increments version per agent)
 
-        CRUD for versioned datasets.  Datapoints are never exposed directly — they can only be read via ``GET /api/datasets/{id}/datapoints/`` or created as part of ``POST /api/datasets/``. To mutate data, POST a new dataset version.
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
 
-        :param dataset_request: (required)
+        :param dataset_request:
         :type dataset_request: DatasetRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -445,7 +1887,7 @@ class DatasetsApi:
     @validate_call
     def datasets_create_without_preload_content(
         self,
-        dataset_request: DatasetRequest,
+        dataset_request: Optional[DatasetRequest] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -461,9 +1903,9 @@ class DatasetsApi:
     ) -> RESTResponseType:
         """Create dataset (auto-increments version per agent)
 
-        CRUD for versioned datasets.  Datapoints are never exposed directly — they can only be read via ``GET /api/datasets/{id}/datapoints/`` or created as part of ``POST /api/datasets/``. To mutate data, POST a new dataset version.
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
 
-        :param dataset_request: (required)
+        :param dataset_request:
         :type dataset_request: DatasetRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -573,6 +2015,301 @@ class DatasetsApi:
         return self.api_client.param_serialize(
             method='POST',
             resource_path='/api/datasets/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def datasets_create_snapshot_create(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        dataset_snapshot_create_request: DatasetSnapshotCreateRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> DatasetSnapshot:
+        """Create a dataset snapshot
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param dataset_snapshot_create_request: (required)
+        :type dataset_snapshot_create_request: DatasetSnapshotCreateRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_create_snapshot_create_serialize(
+            id=id,
+            dataset_snapshot_create_request=dataset_snapshot_create_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '201': "DatasetSnapshot",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_create_snapshot_create_with_http_info(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        dataset_snapshot_create_request: DatasetSnapshotCreateRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[DatasetSnapshot]:
+        """Create a dataset snapshot
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param dataset_snapshot_create_request: (required)
+        :type dataset_snapshot_create_request: DatasetSnapshotCreateRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_create_snapshot_create_serialize(
+            id=id,
+            dataset_snapshot_create_request=dataset_snapshot_create_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '201': "DatasetSnapshot",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_create_snapshot_create_without_preload_content(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        dataset_snapshot_create_request: DatasetSnapshotCreateRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Create a dataset snapshot
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param dataset_snapshot_create_request: (required)
+        :type dataset_snapshot_create_request: DatasetSnapshotCreateRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_create_snapshot_create_serialize(
+            id=id,
+            dataset_snapshot_create_request=dataset_snapshot_create_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '201': "DatasetSnapshot",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_create_snapshot_create_serialize(
+        self,
+        id,
+        dataset_snapshot_create_request,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if id is not None:
+            _path_params['id'] = id
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+        if dataset_snapshot_create_request is not None:
+            _body_params = dataset_snapshot_create_request
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+        # set the HTTP header `Content-Type`
+        if _content_type:
+            _header_params['Content-Type'] = _content_type
+        else:
+            _default_content_type = (
+                self.api_client.select_header_content_type(
+                    [
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
+                        'multipart/form-data'
+                    ]
+                )
+            )
+            if _default_content_type is not None:
+                _header_params['Content-Type'] = _default_content_type
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='POST',
+            resource_path='/api/datasets/{id}/create_snapshot/',
             path_params=_path_params,
             query_params=_query_params,
             header_params=_header_params,
@@ -940,7 +2677,7 @@ class DatasetsApi:
     ) -> None:
         """Delete dataset version
 
-        CRUD for versioned datasets.  Datapoints are never exposed directly — they can only be read via ``GET /api/datasets/{id}/datapoints/`` or created as part of ``POST /api/datasets/``. To mutate data, POST a new dataset version.
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
 
         :param id: A UUID string identifying this dataset. (required)
         :type id: UUID
@@ -1007,7 +2744,7 @@ class DatasetsApi:
     ) -> ApiResponse[None]:
         """Delete dataset version
 
-        CRUD for versioned datasets.  Datapoints are never exposed directly — they can only be read via ``GET /api/datasets/{id}/datapoints/`` or created as part of ``POST /api/datasets/``. To mutate data, POST a new dataset version.
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
 
         :param id: A UUID string identifying this dataset. (required)
         :type id: UUID
@@ -1074,7 +2811,7 @@ class DatasetsApi:
     ) -> RESTResponseType:
         """Delete dataset version
 
-        CRUD for versioned datasets.  Datapoints are never exposed directly — they can only be read via ``GET /api/datasets/{id}/datapoints/`` or created as part of ``POST /api/datasets/``. To mutate data, POST a new dataset version.
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
 
         :param id: A UUID string identifying this dataset. (required)
         :type id: UUID
@@ -1180,18 +2917,9 @@ class DatasetsApi:
 
 
     @validate_call
-    def datasets_list(
+    def datasets_eval_capabilities_retrieve(
         self,
-        agent: Optional[UUID] = None,
-        generator_model: Optional[StrictStr] = None,
-        ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
-        page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
-        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
-        search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
-        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production")] = None,
-        version: Optional[StrictInt] = None,
-        version_max: Optional[StrictInt] = None,
-        version_min: Optional[StrictInt] = None,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -1204,31 +2932,13 @@ class DatasetsApi:
         _content_type: Optional[StrictStr] = None,
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
-    ) -> PaginatedDatasetListList:
-        """List datasets
+    ) -> DatasetEvalCapabilitiesResponse:
+        """Suggest applicable evaluators/scopes for this dataset
 
-        CRUD for versioned datasets.  Datapoints are never exposed directly — they can only be read via ``GET /api/datasets/{id}/datapoints/`` or created as part of ``POST /api/datasets/``. To mutate data, POST a new dataset version.
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
 
-        :param agent:
-        :type agent: UUID
-        :param generator_model:
-        :type generator_model: str
-        :param ordering: Which field to use when ordering the results.
-        :type ordering: str
-        :param page: A page number within the paginated result set.
-        :type page: int
-        :param page_size: Number of results to return per page.
-        :type page_size: int
-        :param search: A search term.
-        :type search: str
-        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production
-        :type source: str
-        :param version:
-        :type version: int
-        :param version_max:
-        :type version_max: int
-        :param version_min:
-        :type version_min: int
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -1251,17 +2961,8 @@ class DatasetsApi:
         :return: Returns the result object.
         """ # noqa: E501
 
-        _param = self._datasets_list_serialize(
-            agent=agent,
-            generator_model=generator_model,
-            ordering=ordering,
-            page=page,
-            page_size=page_size,
-            search=search,
-            source=source,
-            version=version,
-            version_max=version_max,
-            version_min=version_min,
+        _param = self._datasets_eval_capabilities_retrieve_serialize(
+            id=id,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -1269,7 +2970,7 @@ class DatasetsApi:
         )
 
         _response_types_map: Dict[str, Optional[str]] = {
-            '200': "PaginatedDatasetListList",
+            '200': "DatasetEvalCapabilitiesResponse",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -1283,15 +2984,759 @@ class DatasetsApi:
 
 
     @validate_call
-    def datasets_list_with_http_info(
+    def datasets_eval_capabilities_retrieve_with_http_info(
         self,
-        agent: Optional[UUID] = None,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[DatasetEvalCapabilitiesResponse]:
+        """Suggest applicable evaluators/scopes for this dataset
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_eval_capabilities_retrieve_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "DatasetEvalCapabilitiesResponse",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_eval_capabilities_retrieve_without_preload_content(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Suggest applicable evaluators/scopes for this dataset
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_eval_capabilities_retrieve_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "DatasetEvalCapabilitiesResponse",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_eval_capabilities_retrieve_serialize(
+        self,
+        id,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if id is not None:
+            _path_params['id'] = id
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='GET',
+            resource_path='/api/datasets/{id}/eval-capabilities/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def datasets_from_traces_create(
+        self,
+        dataset_from_traces_request: DatasetFromTracesRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> Dataset:
+        """Create dataset from selected traces
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param dataset_from_traces_request: (required)
+        :type dataset_from_traces_request: DatasetFromTracesRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_from_traces_create_serialize(
+            dataset_from_traces_request=dataset_from_traces_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '201': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_from_traces_create_with_http_info(
+        self,
+        dataset_from_traces_request: DatasetFromTracesRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[Dataset]:
+        """Create dataset from selected traces
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param dataset_from_traces_request: (required)
+        :type dataset_from_traces_request: DatasetFromTracesRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_from_traces_create_serialize(
+            dataset_from_traces_request=dataset_from_traces_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '201': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_from_traces_create_without_preload_content(
+        self,
+        dataset_from_traces_request: DatasetFromTracesRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Create dataset from selected traces
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param dataset_from_traces_request: (required)
+        :type dataset_from_traces_request: DatasetFromTracesRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_from_traces_create_serialize(
+            dataset_from_traces_request=dataset_from_traces_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '201': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_from_traces_create_serialize(
+        self,
+        dataset_from_traces_request,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+        if dataset_from_traces_request is not None:
+            _body_params = dataset_from_traces_request
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+        # set the HTTP header `Content-Type`
+        if _content_type:
+            _header_params['Content-Type'] = _content_type
+        else:
+            _default_content_type = (
+                self.api_client.select_header_content_type(
+                    [
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
+                        'multipart/form-data'
+                    ]
+                )
+            )
+            if _default_content_type is not None:
+                _header_params['Content-Type'] = _default_content_type
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='POST',
+            resource_path='/api/datasets/from_traces/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def datasets_generate_evals_create(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> GenerateEvalsResponse:
+        """Generate grounded evaluator suggestions for this dataset
+
+        Resolves the dataset's grounding context (dataset card bundle, codebase capability bundle, latest workshop report, evaluator inventory), compiles deterministic Tier 0 evals from the cards, authors Tier 1 LLM-judge evals from the grounding pack, and returns everything as validated EvaluatorSpec suggestions plus a surface-area coverage rollup. Suggestions-first: nothing is persisted — pass checked specs to POST /api/evaluators/bulk-create/.
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_generate_evals_create_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "GenerateEvalsResponse",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_generate_evals_create_with_http_info(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[GenerateEvalsResponse]:
+        """Generate grounded evaluator suggestions for this dataset
+
+        Resolves the dataset's grounding context (dataset card bundle, codebase capability bundle, latest workshop report, evaluator inventory), compiles deterministic Tier 0 evals from the cards, authors Tier 1 LLM-judge evals from the grounding pack, and returns everything as validated EvaluatorSpec suggestions plus a surface-area coverage rollup. Suggestions-first: nothing is persisted — pass checked specs to POST /api/evaluators/bulk-create/.
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_generate_evals_create_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "GenerateEvalsResponse",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_generate_evals_create_without_preload_content(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Generate grounded evaluator suggestions for this dataset
+
+        Resolves the dataset's grounding context (dataset card bundle, codebase capability bundle, latest workshop report, evaluator inventory), compiles deterministic Tier 0 evals from the cards, authors Tier 1 LLM-judge evals from the grounding pack, and returns everything as validated EvaluatorSpec suggestions plus a surface-area coverage rollup. Suggestions-first: nothing is persisted — pass checked specs to POST /api/evaluators/bulk-create/.
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_generate_evals_create_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "GenerateEvalsResponse",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_generate_evals_create_serialize(
+        self,
+        id,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if id is not None:
+            _path_params['id'] = id
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='POST',
+            resource_path='/api/datasets/{id}/generate-evals/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def datasets_grouped_list(
+        self,
+        agent: Optional[StrictStr] = None,
         generator_model: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
         page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
+        project: Optional[StrictStr] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
-        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production")] = None,
+        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop")] = None,
         version: Optional[StrictInt] = None,
         version_max: Optional[StrictInt] = None,
         version_min: Optional[StrictInt] = None,
@@ -1307,13 +3752,13 @@ class DatasetsApi:
         _content_type: Optional[StrictStr] = None,
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
-    ) -> ApiResponse[PaginatedDatasetListList]:
-        """List datasets
+    ) -> PaginatedDatasetGroupList:
+        """List datasets grouped by logical identity
 
-        CRUD for versioned datasets.  Datapoints are never exposed directly — they can only be read via ``GET /api/datasets/{id}/datapoints/`` or created as part of ``POST /api/datasets/``. To mutate data, POST a new dataset version.
+        Returns one entry per *logical* dataset (versions sharing a name on an agent are collapsed into a single group). Each entry describes the group's latest version plus `version_count` and the latest version's `latest_score` (its most recent workshop quality score, or null). Accepts `?project=` / `?agent=` to scope the list.
 
         :param agent:
-        :type agent: UUID
+        :type agent: str
         :param generator_model:
         :type generator_model: str
         :param ordering: Which field to use when ordering the results.
@@ -1322,9 +3767,11 @@ class DatasetsApi:
         :type page: int
         :param page_size: Number of results to return per page.
         :type page_size: int
+        :param project:
+        :type project: str
         :param search: A search term.
         :type search: str
-        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production
+        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop
         :type source: str
         :param version:
         :type version: int
@@ -1354,12 +3801,13 @@ class DatasetsApi:
         :return: Returns the result object.
         """ # noqa: E501
 
-        _param = self._datasets_list_serialize(
+        _param = self._datasets_grouped_list_serialize(
             agent=agent,
             generator_model=generator_model,
             ordering=ordering,
             page=page,
             page_size=page_size,
+            project=project,
             search=search,
             source=source,
             version=version,
@@ -1372,7 +3820,114 @@ class DatasetsApi:
         )
 
         _response_types_map: Dict[str, Optional[str]] = {
-            '200': "PaginatedDatasetListList",
+            '200': "PaginatedDatasetGroupList",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_grouped_list_with_http_info(
+        self,
+        agent: Optional[StrictStr] = None,
+        generator_model: Optional[StrictStr] = None,
+        ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
+        page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
+        project: Optional[StrictStr] = None,
+        search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
+        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop")] = None,
+        version: Optional[StrictInt] = None,
+        version_max: Optional[StrictInt] = None,
+        version_min: Optional[StrictInt] = None,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[PaginatedDatasetGroupList]:
+        """List datasets grouped by logical identity
+
+        Returns one entry per *logical* dataset (versions sharing a name on an agent are collapsed into a single group). Each entry describes the group's latest version plus `version_count` and the latest version's `latest_score` (its most recent workshop quality score, or null). Accepts `?project=` / `?agent=` to scope the list.
+
+        :param agent:
+        :type agent: str
+        :param generator_model:
+        :type generator_model: str
+        :param ordering: Which field to use when ordering the results.
+        :type ordering: str
+        :param page: A page number within the paginated result set.
+        :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
+        :param project:
+        :type project: str
+        :param search: A search term.
+        :type search: str
+        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop
+        :type source: str
+        :param version:
+        :type version: int
+        :param version_max:
+        :type version_max: int
+        :param version_min:
+        :type version_min: int
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_grouped_list_serialize(
+            agent=agent,
+            generator_model=generator_model,
+            ordering=ordering,
+            page=page,
+            page_size=page_size,
+            project=project,
+            search=search,
+            source=source,
+            version=version,
+            version_max=version_max,
+            version_min=version_min,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "PaginatedDatasetGroupList",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -1386,15 +3941,16 @@ class DatasetsApi:
 
 
     @validate_call
-    def datasets_list_without_preload_content(
+    def datasets_grouped_list_without_preload_content(
         self,
-        agent: Optional[UUID] = None,
+        agent: Optional[StrictStr] = None,
         generator_model: Optional[StrictStr] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
         page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
+        project: Optional[StrictStr] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
-        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production")] = None,
+        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop")] = None,
         version: Optional[StrictInt] = None,
         version_max: Optional[StrictInt] = None,
         version_min: Optional[StrictInt] = None,
@@ -1411,12 +3967,12 @@ class DatasetsApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> RESTResponseType:
-        """List datasets
+        """List datasets grouped by logical identity
 
-        CRUD for versioned datasets.  Datapoints are never exposed directly — they can only be read via ``GET /api/datasets/{id}/datapoints/`` or created as part of ``POST /api/datasets/``. To mutate data, POST a new dataset version.
+        Returns one entry per *logical* dataset (versions sharing a name on an agent are collapsed into a single group). Each entry describes the group's latest version plus `version_count` and the latest version's `latest_score` (its most recent workshop quality score, or null). Accepts `?project=` / `?agent=` to scope the list.
 
         :param agent:
-        :type agent: UUID
+        :type agent: str
         :param generator_model:
         :type generator_model: str
         :param ordering: Which field to use when ordering the results.
@@ -1425,9 +3981,11 @@ class DatasetsApi:
         :type page: int
         :param page_size: Number of results to return per page.
         :type page_size: int
+        :param project:
+        :type project: str
         :param search: A search term.
         :type search: str
-        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production
+        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop
         :type source: str
         :param version:
         :type version: int
@@ -1457,12 +4015,13 @@ class DatasetsApi:
         :return: Returns the result object.
         """ # noqa: E501
 
-        _param = self._datasets_list_serialize(
+        _param = self._datasets_grouped_list_serialize(
             agent=agent,
             generator_model=generator_model,
             ordering=ordering,
             page=page,
             page_size=page_size,
+            project=project,
             search=search,
             source=source,
             version=version,
@@ -1475,7 +4034,7 @@ class DatasetsApi:
         )
 
         _response_types_map: Dict[str, Optional[str]] = {
-            '200': "PaginatedDatasetListList",
+            '200': "PaginatedDatasetGroupList",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -1484,13 +4043,14 @@ class DatasetsApi:
         return response_data.response
 
 
-    def _datasets_list_serialize(
+    def _datasets_grouped_list_serialize(
         self,
         agent,
         generator_model,
         ordering,
         page,
         page_size,
+        project,
         search,
         source,
         version,
@@ -1537,6 +4097,727 @@ class DatasetsApi:
         if page_size is not None:
             
             _query_params.append(('page_size', page_size))
+            
+        if project is not None:
+            
+            _query_params.append(('project', project))
+            
+        if search is not None:
+            
+            _query_params.append(('search', search))
+            
+        if source is not None:
+            
+            _query_params.append(('source', source))
+            
+        if version is not None:
+            
+            _query_params.append(('version', version))
+            
+        if version_max is not None:
+            
+            _query_params.append(('version_max', version_max))
+            
+        if version_min is not None:
+            
+            _query_params.append(('version_min', version_min))
+            
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='GET',
+            resource_path='/api/datasets/grouped/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def datasets_infer_schema_create(
+        self,
+        infer_schema_request_request: InferSchemaRequestRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> DatasetSchema:
+        """Infer a dataset schema from a sample
+
+        Interpret a sample of raw rows (≤200 used) with an LLM — proposing the dataset's kind, a role for every column (input/target/metadata/reasoning/label) and a per-column rationale — and fall back to deterministic heuristics offline. Used by the upload UX to confirm the schema.
+
+        :param infer_schema_request_request: (required)
+        :type infer_schema_request_request: InferSchemaRequestRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_infer_schema_create_serialize(
+            infer_schema_request_request=infer_schema_request_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "DatasetSchema",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_infer_schema_create_with_http_info(
+        self,
+        infer_schema_request_request: InferSchemaRequestRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[DatasetSchema]:
+        """Infer a dataset schema from a sample
+
+        Interpret a sample of raw rows (≤200 used) with an LLM — proposing the dataset's kind, a role for every column (input/target/metadata/reasoning/label) and a per-column rationale — and fall back to deterministic heuristics offline. Used by the upload UX to confirm the schema.
+
+        :param infer_schema_request_request: (required)
+        :type infer_schema_request_request: InferSchemaRequestRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_infer_schema_create_serialize(
+            infer_schema_request_request=infer_schema_request_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "DatasetSchema",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_infer_schema_create_without_preload_content(
+        self,
+        infer_schema_request_request: InferSchemaRequestRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Infer a dataset schema from a sample
+
+        Interpret a sample of raw rows (≤200 used) with an LLM — proposing the dataset's kind, a role for every column (input/target/metadata/reasoning/label) and a per-column rationale — and fall back to deterministic heuristics offline. Used by the upload UX to confirm the schema.
+
+        :param infer_schema_request_request: (required)
+        :type infer_schema_request_request: InferSchemaRequestRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_infer_schema_create_serialize(
+            infer_schema_request_request=infer_schema_request_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "DatasetSchema",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_infer_schema_create_serialize(
+        self,
+        infer_schema_request_request,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+        if infer_schema_request_request is not None:
+            _body_params = infer_schema_request_request
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+        # set the HTTP header `Content-Type`
+        if _content_type:
+            _header_params['Content-Type'] = _content_type
+        else:
+            _default_content_type = (
+                self.api_client.select_header_content_type(
+                    [
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
+                        'multipart/form-data'
+                    ]
+                )
+            )
+            if _default_content_type is not None:
+                _header_params['Content-Type'] = _default_content_type
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='POST',
+            resource_path='/api/datasets/infer-schema/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def datasets_list(
+        self,
+        agent: Optional[UUID] = None,
+        generator_model: Optional[StrictStr] = None,
+        ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
+        page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
+        project: Optional[UUID] = None,
+        search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
+        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop")] = None,
+        version: Optional[StrictInt] = None,
+        version_max: Optional[StrictInt] = None,
+        version_min: Optional[StrictInt] = None,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> PaginatedDatasetListList:
+        """List datasets
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param agent:
+        :type agent: UUID
+        :param generator_model:
+        :type generator_model: str
+        :param ordering: Which field to use when ordering the results.
+        :type ordering: str
+        :param page: A page number within the paginated result set.
+        :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
+        :param project:
+        :type project: UUID
+        :param search: A search term.
+        :type search: str
+        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop
+        :type source: str
+        :param version:
+        :type version: int
+        :param version_max:
+        :type version_max: int
+        :param version_min:
+        :type version_min: int
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_list_serialize(
+            agent=agent,
+            generator_model=generator_model,
+            ordering=ordering,
+            page=page,
+            page_size=page_size,
+            project=project,
+            search=search,
+            source=source,
+            version=version,
+            version_max=version_max,
+            version_min=version_min,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "PaginatedDatasetListList",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_list_with_http_info(
+        self,
+        agent: Optional[UUID] = None,
+        generator_model: Optional[StrictStr] = None,
+        ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
+        page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
+        project: Optional[UUID] = None,
+        search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
+        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop")] = None,
+        version: Optional[StrictInt] = None,
+        version_max: Optional[StrictInt] = None,
+        version_min: Optional[StrictInt] = None,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[PaginatedDatasetListList]:
+        """List datasets
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param agent:
+        :type agent: UUID
+        :param generator_model:
+        :type generator_model: str
+        :param ordering: Which field to use when ordering the results.
+        :type ordering: str
+        :param page: A page number within the paginated result set.
+        :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
+        :param project:
+        :type project: UUID
+        :param search: A search term.
+        :type search: str
+        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop
+        :type source: str
+        :param version:
+        :type version: int
+        :param version_max:
+        :type version_max: int
+        :param version_min:
+        :type version_min: int
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_list_serialize(
+            agent=agent,
+            generator_model=generator_model,
+            ordering=ordering,
+            page=page,
+            page_size=page_size,
+            project=project,
+            search=search,
+            source=source,
+            version=version,
+            version_max=version_max,
+            version_min=version_min,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "PaginatedDatasetListList",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_list_without_preload_content(
+        self,
+        agent: Optional[UUID] = None,
+        generator_model: Optional[StrictStr] = None,
+        ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
+        page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
+        project: Optional[UUID] = None,
+        search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
+        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop")] = None,
+        version: Optional[StrictInt] = None,
+        version_max: Optional[StrictInt] = None,
+        version_min: Optional[StrictInt] = None,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """List datasets
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param agent:
+        :type agent: UUID
+        :param generator_model:
+        :type generator_model: str
+        :param ordering: Which field to use when ordering the results.
+        :type ordering: str
+        :param page: A page number within the paginated result set.
+        :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
+        :param project:
+        :type project: UUID
+        :param search: A search term.
+        :type search: str
+        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop
+        :type source: str
+        :param version:
+        :type version: int
+        :param version_max:
+        :type version_max: int
+        :param version_min:
+        :type version_min: int
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_list_serialize(
+            agent=agent,
+            generator_model=generator_model,
+            ordering=ordering,
+            page=page,
+            page_size=page_size,
+            project=project,
+            search=search,
+            source=source,
+            version=version,
+            version_max=version_max,
+            version_min=version_min,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "PaginatedDatasetListList",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_list_serialize(
+        self,
+        agent,
+        generator_model,
+        ordering,
+        page,
+        page_size,
+        project,
+        search,
+        source,
+        version,
+        version_max,
+        version_min,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        # process the query parameters
+        if agent is not None:
+            
+            _query_params.append(('agent', agent))
+            
+        if generator_model is not None:
+            
+            _query_params.append(('generator_model', generator_model))
+            
+        if ordering is not None:
+            
+            _query_params.append(('ordering', ordering))
+            
+        if page is not None:
+            
+            _query_params.append(('page', page))
+            
+        if page_size is not None:
+            
+            _query_params.append(('page_size', page_size))
+            
+        if project is not None:
+            
+            _query_params.append(('project', project))
             
         if search is not None:
             
@@ -1600,6 +4881,831 @@ class DatasetsApi:
 
 
     @validate_call
+    def datasets_lock_create(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> Dataset:
+        """Lock dataset (freeze contents)
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_lock_create_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_lock_create_with_http_info(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[Dataset]:
+        """Lock dataset (freeze contents)
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_lock_create_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_lock_create_without_preload_content(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Lock dataset (freeze contents)
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_lock_create_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_lock_create_serialize(
+        self,
+        id,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if id is not None:
+            _path_params['id'] = id
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='POST',
+            resource_path='/api/datasets/{id}/lock/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def datasets_open_workshop_create(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> OpenDatasetWorkshopResponse:
+        """Open workshop for dataset
+
+        Get-or-create the workshop attached to this dataset, materialise its datapoints as a `.jsonl` WorkshopFile (if not already present), and kick off an analysis run when none is in flight or finished. Returns the workshop id and the run id the UI should subscribe to.
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_open_workshop_create_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "OpenDatasetWorkshopResponse",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_open_workshop_create_with_http_info(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[OpenDatasetWorkshopResponse]:
+        """Open workshop for dataset
+
+        Get-or-create the workshop attached to this dataset, materialise its datapoints as a `.jsonl` WorkshopFile (if not already present), and kick off an analysis run when none is in flight or finished. Returns the workshop id and the run id the UI should subscribe to.
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_open_workshop_create_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "OpenDatasetWorkshopResponse",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_open_workshop_create_without_preload_content(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Open workshop for dataset
+
+        Get-or-create the workshop attached to this dataset, materialise its datapoints as a `.jsonl` WorkshopFile (if not already present), and kick off an analysis run when none is in flight or finished. Returns the workshop id and the run id the UI should subscribe to.
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_open_workshop_create_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "OpenDatasetWorkshopResponse",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_open_workshop_create_serialize(
+        self,
+        id,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if id is not None:
+            _path_params['id'] = id
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='POST',
+            resource_path='/api/datasets/{id}/open_workshop/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def datasets_remove_datapoints_create(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        remove_datapoints_request: RemoveDatapointsRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> Dataset:
+        """Remove datapoints from a dataset
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param remove_datapoints_request: (required)
+        :type remove_datapoints_request: RemoveDatapointsRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_remove_datapoints_create_serialize(
+            id=id,
+            remove_datapoints_request=remove_datapoints_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_remove_datapoints_create_with_http_info(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        remove_datapoints_request: RemoveDatapointsRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[Dataset]:
+        """Remove datapoints from a dataset
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param remove_datapoints_request: (required)
+        :type remove_datapoints_request: RemoveDatapointsRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_remove_datapoints_create_serialize(
+            id=id,
+            remove_datapoints_request=remove_datapoints_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_remove_datapoints_create_without_preload_content(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        remove_datapoints_request: RemoveDatapointsRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Remove datapoints from a dataset
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param remove_datapoints_request: (required)
+        :type remove_datapoints_request: RemoveDatapointsRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_remove_datapoints_create_serialize(
+            id=id,
+            remove_datapoints_request=remove_datapoints_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_remove_datapoints_create_serialize(
+        self,
+        id,
+        remove_datapoints_request,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if id is not None:
+            _path_params['id'] = id
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+        if remove_datapoints_request is not None:
+            _body_params = remove_datapoints_request
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+        # set the HTTP header `Content-Type`
+        if _content_type:
+            _header_params['Content-Type'] = _content_type
+        else:
+            _default_content_type = (
+                self.api_client.select_header_content_type(
+                    [
+                        'application/json', 
+                        'application/x-www-form-urlencoded', 
+                        'multipart/form-data'
+                    ]
+                )
+            )
+            if _default_content_type is not None:
+                _header_params['Content-Type'] = _default_content_type
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='POST',
+            resource_path='/api/datasets/{id}/remove_datapoints/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
     def datasets_retrieve(
         self,
         id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
@@ -1618,7 +5724,7 @@ class DatasetsApi:
     ) -> Dataset:
         """Get dataset (with datapoints)
 
-        CRUD for versioned datasets.  Datapoints are never exposed directly — they can only be read via ``GET /api/datasets/{id}/datapoints/`` or created as part of ``POST /api/datasets/``. To mutate data, POST a new dataset version.
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
 
         :param id: A UUID string identifying this dataset. (required)
         :type id: UUID
@@ -1685,7 +5791,7 @@ class DatasetsApi:
     ) -> ApiResponse[Dataset]:
         """Get dataset (with datapoints)
 
-        CRUD for versioned datasets.  Datapoints are never exposed directly — they can only be read via ``GET /api/datasets/{id}/datapoints/`` or created as part of ``POST /api/datasets/``. To mutate data, POST a new dataset version.
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
 
         :param id: A UUID string identifying this dataset. (required)
         :type id: UUID
@@ -1752,7 +5858,7 @@ class DatasetsApi:
     ) -> RESTResponseType:
         """Get dataset (with datapoints)
 
-        CRUD for versioned datasets.  Datapoints are never exposed directly — they can only be read via ``GET /api/datasets/{id}/datapoints/`` or created as part of ``POST /api/datasets/``. To mutate data, POST a new dataset version.
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
 
         :param id: A UUID string identifying this dataset. (required)
         :type id: UUID
@@ -1849,6 +5955,1448 @@ class DatasetsApi:
         return self.api_client.param_serialize(
             method='GET',
             resource_path='/api/datasets/{id}/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def datasets_snapshots_destroy(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        snapshot_id: StrictStr,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> None:
+        """Delete a dataset snapshot
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param snapshot_id: (required)
+        :type snapshot_id: str
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_snapshots_destroy_serialize(
+            id=id,
+            snapshot_id=snapshot_id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '204': None,
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_snapshots_destroy_with_http_info(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        snapshot_id: StrictStr,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[None]:
+        """Delete a dataset snapshot
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param snapshot_id: (required)
+        :type snapshot_id: str
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_snapshots_destroy_serialize(
+            id=id,
+            snapshot_id=snapshot_id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '204': None,
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_snapshots_destroy_without_preload_content(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        snapshot_id: StrictStr,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Delete a dataset snapshot
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param snapshot_id: (required)
+        :type snapshot_id: str
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_snapshots_destroy_serialize(
+            id=id,
+            snapshot_id=snapshot_id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '204': None,
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_snapshots_destroy_serialize(
+        self,
+        id,
+        snapshot_id,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if id is not None:
+            _path_params['id'] = id
+        if snapshot_id is not None:
+            _path_params['snapshot_id'] = snapshot_id
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+
+
+
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='DELETE',
+            resource_path='/api/datasets/{id}/snapshots/{snapshot_id}/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def datasets_snapshots_list(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        agent: Optional[UUID] = None,
+        generator_model: Optional[StrictStr] = None,
+        ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
+        page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
+        project: Optional[UUID] = None,
+        search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
+        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop")] = None,
+        version: Optional[StrictInt] = None,
+        version_max: Optional[StrictInt] = None,
+        version_min: Optional[StrictInt] = None,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> PaginatedDatasetSnapshotList:
+        """List dataset snapshots
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param agent:
+        :type agent: UUID
+        :param generator_model:
+        :type generator_model: str
+        :param ordering: Which field to use when ordering the results.
+        :type ordering: str
+        :param page: A page number within the paginated result set.
+        :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
+        :param project:
+        :type project: UUID
+        :param search: A search term.
+        :type search: str
+        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop
+        :type source: str
+        :param version:
+        :type version: int
+        :param version_max:
+        :type version_max: int
+        :param version_min:
+        :type version_min: int
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_snapshots_list_serialize(
+            id=id,
+            agent=agent,
+            generator_model=generator_model,
+            ordering=ordering,
+            page=page,
+            page_size=page_size,
+            project=project,
+            search=search,
+            source=source,
+            version=version,
+            version_max=version_max,
+            version_min=version_min,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "PaginatedDatasetSnapshotList",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_snapshots_list_with_http_info(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        agent: Optional[UUID] = None,
+        generator_model: Optional[StrictStr] = None,
+        ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
+        page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
+        project: Optional[UUID] = None,
+        search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
+        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop")] = None,
+        version: Optional[StrictInt] = None,
+        version_max: Optional[StrictInt] = None,
+        version_min: Optional[StrictInt] = None,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[PaginatedDatasetSnapshotList]:
+        """List dataset snapshots
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param agent:
+        :type agent: UUID
+        :param generator_model:
+        :type generator_model: str
+        :param ordering: Which field to use when ordering the results.
+        :type ordering: str
+        :param page: A page number within the paginated result set.
+        :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
+        :param project:
+        :type project: UUID
+        :param search: A search term.
+        :type search: str
+        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop
+        :type source: str
+        :param version:
+        :type version: int
+        :param version_max:
+        :type version_max: int
+        :param version_min:
+        :type version_min: int
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_snapshots_list_serialize(
+            id=id,
+            agent=agent,
+            generator_model=generator_model,
+            ordering=ordering,
+            page=page,
+            page_size=page_size,
+            project=project,
+            search=search,
+            source=source,
+            version=version,
+            version_max=version_max,
+            version_min=version_min,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "PaginatedDatasetSnapshotList",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_snapshots_list_without_preload_content(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        agent: Optional[UUID] = None,
+        generator_model: Optional[StrictStr] = None,
+        ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
+        page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
+        project: Optional[UUID] = None,
+        search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
+        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop")] = None,
+        version: Optional[StrictInt] = None,
+        version_max: Optional[StrictInt] = None,
+        version_min: Optional[StrictInt] = None,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """List dataset snapshots
+
+        CRUD for versioned datasets.  Beyond plain CRUD, this viewset exposes:   * ``POST /api/datasets/from_traces/`` — create a dataset from a set of trace ids   * ``POST /api/datasets/{id}/add_datapoints/`` — append datapoints   * ``POST /api/datasets/{id}/add_datapoints_from_traces/`` — append datapoints from traces   * ``POST /api/datasets/{id}/remove_datapoints/`` — drop datapoints by id   * ``POST /api/datasets/{id}/lock/`` / ``unlock/`` — toggle the ``locked`` flag   * ``GET/POST /api/datasets/{id}/snapshots/`` and ``DELETE …/snapshots/{snap_id}/``
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param agent:
+        :type agent: UUID
+        :param generator_model:
+        :type generator_model: str
+        :param ordering: Which field to use when ordering the results.
+        :type ordering: str
+        :param page: A page number within the paginated result set.
+        :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
+        :param project:
+        :type project: UUID
+        :param search: A search term.
+        :type search: str
+        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop
+        :type source: str
+        :param version:
+        :type version: int
+        :param version_max:
+        :type version_max: int
+        :param version_min:
+        :type version_min: int
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_snapshots_list_serialize(
+            id=id,
+            agent=agent,
+            generator_model=generator_model,
+            ordering=ordering,
+            page=page,
+            page_size=page_size,
+            project=project,
+            search=search,
+            source=source,
+            version=version,
+            version_max=version_max,
+            version_min=version_min,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "PaginatedDatasetSnapshotList",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_snapshots_list_serialize(
+        self,
+        id,
+        agent,
+        generator_model,
+        ordering,
+        page,
+        page_size,
+        project,
+        search,
+        source,
+        version,
+        version_max,
+        version_min,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if id is not None:
+            _path_params['id'] = id
+        # process the query parameters
+        if agent is not None:
+            
+            _query_params.append(('agent', agent))
+            
+        if generator_model is not None:
+            
+            _query_params.append(('generator_model', generator_model))
+            
+        if ordering is not None:
+            
+            _query_params.append(('ordering', ordering))
+            
+        if page is not None:
+            
+            _query_params.append(('page', page))
+            
+        if page_size is not None:
+            
+            _query_params.append(('page_size', page_size))
+            
+        if project is not None:
+            
+            _query_params.append(('project', project))
+            
+        if search is not None:
+            
+            _query_params.append(('search', search))
+            
+        if source is not None:
+            
+            _query_params.append(('source', source))
+            
+        if version is not None:
+            
+            _query_params.append(('version', version))
+            
+        if version_max is not None:
+            
+            _query_params.append(('version_max', version_max))
+            
+        if version_min is not None:
+            
+            _query_params.append(('version_min', version_min))
+            
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='GET',
+            resource_path='/api/datasets/{id}/snapshots/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def datasets_unlock_create(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> Dataset:
+        """Unlock dataset
+
+        Allow add/remove datapoints again — refused while the dataset is in use.
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_unlock_create_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_unlock_create_with_http_info(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[Dataset]:
+        """Unlock dataset
+
+        Allow add/remove datapoints again — refused while the dataset is in use.
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_unlock_create_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_unlock_create_without_preload_content(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Unlock dataset
+
+        Allow add/remove datapoints again — refused while the dataset is in use.
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_unlock_create_serialize(
+            id=id,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "Dataset",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_unlock_create_serialize(
+        self,
+        id,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if id is not None:
+            _path_params['id'] = id
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='POST',
+            resource_path='/api/datasets/{id}/unlock/',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def datasets_versions_list(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        agent: Optional[UUID] = None,
+        generator_model: Optional[StrictStr] = None,
+        ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
+        page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
+        project: Optional[UUID] = None,
+        search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
+        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop")] = None,
+        version: Optional[StrictInt] = None,
+        version_max: Optional[StrictInt] = None,
+        version_min: Optional[StrictInt] = None,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> PaginatedDatasetListList:
+        """List versions of this dataset
+
+        Every version belonging to the same logical dataset as this one (rows sharing its name on the same agent), newest first. Powers the version picker so it only offers versions of the current dataset rather than every dataset on the agent.
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param agent:
+        :type agent: UUID
+        :param generator_model:
+        :type generator_model: str
+        :param ordering: Which field to use when ordering the results.
+        :type ordering: str
+        :param page: A page number within the paginated result set.
+        :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
+        :param project:
+        :type project: UUID
+        :param search: A search term.
+        :type search: str
+        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop
+        :type source: str
+        :param version:
+        :type version: int
+        :param version_max:
+        :type version_max: int
+        :param version_min:
+        :type version_min: int
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_versions_list_serialize(
+            id=id,
+            agent=agent,
+            generator_model=generator_model,
+            ordering=ordering,
+            page=page,
+            page_size=page_size,
+            project=project,
+            search=search,
+            source=source,
+            version=version,
+            version_max=version_max,
+            version_min=version_min,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "PaginatedDatasetListList",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def datasets_versions_list_with_http_info(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        agent: Optional[UUID] = None,
+        generator_model: Optional[StrictStr] = None,
+        ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
+        page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
+        project: Optional[UUID] = None,
+        search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
+        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop")] = None,
+        version: Optional[StrictInt] = None,
+        version_max: Optional[StrictInt] = None,
+        version_min: Optional[StrictInt] = None,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[PaginatedDatasetListList]:
+        """List versions of this dataset
+
+        Every version belonging to the same logical dataset as this one (rows sharing its name on the same agent), newest first. Powers the version picker so it only offers versions of the current dataset rather than every dataset on the agent.
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param agent:
+        :type agent: UUID
+        :param generator_model:
+        :type generator_model: str
+        :param ordering: Which field to use when ordering the results.
+        :type ordering: str
+        :param page: A page number within the paginated result set.
+        :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
+        :param project:
+        :type project: UUID
+        :param search: A search term.
+        :type search: str
+        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop
+        :type source: str
+        :param version:
+        :type version: int
+        :param version_max:
+        :type version_max: int
+        :param version_min:
+        :type version_min: int
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_versions_list_serialize(
+            id=id,
+            agent=agent,
+            generator_model=generator_model,
+            ordering=ordering,
+            page=page,
+            page_size=page_size,
+            project=project,
+            search=search,
+            source=source,
+            version=version,
+            version_max=version_max,
+            version_min=version_min,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "PaginatedDatasetListList",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def datasets_versions_list_without_preload_content(
+        self,
+        id: Annotated[UUID, Field(description="A UUID string identifying this dataset.")],
+        agent: Optional[UUID] = None,
+        generator_model: Optional[StrictStr] = None,
+        ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
+        page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
+        page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
+        project: Optional[UUID] = None,
+        search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
+        source: Annotated[Optional[StrictStr], Field(description="* `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop")] = None,
+        version: Optional[StrictInt] = None,
+        version_max: Optional[StrictInt] = None,
+        version_min: Optional[StrictInt] = None,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """List versions of this dataset
+
+        Every version belonging to the same logical dataset as this one (rows sharing its name on the same agent), newest first. Powers the version picker so it only offers versions of the current dataset rather than every dataset on the agent.
+
+        :param id: A UUID string identifying this dataset. (required)
+        :type id: UUID
+        :param agent:
+        :type agent: UUID
+        :param generator_model:
+        :type generator_model: str
+        :param ordering: Which field to use when ordering the results.
+        :type ordering: str
+        :param page: A page number within the paginated result set.
+        :type page: int
+        :param page_size: Number of results to return per page.
+        :type page_size: int
+        :param project:
+        :type project: UUID
+        :param search: A search term.
+        :type search: str
+        :param source: * `seed` - Seed * `synthetic` - Synthetic * `augmented` - Augmented * `production` - Production * `traces` - Traces * `workshop` - Workshop
+        :type source: str
+        :param version:
+        :type version: int
+        :param version_max:
+        :type version_max: int
+        :param version_min:
+        :type version_min: int
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._datasets_versions_list_serialize(
+            id=id,
+            agent=agent,
+            generator_model=generator_model,
+            ordering=ordering,
+            page=page,
+            page_size=page_size,
+            project=project,
+            search=search,
+            source=source,
+            version=version,
+            version_max=version_max,
+            version_min=version_min,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "PaginatedDatasetListList",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _datasets_versions_list_serialize(
+        self,
+        id,
+        agent,
+        generator_model,
+        ordering,
+        page,
+        page_size,
+        project,
+        search,
+        source,
+        version,
+        version_max,
+        version_min,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if id is not None:
+            _path_params['id'] = id
+        # process the query parameters
+        if agent is not None:
+            
+            _query_params.append(('agent', agent))
+            
+        if generator_model is not None:
+            
+            _query_params.append(('generator_model', generator_model))
+            
+        if ordering is not None:
+            
+            _query_params.append(('ordering', ordering))
+            
+        if page is not None:
+            
+            _query_params.append(('page', page))
+            
+        if page_size is not None:
+            
+            _query_params.append(('page_size', page_size))
+            
+        if project is not None:
+            
+            _query_params.append(('project', project))
+            
+        if search is not None:
+            
+            _query_params.append(('search', search))
+            
+        if source is not None:
+            
+            _query_params.append(('source', source))
+            
+        if version is not None:
+            
+            _query_params.append(('version', version))
+            
+        if version_max is not None:
+            
+            _query_params.append(('version_max', version_max))
+            
+        if version_min is not None:
+            
+            _query_params.append(('version_min', version_min))
+            
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'ClerkBearerAuth', 
+            'cookieAuth', 
+            'jwtAuth', 
+            'ApiKeyAuth', 
+            'BearerAuth'
+        ]
+
+        return self.api_client.param_serialize(
+            method='GET',
+            resource_path='/api/datasets/{id}/versions/',
             path_params=_path_params,
             query_params=_query_params,
             header_params=_header_params,

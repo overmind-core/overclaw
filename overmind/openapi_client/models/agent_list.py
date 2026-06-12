@@ -44,11 +44,13 @@ class AgentList(BaseModel):
     tags: Optional[Any] = None
     entrypoint_fn: Optional[Annotated[str, Field(strict=True, max_length=255)]] = None
     analyzer_model: Optional[Annotated[str, Field(strict=True, max_length=128)]] = None
-    dataset_size: Optional[Annotated[int, Field(le=9223372036854775807, strict=True, ge=-9223372036854775808)]] = None
+    dataset_size: StrictInt
     dataset_has_expected_output: Optional[StrictBool] = None
+    cli_version: Optional[Annotated[str, Field(strict=True, max_length=20)]] = None
+    modality: StrictStr = Field(description="Capability-card modality (text/code/tabular/multimodal…), \"\" when unanalyzed.")
     created_at: datetime
     updated_at: datetime
-    __properties: ClassVar[List[str]] = ["id", "project", "name", "slug", "description", "agent_path", "model", "structure_weight", "total_points", "tool_usage_weight", "display_name", "status", "tags", "entrypoint_fn", "analyzer_model", "dataset_size", "dataset_has_expected_output", "created_at", "updated_at"]
+    __properties: ClassVar[List[str]] = ["id", "project", "name", "slug", "description", "agent_path", "model", "structure_weight", "total_points", "tool_usage_weight", "display_name", "status", "tags", "entrypoint_fn", "analyzer_model", "dataset_size", "dataset_has_expected_output", "cli_version", "modality", "created_at", "updated_at"]
 
     @field_validator('slug')
     def slug_validate_regular_expression(cls, value):
@@ -90,9 +92,13 @@ class AgentList(BaseModel):
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
         """
         excluded_fields: Set[str] = set([
             "id",
+            "dataset_size",
+            "modality",
             "created_at",
             "updated_at",
         ])
@@ -136,6 +142,8 @@ class AgentList(BaseModel):
             "analyzer_model": obj.get("analyzer_model"),
             "dataset_size": obj.get("dataset_size"),
             "dataset_has_expected_output": obj.get("dataset_has_expected_output"),
+            "cli_version": obj.get("cli_version"),
+            "modality": obj.get("modality"),
             "created_at": obj.get("created_at"),
             "updated_at": obj.get("updated_at")
         })

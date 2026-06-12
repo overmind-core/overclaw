@@ -584,7 +584,7 @@ class JobsApi:
         created_after: Optional[datetime] = None,
         created_before: Optional[datetime] = None,
         data_source: Optional[StrictStr] = None,
-        job_type: Annotated[Optional[StrictStr], Field(description="* `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting")] = None,
+        job_type: Annotated[Optional[StrictStr], Field(description="* `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync")] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
         page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
@@ -620,7 +620,7 @@ class JobsApi:
         :type created_before: datetime
         :param data_source:
         :type data_source: str
-        :param job_type: * `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting
+        :param job_type: * `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync
         :type job_type: str
         :param ordering: Which field to use when ordering the results.
         :type ordering: str
@@ -706,7 +706,7 @@ class JobsApi:
         created_after: Optional[datetime] = None,
         created_before: Optional[datetime] = None,
         data_source: Optional[StrictStr] = None,
-        job_type: Annotated[Optional[StrictStr], Field(description="* `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting")] = None,
+        job_type: Annotated[Optional[StrictStr], Field(description="* `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync")] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
         page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
@@ -742,7 +742,7 @@ class JobsApi:
         :type created_before: datetime
         :param data_source:
         :type data_source: str
-        :param job_type: * `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting
+        :param job_type: * `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync
         :type job_type: str
         :param ordering: Which field to use when ordering the results.
         :type ordering: str
@@ -828,7 +828,7 @@ class JobsApi:
         created_after: Optional[datetime] = None,
         created_before: Optional[datetime] = None,
         data_source: Optional[StrictStr] = None,
-        job_type: Annotated[Optional[StrictStr], Field(description="* `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting")] = None,
+        job_type: Annotated[Optional[StrictStr], Field(description="* `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync")] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
         page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
@@ -864,7 +864,7 @@ class JobsApi:
         :type created_before: datetime
         :param data_source:
         :type data_source: str
-        :param job_type: * `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting
+        :param job_type: * `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync
         :type job_type: str
         :param ordering: Which field to use when ordering the results.
         :type ordering: str

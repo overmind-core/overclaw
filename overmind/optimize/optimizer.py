@@ -321,6 +321,14 @@ class Optimizer:
 
     @observe_safe("optimizer.run", SpanType.WORKFLOW)
     def run(self):
+        import warnings
+
+        warnings.warn(
+            "Optimizer.run() is deprecated. Use `overmind workflow <agent> --workflow optimize_full` "
+            "with the CLI daemon for server-orchestrated optimization.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._logger.info(
             f"Optimizer.run starting agent={getattr(self.config, 'agent_name', '?')} "
             f"iterations={self.config.iterations} parallel={getattr(self.config, 'parallel', False)} "

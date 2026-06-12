@@ -22,7 +22,7 @@ from typing import Any, ClassVar, Dict, List, Optional
 from typing_extensions import Annotated
 from uuid import UUID
 from overmind.openapi_client.models.datapoint_request import DatapointRequest
-from overmind.openapi_client.models.source_enum import SourceEnum
+from overmind.openapi_client.models.dataset_source_enum import DatasetSourceEnum
 from typing import Optional, Set
 from typing_extensions import Self
 
@@ -30,15 +30,16 @@ class DatasetRequest(BaseModel):
     """
     DatasetRequest
     """ # noqa: E501
-    agent: UUID
+    agent: Optional[UUID] = None
+    project: Optional[UUID] = None
     name: Optional[Annotated[str, Field(strict=True, max_length=255)]] = None
-    source: Optional[SourceEnum] = None
+    source: Optional[DatasetSourceEnum] = None
     generator_model: Optional[Annotated[str, Field(strict=True, max_length=128)]] = None
     policy_hash: Optional[Annotated[str, Field(strict=True, max_length=64)]] = None
     metadata: Optional[Any] = None
-    datapoints: List[DatapointRequest]
+    datapoints: Optional[List[DatapointRequest]] = None
     make_active: Optional[StrictBool] = True
-    __properties: ClassVar[List[str]] = ["agent", "name", "source", "generator_model", "policy_hash", "metadata", "datapoints", "make_active"]
+    __properties: ClassVar[List[str]] = ["agent", "project", "name", "source", "generator_model", "policy_hash", "metadata", "datapoints", "make_active"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -86,6 +87,16 @@ class DatasetRequest(BaseModel):
                 if _item_datapoints:
                     _items.append(_item_datapoints.to_dict())
             _dict['datapoints'] = _items
+        # set to None if agent (nullable) is None
+        # and model_fields_set contains the field
+        if self.agent is None and "agent" in self.model_fields_set:
+            _dict['agent'] = None
+
+        # set to None if project (nullable) is None
+        # and model_fields_set contains the field
+        if self.project is None and "project" in self.model_fields_set:
+            _dict['project'] = None
+
         # set to None if metadata (nullable) is None
         # and model_fields_set contains the field
         if self.metadata is None and "metadata" in self.model_fields_set:
@@ -104,6 +115,7 @@ class DatasetRequest(BaseModel):
 
         _obj = cls.model_validate({
             "agent": obj.get("agent"),
+            "project": obj.get("project"),
             "name": obj.get("name"),
             "source": obj.get("source"),
             "generator_model": obj.get("generator_model"),

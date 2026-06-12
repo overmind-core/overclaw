@@ -10,6 +10,8 @@ Commands:
     overmind agent show <name>                         Show agent registration and pipeline status
     overmind setup <name> [--data PATH] [--fast]      Analyze agent and define eval criteria
     overmind optimize <name> [--fast]                  Run the optimization loop
+    overmind daemon [--agent NAME]                     Run CLI daemon (server workflow executor)
+    overmind workflow <name> [--workflow NAME]         Start server-orchestrated workflow
     overmind doctor <name>                             Diagnose bundle scope and eval spec (read-only)
     overmind sync [name]                               Sync local setup artifacts to Overmind
     overmind sync-optimize [name]                      Sync local optimize artifacts to Overmind
@@ -37,6 +39,8 @@ from overmind.commands.agent_cmd import (
     cmd_update,
     cmd_validate,
 )
+from overmind.commands.daemon_cmd import build_subparser as _build_daemon_parser
+from overmind.commands.daemon_cmd import main as _daemon
 from overmind.commands.init_cmd import main as _init
 from overmind.commands.optimize_cmd import main as _optimize
 from overmind.commands.optimize_step_cmd import (
@@ -44,6 +48,8 @@ from overmind.commands.optimize_step_cmd import (
 )
 from overmind.commands.optimize_step_cmd import main as _optimize_step
 from overmind.commands.setup_cmd import main as _setup
+from overmind.commands.workflow_cmd import build_subparser as _build_workflow_parser
+from overmind.commands.workflow_cmd import main as _workflow
 from overmind.core.constants import OVERMIND_DIR_NAME, overmind_rel
 from overmind.core.logging import setup_logging
 from overmind.core.paths import load_overmind_dotenv
@@ -71,8 +77,9 @@ def _build_parser() -> argparse.ArgumentParser:
             "Typical workflow:\n"
             "  1. overmind init                                  # set API keys + models\n"
             "  2. overmind agent register <name> <module:fn>     # register your agent\n"
-            "  3. overmind setup <name>                          # build eval criteria\n"
-            "  4. overmind optimize <name>                       # run the optimizer\n"
+            "  3. overmind setup <name>                          # server-orchestrated setup\n"
+            "  4. overmind optimize <name>                       # server-orchestrated optimize\n"
+            "     Add --local to either command for the legacy on-machine pipeline.\n"
         ),
     )
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
@@ -356,6 +363,11 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="max total characters for dependency context during Phase 1 (default: 80000)",
     )
+    setup_p.add_argument(
+        "--local",
+        action="store_true",
+        help="run setup entirely on this machine (legacy pipeline; ignores server workflow)",
+    )
 
     # ── optimize ─────────────────────────────────────────────────────────────
     opt_p = subparsers.add_parser(
@@ -422,9 +434,18 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="override max total characters in the bundle (default: from Config)",
     )
+    opt_p.add_argument(
+        "--local",
+        action="store_true",
+        help="run optimization entirely on this machine (legacy Optimizer.run pipeline)",
+    )
 
     # ── optimize-step (skill-driven) ────────────────────────────────────────
     _build_optimize_step_parser(subparsers)
+
+    # ── daemon / workflow (client-server FSM) ───────────────────────────────
+    _build_daemon_parser(subparsers)
+    _build_workflow_parser(subparsers)
 
     # ── doctor ───────────────────────────────────────────────────────────────
     doctor_p = subparsers.add_parser(
@@ -518,19 +539,32 @@ def main() -> None:
                 fast=args.fast,
                 policy=args.policy,
                 data=args.data,
+                local=getattr(args, "local", False),
                 **_kw,
             )
 
         elif args.command == "optimize":
             _kw = _bundle_cli_kwargs(args)
             context.attach(context.set_value(attrs.AGENT_NAME, args.agent))
-            _optimize(agent_name=args.agent, fast=args.fast, **_kw)
+            _optimize(
+                agent_name=args.agent,
+                fast=args.fast,
+                local=getattr(args, "local", False),
+                **_kw,
+            )
 
         elif args.command == "optimize-step":
             agent_name = getattr(args, "agent", None)
             if agent_name:
                 context.attach(context.set_value(attrs.AGENT_NAME, agent_name))
             raise SystemExit(_optimize_step(args))
+
+        elif args.command == "daemon":
+            _daemon(args)
+
+        elif args.command == "workflow":
+            context.attach(context.set_value(attrs.AGENT_NAME, args.agent_name))
+            _workflow(args)
 
     except KeyboardInterrupt:
         span = _otel_trace.get_current_span()

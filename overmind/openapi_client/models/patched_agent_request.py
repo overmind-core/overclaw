@@ -18,7 +18,7 @@ import re  # noqa: F401
 import json
 
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr
 from typing import Any, ClassVar, Dict, List, Optional, Union
 from typing_extensions import Annotated
 from uuid import UUID
@@ -35,7 +35,6 @@ class PatchedAgentRequest(BaseModel):
     fixed_elements: Optional[Any] = None
     eval_dataset: Optional[Any] = None
     name: Optional[Annotated[str, Field(min_length=1, strict=True, max_length=255)]] = None
-    slug: Optional[Annotated[str, Field(min_length=1, strict=True, max_length=255)]] = None
     description: Optional[StrictStr] = None
     agent_path: Optional[Annotated[str, Field(strict=True, max_length=512)]] = None
     model: Optional[Annotated[str, Field(strict=True, max_length=128)]] = None
@@ -52,7 +51,6 @@ class PatchedAgentRequest(BaseModel):
     tools_summary: Optional[StrictStr] = None
     decision_logic: Optional[StrictStr] = None
     scope: Optional[Any] = None
-    dataset_size: Optional[Annotated[int, Field(le=9223372036854775807, strict=True, ge=-9223372036854775808)]] = None
     dataset_input_keys: Optional[Any] = None
     dataset_has_expected_output: Optional[StrictBool] = None
     evaluation_criteria: Optional[Any] = None
@@ -70,19 +68,10 @@ class PatchedAgentRequest(BaseModel):
     usage_stats: Optional[Any] = None
     last_activity_at: Optional[datetime] = None
     is_deleted: Optional[StrictBool] = None
+    cli_version: Optional[Annotated[str, Field(strict=True, max_length=20)]] = None
     project: Optional[UUID] = None
     active_dataset: Optional[UUID] = None
-    __properties: ClassVar[List[str]] = ["tool_config", "consistency_rules", "optimizable_elements", "fixed_elements", "eval_dataset", "name", "slug", "description", "agent_path", "model", "input_schema", "output_fields", "structure_weight", "total_points", "tool_usage_weight", "policy_markdown", "policy_data", "proposed_criteria", "tool_analysis", "output_schema", "tools_summary", "decision_logic", "scope", "dataset_size", "dataset_input_keys", "dataset_has_expected_output", "evaluation_criteria", "improvement_metadata", "agent_description", "backtest_model_suggestions", "backtest_metadata", "tags", "display_name", "status", "entrypoint_fn", "analyzer_model", "optimization_summary", "setup_summary", "usage_stats", "last_activity_at", "is_deleted", "project", "active_dataset"]
-
-    @field_validator('slug')
-    def slug_validate_regular_expression(cls, value):
-        """Validates the regular expression"""
-        if value is None:
-            return value
-
-        if not re.match(r"^[-a-zA-Z0-9_]+$", value):
-            raise ValueError(r"must validate the regular expression /^[-a-zA-Z0-9_]+$/")
-        return value
+    __properties: ClassVar[List[str]] = ["tool_config", "consistency_rules", "optimizable_elements", "fixed_elements", "eval_dataset", "name", "description", "agent_path", "model", "input_schema", "output_fields", "structure_weight", "total_points", "tool_usage_weight", "policy_markdown", "policy_data", "proposed_criteria", "tool_analysis", "output_schema", "tools_summary", "decision_logic", "scope", "dataset_input_keys", "dataset_has_expected_output", "evaluation_criteria", "improvement_metadata", "agent_description", "backtest_model_suggestions", "backtest_metadata", "tags", "display_name", "status", "entrypoint_fn", "analyzer_model", "optimization_summary", "setup_summary", "usage_stats", "last_activity_at", "is_deleted", "cli_version", "project", "active_dataset"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -261,7 +250,6 @@ class PatchedAgentRequest(BaseModel):
             "fixed_elements": obj.get("fixed_elements"),
             "eval_dataset": obj.get("eval_dataset"),
             "name": obj.get("name"),
-            "slug": obj.get("slug"),
             "description": obj.get("description"),
             "agent_path": obj.get("agent_path"),
             "model": obj.get("model"),
@@ -278,7 +266,6 @@ class PatchedAgentRequest(BaseModel):
             "tools_summary": obj.get("tools_summary"),
             "decision_logic": obj.get("decision_logic"),
             "scope": obj.get("scope"),
-            "dataset_size": obj.get("dataset_size"),
             "dataset_input_keys": obj.get("dataset_input_keys"),
             "dataset_has_expected_output": obj.get("dataset_has_expected_output"),
             "evaluation_criteria": obj.get("evaluation_criteria"),
@@ -296,6 +283,7 @@ class PatchedAgentRequest(BaseModel):
             "usage_stats": obj.get("usage_stats"),
             "last_activity_at": obj.get("last_activity_at"),
             "is_deleted": obj.get("is_deleted"),
+            "cli_version": obj.get("cli_version"),
             "project": obj.get("project"),
             "active_dataset": obj.get("active_dataset")
         })

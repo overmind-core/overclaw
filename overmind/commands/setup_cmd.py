@@ -840,9 +840,34 @@ def main(
     scope_globs: list[str] | None = None,
     max_files: int | None = None,
     max_chars: int | None = None,
+    local: bool = False,
 ) -> None:
-    logger.info(f"setup: start agent={agent_name} fast={fast} policy={policy} data={data}")
+    logger.info(f"setup: start agent={agent_name} fast={fast} policy={policy} data={data} local={local}")
     load_overmind_dotenv()
+
+    if not local:
+        from overmind.client import get_project_id, is_configured
+        from overmind.workflow.runner import run_server_workflow
+
+        if is_configured() and get_project_id():
+            config: dict = {"agent_name": agent_name}
+            if data:
+                config["data_path"] = data
+            if policy:
+                config["policy_path"] = policy
+            if scope_globs:
+                config["scope_globs"] = list(scope_globs)
+            if max_files is not None:
+                config["max_files"] = max_files
+            if max_chars is not None:
+                config["max_chars"] = max_chars
+            run_server_workflow(
+                agent_name,
+                "setup_full",
+                config=config,
+                fast=fast,
+            )
+            return
 
     # CLI-level flags — set as soon as the span is open so the
     # backend can identify the run before any phase work begins.
