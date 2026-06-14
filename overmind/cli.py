@@ -1,6 +1,10 @@
 """
 Overmind — CLI entry point
 
+The optimization "brain" (analysis, eval-criteria, diagnosis, candidate
+generation) lives on the Overmind server. This CLI registers agents and runs
+the thin client daemon that executes server-orchestrated workflows locally.
+
 Commands:
     overmind init                                      Configure API keys and model defaults
     overmind agent register <name> <module:function>   Register an agent
@@ -8,11 +12,9 @@ Commands:
     overmind agent remove <name>                       Remove a registered agent
     overmind agent update <name> <module:function>     Update a registered agent's entrypoint
     overmind agent show <name>                         Show agent registration and pipeline status
-    overmind setup <name> [--data PATH] [--fast]      Analyze agent and define eval criteria
-    overmind optimize <name> [--fast]                  Run the optimization loop
-    overmind doctor <name>                             Diagnose bundle scope and eval spec (read-only)
-    overmind sync [name]                               Sync local setup artifacts to Overmind
-    overmind sync-optimize [name]                      Sync local optimize artifacts to Overmind
+    overmind agent validate <name> --data PATH         Run the agent against test data
+    overmind daemon [--agent NAME]                     Run CLI daemon (server workflow executor)
+    overmind workflow <name> [--workflow NAME]         Start server-orchestrated workflow
 """
 
 from __future__ import annotations
@@ -31,19 +33,18 @@ import overmind
 from overmind import attrs
 from overmind.commands.agent_cmd import (
     cmd_list,
+    cmd_pull,
     cmd_register,
     cmd_remove,
     cmd_show,
     cmd_update,
     cmd_validate,
 )
+from overmind.commands.daemon_cmd import build_subparser as _build_daemon_parser
+from overmind.commands.daemon_cmd import main as _daemon
 from overmind.commands.init_cmd import main as _init
-from overmind.commands.optimize_cmd import main as _optimize
-from overmind.commands.optimize_step_cmd import (
-    build_subparser as _build_optimize_step_parser,
-)
-from overmind.commands.optimize_step_cmd import main as _optimize_step
-from overmind.commands.setup_cmd import main as _setup
+from overmind.commands.workflow_cmd import build_subparser as _build_workflow_parser
+from overmind.commands.workflow_cmd import main as _workflow
 from overmind.core.constants import OVERMIND_DIR_NAME, overmind_rel
 from overmind.core.logging import setup_logging
 from overmind.core.paths import load_overmind_dotenv
@@ -51,15 +52,6 @@ from overmind.core.registry import require_overmind_initialized
 from overmind.tracing import force_flush_traces
 
 _FMT = argparse.RawDescriptionHelpFormatter
-
-
-def _bundle_cli_kwargs(args: object) -> dict:
-    """Return scope / bundle cap kwargs for setup & optimize."""
-    return {
-        "scope_globs": getattr(args, "scope_globs", None),
-        "max_files": getattr(args, "max_files", None),
-        "max_chars": getattr(args, "max_chars", None),
-    }
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -71,8 +63,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "Typical workflow:\n"
             "  1. overmind init                                  # set API keys + models\n"
             "  2. overmind agent register <name> <module:fn>     # register your agent\n"
-            "  3. overmind setup <name>                          # build eval criteria\n"
-            "  4. overmind optimize <name>                       # run the optimizer\n"
+            "  3. overmind daemon                                # connect this machine to the server\n"
+            "  4. overmind workflow <name>                       # run server-orchestrated optimization\n"
         ),
     )
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
@@ -87,10 +79,9 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog=(
             f"Writes or updates {overmind_rel('.env')} under the project root with:\n"
             "  - OPENAI_API_KEY / ANTHROPIC_API_KEY\n"
-            "  - ANALYZER_MODEL        (used by setup and optimize)\n"
-            "  - SYNTHETIC_DATAGEN_MODEL  (used by setup for test-data generation)\n"
+            "  - ANALYZER_MODEL        (used by agent validation + env provisioning)\n"
             "\n"
-            "Run once per project before using setup or optimize.\n"
+            "Run once per project before registering agents.\n"
             "Safe to re-run — existing values are shown and can be kept.\n"
             "\n"
             "Example:\n"
@@ -177,6 +168,28 @@ def _build_parser() -> argparse.ArgumentParser:
             "\n"
             "Example:\n"
             "  overmind agent list\n"
+        ),
+    )
+
+    agent_subs.add_parser(
+        "pull",
+        formatter_class=_FMT,
+        help="Write .overmind/agents.toml from the agents extracted on the server",
+        description=(
+            "Fetch every agent the Overmind backend has extracted for this\n"
+            "project and write them all into the local registry\n"
+            f"({overmind_rel('agents.toml')}) in one pass.\n"
+            "\n"
+            "Use this after Overmind analyzes a connected repository: instead of\n"
+            "registering each agent by hand, pull materialises the whole registry\n"
+            "(name, entrypoint, and server id) so `overmind daemon` can run them.\n"
+            "Local-only entries are preserved."
+        ),
+        epilog=(
+            "Requires OVERMIND_API_KEY (and OVERMIND_API_URL for self-hosted).\n"
+            "\n"
+            "Example:\n"
+            "  overmind agent pull\n"
         ),
     )
 
@@ -271,178 +284,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to a JSON file or directory of JSON files with test cases",
     )
 
-    # ── setup ────────────────────────────────────────────────────────────────
-    setup_p = subparsers.add_parser(
-        "setup",
-        formatter_class=_FMT,
-        help="Analyze your agent, define policies, and build evaluation criteria",
-        description=(
-            "Analyze your agent and build an evaluation spec through a\n"
-            "4-phase interactive flow.\n"
-            "\n"
-            "  Phase 1 · Agent Analysis   — examines code structure, tools, schemas\n"
-            "  Phase 2 · Agent Policy     — defines domain rules and constraints\n"
-            "  Phase 3 · Dataset          — generates or validates test data\n"
-            "  Phase 4 · Eval Criteria    — proposes and refines scoring rules\n"
-            "\n"
-            f"Output is saved to {overmind_rel('agents', '<name>', 'setup_spec', 'eval_spec.json')}.\n"
-            "Run this before overmind optimize."
-        ),
-        epilog=(
-            "Flags:\n"
-            "  --fast      Skips all interactive prompts. Requires ANALYZER_MODEL\n"
-            f"              and SYNTHETIC_DATAGEN_MODEL set in {overmind_rel('.env')}.\n"
-            "  --data      JSON seed dataset file or a directory of *.json files.\n"
-            "              Omit this flag to choose in the wizard (or run without seed).\n"
-            "  --policy    Path to an existing policy document (.md or .txt).\n"
-            "              Overmind will analyze it against your agent code and\n"
-            "              suggest improvements before using it.\n"
-            "\n"
-            "Examples:\n"
-            "  overmind setup lead-qualification\n"
-            "  overmind setup lead-qualification --data ./data/cases.json\n"
-            "  overmind setup lead-qualification --data ./seed_data/\n"
-            "  overmind setup lead-qualification --fast\n"
-            "  overmind setup lead-qualification --policy docs/domain-rules.md\n"
-        ),
-    )
-    setup_p.add_argument(
-        "agent",
-        metavar="AGENT_NAME",
-        help="registered agent name (see: overmind agent list)",
-    )
-    setup_p.add_argument(
-        "--fast",
-        action="store_true",
-        help=(f"skip all prompts; requires ANALYZER_MODEL and SYNTHETIC_DATAGEN_MODEL in {overmind_rel('.env')}"),
-    )
-    setup_p.add_argument(
-        "--policy",
-        default=None,
-        metavar="POLICY_PATH",
-        help="path to an existing policy/domain document (.md, .txt)",
-    )
-    setup_p.add_argument(
-        "--data",
-        default=None,
-        metavar="PATH",
-        help=(
-            "path to a JSON seed dataset file or a directory of *.json files "
-            "(optional; wizard can remind you of this flag)"
-        ),
-    )
-    setup_p.add_argument(
-        "--scope",
-        dest="scope_globs",
-        action="append",
-        default=None,
-        metavar="GLOB",
-        help=(
-            "optimizable path glob relative to project root (repeatable); "
-            "passed as hints to the analyzer for `scope.optimizable_paths`"
-        ),
-    )
-    setup_p.add_argument(
-        "--max-files",
-        type=int,
-        default=None,
-        metavar="N",
-        help="max files to follow from the entrypoint during Phase 1 analysis (default: 48)",
-    )
-    setup_p.add_argument(
-        "--max-chars",
-        type=int,
-        default=None,
-        metavar="N",
-        help="max total characters for dependency context during Phase 1 (default: 80000)",
-    )
-
-    # ── optimize ─────────────────────────────────────────────────────────────
-    opt_p = subparsers.add_parser(
-        "optimize",
-        formatter_class=_FMT,
-        help="Run the optimization loop against your agent",
-        description=(
-            "Run the iterative optimization loop against your agent.\n"
-            "\n"
-            "Requires overmind setup to have been run first.\n"
-            "\n"
-            "Each iteration:\n"
-            "  1. Runs the agent against the evaluation dataset\n"
-            "  2. Diagnoses failures using the analyzer model\n"
-            "  3. Generates and tests candidate improvements\n"
-            "  4. Accepts changes that improve the score\n"
-            "\n"
-            f"Results and traces are saved to {overmind_rel('agents', '<name>', 'experiments')}/.\n"
-            "The best-performing version is written to experiments/best_agent.py there."
-        ),
-        epilog=(
-            "Flags:\n"
-            "  --fast    Skips all interactive prompts. Requires ANALYZER_MODEL\n"
-            f"            in {overmind_rel('.env')}. Uses defaults for all optimizer settings\n"
-            "            (no LLM judge, no backtesting, 5 iterations).\n"
-            "\n"
-            "Examples:\n"
-            "  overmind optimize lead-qualification\n"
-            "  overmind optimize lead-qualification --fast\n"
-        ),
-    )
-    opt_p.add_argument(
-        "agent",
-        metavar="AGENT_NAME",
-        help="registered agent name (see: overmind agent list)",
-    )
-    opt_p.add_argument(
-        "--fast",
-        action="store_true",
-        help=f"skip all prompts; requires ANALYZER_MODEL in {overmind_rel('.env')}",
-    )
-    opt_p.add_argument(
-        "--scope",
-        dest="scope_globs",
-        action="append",
-        default=None,
-        metavar="GLOB",
-        help=(
-            "override optimizable path globs from eval_spec (repeatable); "
-            "replaces `scope.optimizable_paths` for this run"
-        ),
-    )
-    opt_p.add_argument(
-        "--max-files",
-        type=int,
-        default=None,
-        metavar="N",
-        help="override max import-closure file count for the bundle (default: from Config)",
-    )
-    opt_p.add_argument(
-        "--max-chars",
-        type=int,
-        default=None,
-        metavar="N",
-        help="override max total characters in the bundle (default: from Config)",
-    )
-
-    # ── optimize-step (skill-driven) ────────────────────────────────────────
-    _build_optimize_step_parser(subparsers)
-
-    # ── doctor ───────────────────────────────────────────────────────────────
-    doctor_p = subparsers.add_parser(
-        "doctor",
-        formatter_class=_FMT,
-        help="Diagnose bundle scope and eval spec for a registered agent (read-only)",
-        description=(
-            "Prints how Overmind would resolve the multi-file bundle: file count, "
-            "character budget, suggested scope from eval_spec.json, and wrapper status. "
-            "Does not call any LLM and does not modify files."
-        ),
-        epilog=("Example:\n  overmind doctor my-agent\n"),
-    )
-    doctor_p.add_argument(
-        "agent",
-        metavar="AGENT_NAME",
-        help="registered agent name (see: overmind agent list)",
-    )
+    # ── daemon / workflow (client-server FSM) ───────────────────────────────
+    _build_daemon_parser(subparsers)
+    _build_workflow_parser(subparsers)
 
     return parser
 
@@ -466,12 +310,6 @@ def main() -> None:
 
     load_dotenv(".env")
     load_dotenv(".overmind/.env", override=True)
-    # All pre-``overmind.init()`` patches for the skill loop live in the
-    # command module so this dispatcher stays focused on routing.
-    if args.command == "optimize-step":
-        from overmind.commands.optimize_step_cmd import bootstrap_optimize_step
-
-        bootstrap_optimize_step(args)
 
     # Wire up logging as early as possible so every module that gets
     # imported next (commands, optimizer, coding agent, …) can emit debug
@@ -497,6 +335,8 @@ def main() -> None:
                 cmd_register(args.name, args.entrypoint)
             elif args.agent_command == "list":
                 cmd_list()
+            elif args.agent_command == "pull":
+                cmd_pull()
             elif args.agent_command == "remove":
                 context.attach(context.set_value(attrs.AGENT_NAME, args.name))
                 cmd_remove(args.name)
@@ -510,27 +350,12 @@ def main() -> None:
                 context.attach(context.set_value(attrs.AGENT_NAME, args.name))
                 cmd_validate(args.name, args.data)
 
-        elif args.command == "setup":
-            _kw = _bundle_cli_kwargs(args)
-            context.attach(context.set_value(attrs.AGENT_NAME, args.agent))
-            _setup(
-                agent_name=args.agent,
-                fast=args.fast,
-                policy=args.policy,
-                data=args.data,
-                **_kw,
-            )
+        elif args.command == "daemon":
+            _daemon(args)
 
-        elif args.command == "optimize":
-            _kw = _bundle_cli_kwargs(args)
-            context.attach(context.set_value(attrs.AGENT_NAME, args.agent))
-            _optimize(agent_name=args.agent, fast=args.fast, **_kw)
-
-        elif args.command == "optimize-step":
-            agent_name = getattr(args, "agent", None)
-            if agent_name:
-                context.attach(context.set_value(attrs.AGENT_NAME, agent_name))
-            raise SystemExit(_optimize_step(args))
+        elif args.command == "workflow":
+            context.attach(context.set_value(attrs.AGENT_NAME, args.agent_name))
+            _workflow(args)
 
     except KeyboardInterrupt:
         span = _otel_trace.get_current_span()

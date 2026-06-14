@@ -483,7 +483,7 @@ Tell the user:
 - Whether `overmind agent validate --data` used the user’s dataset file or a **temporary stub JSON** the agent generated from the locked schema (stub path deleted afterward unless the user opted in to keep it).
 - Which dataset file was used (if any) and whether any field name conflicts between the dataset and the codebase were found and resolved.
 - That all agent runtime keys live in `.overmind/.env` (there is no per-agent `.env`); they should fill in any remaining placeholders there before running the agent.
-- The next recommended step: run `/overmind-generate-spec-and-dataset` for the agent.
+- The next recommended step: start the client daemon with `overmind daemon` to connect this machine to the Overmind server, then trigger optimization from the Overmind UI (the server orchestrates analysis, eval criteria, diagnosis, and candidate generation).
 
 Do not mention temporary helper files, registry internals, or implementation details unless the user asks.
 

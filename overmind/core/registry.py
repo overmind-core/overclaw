@@ -198,6 +198,32 @@ def _write_registry_entries(entries: list[dict[str, str]]) -> None:
 # ---------------------------------------------------------------------------
 
 
+def entrypoint_from_path(agent_path: str, fn_name: str) -> str:
+    """Build a registry entrypoint (``module.path:function``) from a source file.
+
+    The inverse of :func:`_module_to_file`: an agent file path (relative to the
+    project root, or absolute under it) plus a function name becomes the dotted
+    ``module:function`` string stored in ``agents.toml``. Directory segments that
+    start with a dot cannot round-trip through dotted notation, so those fall
+    back to the slash-path form that :func:`_module_to_file` also accepts.
+    """
+    p = Path(agent_path)
+    try:
+        root = project_root()
+        if p.is_absolute():
+            p = p.relative_to(root)
+    except (ValueError, SystemExit):
+        # Outside the project root, or no project root yet — keep the path as
+        # given; the dotted/slash conversion below still produces a usable ref.
+        pass
+    if p.suffix.lower() in _SUPPORTED_EXTENSIONS:
+        p = p.with_suffix("")
+    parts = [seg for seg in p.parts if seg not in (".", "")]
+    module = p.as_posix() if any(seg.startswith(".") for seg in parts) else ".".join(parts)
+    fn = (fn_name or "").strip()
+    return f"{module}:{fn}" if fn else module
+
+
 def parse_entrypoint(entrypoint: str) -> tuple[str, str]:
     """Split 'module.path:function' into (module, function_name).
 
@@ -551,6 +577,49 @@ def save_agent(name: str, entrypoint: str, id: str | None = None) -> None:
         row["id"] = final_id
     filtered.append(row)
     _write_registry_entries(filtered)
+
+
+def register_agents(
+    agents: list[dict[str, str]],
+    *,
+    prune: bool = False,
+) -> list[dict[str, str]]:
+    """Write many agents into ``.overmind/agents.toml`` in one pass (bulk register).
+
+    Each item is ``{"name", "entrypoint", "id"?}``. This is the multi-agent
+    counterpart of :func:`save_agent`, used when the server has *extracted* every
+    agent in a codebase and the local registry should reflect all of them at
+    once.
+
+    Existing entries are merged by name: an incoming entry overwrites that name's
+    entrypoint (and ``id`` when provided), names already present but absent from
+    *agents* are preserved, and an incoming entry without an ``id`` keeps any id
+    already on file. Pass ``prune=True`` to drop local entries not in *agents*.
+    Returns the entries written.
+    """
+    by_name = {e["name"]: dict(e) for e in _read_registry_entries()}
+
+    written: set[str] = set()
+    for item in agents:
+        name = _str_val(item.get("name"))
+        entrypoint = _str_val(item.get("entrypoint"))
+        if not name or not entrypoint:
+            continue
+        row = by_name.get(name, {})
+        row["name"] = name
+        row["entrypoint"] = entrypoint
+        incoming_id = _str_val(item.get("id"))
+        if incoming_id:
+            row["id"] = incoming_id
+        by_name[name] = row
+        written.add(name)
+
+    if prune:
+        by_name = {name: row for name, row in by_name.items() if name in written}
+
+    entries = list(by_name.values())
+    _write_registry_entries(entries)
+    return entries
 
 
 def set_agent_id(name: str, id: str | None) -> None:

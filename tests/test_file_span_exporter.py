@@ -1,15 +1,14 @@
-"""Roundtrip test for the local JSONL file span exporter.
+"""Tests for the local JSONL file span exporter.
 
-Verifies that a span emitted under the ``overmind`` tracer scope and
-exported via :class:`overmind.tracing_file_exporter.JsonlFileSpanExporter`
-can be read back by
-:func:`overmind.optimize.trace_reader.parse_trace_file_per_line` into a
-:class:`overmind.optimize.trace_reader.ParsedTrace` whose ``tool_trace``
-contains the expected ``{name, args, result, ...}`` entry.
+Verifies that a span emitted under the ``overmind`` tracer scope and exported
+via :class:`overmind.tracing_file_exporter.JsonlFileSpanExporter` is written to
+disk as a well-formed OTLP-JSON envelope containing the span's name and
+attributes.
 
-If this regresses, every Tool Usage score will fall back to "unscored"
-again and the optimizer's analyzer will lock focus onto tool descriptions
-indefinitely.
+The exporter is the local sink wired into the agent subprocess by the CLI
+daemon's runner (``OVERMIND_TRACE_FILE``); the Overmind server ingests those
+spans out of band, so this test asserts the writer's output shape rather than
+parsing it back with any local reader.
 """
 
 from __future__ import annotations
@@ -21,7 +20,6 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
-from overmind.optimize.trace_reader import parse_trace_file_per_line
 from overmind.tracing_file_exporter import JsonlFileSpanExporter
 
 
@@ -35,6 +33,28 @@ def _new_provider(path: Path) -> TracerProvider:
     provider = TracerProvider(resource=Resource.create({"service.name": "test"}))
     provider.add_span_processor(SimpleSpanProcessor(JsonlFileSpanExporter(path)))
     return provider
+
+
+def _spans_in(path: Path) -> list[dict]:
+    """Flatten every span object across all OTLP-JSON envelope lines in *path*."""
+    spans: list[dict] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        envelope = json.loads(line)
+        for rs in envelope.get("resource_spans", []):
+            for ss in rs.get("scope_spans", []):
+                spans.extend(ss.get("spans", []))
+    return spans
+
+
+def _attr(span: dict, key: str) -> dict | None:
+    """Return the ``value`` object for *key* in an OTLP span's attribute list."""
+    for attr in span.get("attributes", []):
+        if attr.get("key") == key:
+            return attr.get("value")
+    return None
 
 
 def test_file_exporter_writes_overmind_scope(tmp_path: Path):
@@ -55,15 +75,16 @@ def test_file_exporter_writes_overmind_scope(tmp_path: Path):
     text = trace_path.read_text(encoding="utf-8").strip()
     assert text, "file should be non-empty"
 
-    parsed = parse_trace_file_per_line(trace_path)
-    merged_tool_trace = [t for trace in parsed for t in trace.tool_trace]
+    spans = _spans_in(trace_path)
+    names = [s.get("name") for s in spans]
+    assert "my_tool" in names, f"exported spans should include 'my_tool', got: {names}"
 
-    names = [t["name"] for t in merged_tool_trace]
-    assert "my_tool" in names, f"tool_trace should include 'my_tool', got: {names}"
-
-    tool_entry = next(t for t in merged_tool_trace if t["name"] == "my_tool")
-    assert tool_entry.get("args", {}).get("x") == 1
-    assert tool_entry.get("result", {}).get("y") == 2
+    tool_span = next(s for s in spans if s.get("name") == "my_tool")
+    assert _attr(tool_span, "name") == {"string_value": "my_tool"}
+    inputs = _attr(tool_span, "inputs")
+    assert inputs is not None and json.loads(inputs["string_value"]) == {"x": 1}
+    outputs = _attr(tool_span, "outputs")
+    assert outputs is not None and json.loads(outputs["string_value"]) == {"y": 2}
 
 
 def test_file_exporter_handles_missing_dir(tmp_path: Path):
@@ -79,13 +100,5 @@ def test_file_exporter_handles_missing_dir(tmp_path: Path):
     provider.shutdown()
 
     assert nested.exists()
-    parsed = parse_trace_file_per_line(nested)
-    assert any("tool_a" in [t["name"] for t in trace.tool_trace] for trace in parsed)
-
-
-# Intentionally no teardown that touches the global tracer provider.
-# OTel does not support resetting ``set_tracer_provider`` cleanly; clobbering
-# the singleton here would break any later test that calls
-# ``otel_trace.get_tracer_provider().force_flush(...)``. The locally-built
-# provider in each test stays installed for the rest of the test session,
-# which is harmless: nothing else exports spans here.
+    names = [s.get("name") for s in _spans_in(nested)]
+    assert "tool_a" in names, f"exported spans should include 'tool_a', got: {names}"

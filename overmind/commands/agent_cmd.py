@@ -111,8 +111,8 @@ def _print_post_register_next_step(console: Console, name: str) -> None:
         f"  Next step: [bold {BRAND}]overmind agent validate {name} "
         f"--data <path/to/seed.json>[/bold {BRAND}] "
         f"[dim](if you have seed data)[/dim]\n"
-        f"  [dim]Or jump straight to [/dim]"
-        f"[bold {BRAND}]overmind setup {name}[/bold {BRAND}][dim].[/dim]\n"
+        f"  [dim]Then connect this machine to the server with [/dim]"
+        f"[bold {BRAND}]overmind daemon[/bold {BRAND}][dim] and optimize from the Overmind UI.[/dim]\n"
     )
 
 
@@ -534,6 +534,64 @@ def cmd_list() -> None:
     console.print()
     console.print(table)
     console.print()
+
+
+@observe_safe(span_name="overmind.agent.pull", type=SpanType.WORKFLOW)
+def cmd_pull() -> None:
+    """Write ``.overmind/agents.toml`` from the agents extracted on the server."""
+    from overmind.client import get_client, sync_registry_from_server
+
+    console = Console()
+    load_overmind_dotenv()
+
+    client = get_client()
+    if client is None:
+        console.print(
+            "\n  [bold red]Error:[/bold red] Overmind API is not configured.\n\n"
+            "  Set your project API key first:\n"
+            f"    [dim]{overmind_rel('.env')}[/dim] → [bold]OVERMIND_API_KEY=ovr_...[/bold]\n"
+            "  (and [bold]OVERMIND_API_URL[/bold] for a self-hosted backend).\n"
+        )
+        raise SystemExit(1)
+
+    try:
+        entries = sync_registry_from_server(client)
+    except Exception as exc:
+        console.print(f"\n  [bold red]Error:[/bold red] Could not fetch agents: {exc}\n")
+        raise SystemExit(1) from exc
+
+    set_tag(attrs.AGENT_REGISTERED_COUNT, len(entries))
+
+    if not entries:
+        console.print(
+            "\n  [dim]No agents with a runnable entrypoint were found on the server.[/dim]\n\n"
+            "  Connect and analyze a repository in the Overmind UI first, then\n"
+            "  run [bold]overmind agent pull[/bold] again.\n"
+        )
+        return
+
+    table = Table(border_style="cyan", show_header=True, show_lines=False)
+    table.add_column("NAME", style=f"bold {BRAND}")
+    table.add_column("ENTRYPOINT")
+    table.add_column("FILE", justify="center")
+
+    for entry in sorted(entries, key=lambda e: e["name"].lower()):
+        try:
+            file_path, _ = resolve_entrypoint_file(entry["entrypoint"])
+            file_ok = "[green]\u2713[/green]" if file_path.exists() else "[red]\u2717[/red]"
+        except Exception:
+            file_ok = "[red]\u2717[/red]"
+        table.add_row(entry["name"], entry["entrypoint"], file_ok)
+
+    console.print(
+        f"\n  [bold green]\u2713[/bold green]  Wrote {len(entries)} agent(s) to "
+        f"[dim]{overmind_rel('agents.toml')}[/dim]"
+    )
+    console.print(table)
+    console.print(
+        "\n  [dim]A [red]\u2717[/red] FILE means the entrypoint isn't present in this checkout.[/dim]\n"
+        f"  [dim]Connect this machine to the server:[/dim] [bold {BRAND}]overmind daemon[/bold {BRAND}]\n"
+    )
 
 
 @observe_safe(span_name="overmind.agent.remove", type=SpanType.WORKFLOW)

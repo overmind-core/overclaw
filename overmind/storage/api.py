@@ -37,6 +37,9 @@ from overmind.client import (
 from overmind.client import (
     delete_dataset as _delete_dataset_via_api,
 )
+from overmind.openapi_client.models.patched_agent_eval_matrix_update_request import (
+    PatchedAgentEvalMatrixUpdateRequest,
+)
 from overmind.openapi_client.models.patched_agent_request import PatchedAgentRequest
 from overmind.storage.base import StorageBackend
 
@@ -138,7 +141,7 @@ class ApiBackend(StorageBackend):
     # ------------------------------------------------------------------
 
     def save_spec(self, spec: dict) -> None:
-        """Upsert the agent record with eval-spec fields.
+        """Persist eval-spec fields via the eval-matrix API.
 
         First write is synchronous so the freshly minted agent UUID is captured
         in :attr:`agent_id`; later writes for an existing agent run in the
@@ -156,42 +159,39 @@ class ApiBackend(StorageBackend):
                     agent_name=self._agent_name,
                 )
                 self._agent_id = str(result.id)
+                _patch_eval_matrix(client, self._agent_id, spec)
             except Exception:
                 logger.exception("save_spec: initial upsert_agent failed")
             return
 
-        _submit_async_upsert(
-            client,
-            agent_path=self._agent_path,
-            spec=spec,
-            agent_name=self._agent_name,
-        )
+        _fire(_patch_eval_matrix, client, self._agent_id, spec)
 
     def load_spec(self) -> dict | None:
-        """Fetch eval-spec fields via ``agents_eval_spec_retrieve``.
-
-        Both ``agents_eval_spec_retrieve`` and ``agents_retrieve`` are
-        synchronous SDK methods. They were previously wrapped in
-        :func:`_run_async`, which raised ``TypeError`` after the HTTP call
-        had already succeeded, so this function always returned ``None``
-        even though the data was available. Call directly.
-        """
+        """Fetch eval-spec fields via ``agents_eval_matrix_retrieve``."""
         if not self._agent_id:
             return None
         client = self._client_()
         if not client:
             return None
         try:
-            response = client.agents_eval_spec_retrieve(id=UUID(self._agent_id))
+            response = client.agents_eval_matrix_retrieve(id=UUID(self._agent_id))
         except Exception:
             return None
-        spec: dict[str, Any] = response.to_dict()
-        # Augment with policy/agent metadata that's stored on the Agent record
-        # but not exposed by the eval-spec endpoint.
-        with contextlib.suppress(Exception):
-            agent = client.agents_retrieve(id=UUID(self._agent_id))
-            if agent.policy_data:
-                spec["policy"] = agent.policy_data
+        payload: dict[str, Any] = response.to_dict()
+        spec: dict[str, Any] = {
+            "agent_description": payload.get("agent_description"),
+            "input_schema": payload.get("input_schema") or {},
+            "output_fields": payload.get("output_fields") or {},
+            "structure_weight": payload.get("structure_weight"),
+            "total_points": payload.get("total_points"),
+            "tool_config": payload.get("tool_config") or {},
+            "tool_usage_weight": payload.get("tool_usage_weight"),
+            "consistency_rules": payload.get("consistency_rules") or [],
+            "optimizable_elements": payload.get("optimizable_elements") or [],
+            "fixed_elements": payload.get("fixed_elements") or [],
+        }
+        if payload.get("policy_data"):
+            spec["policy"] = payload["policy_data"]
         return spec
 
     def delete_spec(self) -> None:
@@ -310,18 +310,23 @@ class ApiBackend(StorageBackend):
         self._patch_agent(policy_markdown=None, policy_data=None)
 
 
-def _submit_async_upsert(
-    client: Any,
-    *,
-    agent_path: str,
-    spec: dict,
-    agent_name: str | None = None,
-) -> None:
-    """Run ``upsert_agent`` on a background thread (fire-and-forget)."""
-    _fire(
-        upsert_agent,
-        client,
-        agent_path=agent_path,
-        spec=spec,
-        agent_name=agent_name,
+def _patch_eval_matrix(client: Any, agent_id: str, spec: dict) -> None:
+    """PATCH eval-matrix fields (writes agent-linked evaluator rows server-side)."""
+    policy = spec.get("policy")
+    if policy is None and spec.get("policy_data") is not None:
+        policy = spec.get("policy_data")
+    body = PatchedAgentEvalMatrixUpdateRequest(
+        input_schema=spec.get("input_schema"),
+        output_fields=spec.get("output_fields"),
+        structure_weight=spec.get("structure_weight"),
+        total_points=spec.get("total_points"),
+        tool_config=spec.get("tool_config"),
+        tool_usage_weight=spec.get("tool_usage_weight"),
+        evaluation_criteria=spec.get("evaluation_criteria"),
+        policy_markdown=spec.get("policy_markdown"),
+        policy_data=policy,
+    )
+    client.agents_eval_matrix_partial_update(
+        id=UUID(agent_id),
+        patched_agent_eval_matrix_update_request=body,
     )

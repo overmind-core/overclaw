@@ -21,7 +21,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from overmind import client as client_mod
-from overmind.client import get_client, upsert_agent
+from overmind.client import get_client, get_project_id, upsert_agent
 
 # ---------------------------------------------------------------------------
 # get_client — auth routing
@@ -78,11 +78,20 @@ class TestGetClientAuthRouting:
     def test_uses_default_base_url(self, monkeypatch: pytest.MonkeyPatch):
         from overmind.core.constants import DEFAULT_BASE_URL
 
+        monkeypatch.delenv("OVERMIND_API_URL", raising=False)
         monkeypatch.setenv("OVERMIND_API_KEY", "ovr_test")
 
         client = get_client()
         assert client is not None
         assert client.api_client.configuration.host == DEFAULT_BASE_URL.rstrip("/")
+
+    def test_overmind_api_url_override(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("OVERMIND_API_KEY", "ovr_test")
+        monkeypatch.setenv("OVERMIND_API_URL", "http://127.0.0.1:8000/")
+
+        client = get_client()
+        assert client is not None
+        assert client.api_client.configuration.host == "http://127.0.0.1:8000"
 
     def test_works_without_overmind_project_id(self, monkeypatch: pytest.MonkeyPatch):
         """``OVERMIND_PROJECT_ID`` was removed; setting it must be a no-op."""
@@ -193,6 +202,29 @@ class TestUpsertAgentProjectResolution:
         upsert_agent(client, agent_path="/tmp/b.py", spec={}, agent_name="b")
 
         assert client.projects_list.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# get_project_id — server workflow / daemon
+# ---------------------------------------------------------------------------
+
+
+class TestGetProjectId:
+    def test_explicit_env_var(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("OVERMIND_PROJECT_ID", "33333333-3333-3333-3333-333333333333")
+        assert get_project_id() == "33333333-3333-3333-3333-333333333333"
+
+    def test_falls_back_to_api_lookup(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("OVERMIND_PROJECT_ID", raising=False)
+        monkeypatch.setenv("OVERMIND_API_KEY", "ovr_test")
+
+        client = MagicMock()
+        client.projects_list.return_value = _page(
+            _FakeProject("44444444-4444-4444-4444-444444444444", "solo"),
+        )
+        monkeypatch.setattr(client_mod, "get_client", lambda: client)
+
+        assert get_project_id() == "44444444-4444-4444-4444-444444444444"
 
 
 # ---------------------------------------------------------------------------

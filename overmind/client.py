@@ -48,18 +48,35 @@ from overmind.core.constants import DEFAULT_BASE_URL
 from overmind.openapi_client import ApiClient, Configuration
 from overmind.openapi_client.api.agents_api import AgentsApi
 from overmind.openapi_client.api.auth_api import AuthApi
+from overmind.openapi_client.api.cli_api import CliApi
 from overmind.openapi_client.api.datasets_api import DatasetsApi
 from overmind.openapi_client.api.job_iterations_api import JobIterationsApi
 from overmind.openapi_client.api.jobs_api import JobsApi
 from overmind.openapi_client.api.projects_api import ProjectsApi
 from overmind.openapi_client.api.traces_api import TracesApi
+from overmind.openapi_client.api.workflow_runs_api import WorkflowRunsApi
 from overmind.openapi_client.models.agent_request import AgentRequest
+from overmind.openapi_client.models.client_command_result_request import (
+    ClientCommandResultRequest,
+)
+from overmind.openapi_client.models.client_session import ClientSession
+from overmind.openapi_client.models.client_session_create_request import (
+    ClientSessionCreateRequest,
+)
 from overmind.openapi_client.models.datapoint_request import DatapointRequest
 from overmind.openapi_client.models.dataset_request import DatasetRequest
+from overmind.openapi_client.models.dataset_source_enum import DatasetSourceEnum
 from overmind.openapi_client.models.job_status_enum import JobStatusEnum
 from overmind.openapi_client.models.patched_agent_request import PatchedAgentRequest
 from overmind.openapi_client.models.patched_job_request import PatchedJobRequest
-from overmind.openapi_client.models.source_enum import SourceEnum
+from overmind.openapi_client.models.user_response_request import UserResponseRequest
+from overmind.openapi_client.models.workflow_artifact_create_request import (
+    WorkflowArtifactCreateRequest,
+)
+from overmind.openapi_client.models.workflow_run import WorkflowRun
+from overmind.openapi_client.models.workflow_run_create_request import (
+    WorkflowRunCreateRequest,
+)
 
 logger = logging.getLogger("overmind.client")
 
@@ -129,11 +146,13 @@ def flush_pending_api_updates(timeout: float = 8.0) -> None:
 class OvermindClient(
     AgentsApi,
     AuthApi,
+    CliApi,
     DatasetsApi,
     JobIterationsApi,
     JobsApi,
     ProjectsApi,
     TracesApi,
+    WorkflowRunsApi,
 ):
     """Convenience facade over the generated OpenAPI client.
 
@@ -214,14 +233,148 @@ class OvermindClient(
             make_active=make_active,
         )
 
+    # ------------------------------------------------------------------
+    # Workflow / CLI daemon
+    # ------------------------------------------------------------------
+
+    def _api_json_post(self, path: str, body: dict) -> dict:
+        """POST JSON to an API path (for bodies with fields missing from OpenAPI models)."""
+        import json
+
+        url = self.api_client.configuration.host.rstrip("/") + path
+        headers = {
+            **auth_headers(self.api_client.configuration),
+            "Content-Type": "application/json",
+        }
+        resp = self.api_client.rest_client.request(
+            method="POST",
+            url=url,
+            headers=headers,
+            body=json.dumps(body),
+        )
+        if resp.status >= 400:
+            raise RuntimeError(f"API POST {path} failed ({resp.status}): {resp.data}")
+        if not resp.data:
+            return {}
+        return json.loads(resp.data)
+
+    def poll_session(
+        self,
+        session_id: str,
+        *,
+        agent_name: str = "",
+        cli_version: str = "",
+    ) -> list[dict]:
+        """Poll the server for the next commands to run on this session.
+
+        A single round-trip that replaces the old SSE stream + heartbeat: it
+        refreshes the session's liveness server-side and returns every command
+        still awaiting execution (ordered by ``seq``). The daemon calls this on
+        a short interval; because the server keeps returning outstanding
+        commands until a result is submitted, a dropped connection or a
+        restarted daemon recovers automatically on the next poll.
+        """
+        data = self._api_json_post(
+            f"/api/cli/sessions/{session_id}/poll/",
+            {"agent_name": agent_name, "cli_version": cli_version},
+        )
+        return data.get("commands", []) if isinstance(data, dict) else []
+
+    def create_cli_session(
+        self,
+        project_id: str,
+        *,
+        hostname: str = "",
+        cli_version: str = "",
+        agent_name: str = "",
+    ) -> Any:
+        body = ClientSessionCreateRequest(
+            hostname=hostname,
+            cli_version=cli_version,
+            agent_name=agent_name,
+        ).to_dict()
+        body["project"] = project_id
+        data = self._api_json_post("/api/cli/sessions/", body)
+
+        return ClientSession.from_dict(data)
+
+    def start_workflow_run(
+        self,
+        project_id: str,
+        *,
+        workflow_name: str,
+        agent_id: str | None = None,
+        client_session_id: str | None = None,
+        config: dict | None = None,
+    ) -> Any:
+        body = WorkflowRunCreateRequest(
+            workflow_name=workflow_name,
+            agent_id=agent_id,
+            client_session_id=client_session_id,
+            config=config or {},
+        ).to_dict()
+        body["project"] = project_id
+        data = self._api_json_post("/api/workflow-runs/", body)
+
+        return WorkflowRun.from_dict(data)
+
+    def submit_workflow_user_response(
+        self,
+        run_id: str,
+        *,
+        approved: bool = True,
+        feedback: dict | None = None,
+    ) -> Any:
+        return self.workflow_runs_user_response_create(
+            id=run_id,
+            user_response_request=UserResponseRequest(
+                approved=approved,
+                feedback=feedback or {},
+            ),
+        )
+
+    def submit_command_result(
+        self,
+        command_id: str,
+        *,
+        success: bool,
+        result: dict | None = None,
+        error: str = "",
+    ) -> Any:
+        return self.cli_commands_result_create(
+            id=command_id,
+            client_command_result_request=ClientCommandResultRequest(
+                success=success,
+                result=result or {},
+                error=error,
+            ),
+        )
+
+    def upload_workflow_artifact(
+        self,
+        run_id: str,
+        *,
+        kind: str,
+        content: dict,
+        name: str = "",
+    ) -> Any:
+        return self.workflow_runs_artifacts_create(
+            id=run_id,
+            workflow_artifact_create_request=WorkflowArtifactCreateRequest(
+                kind=kind,
+                content=content,
+                name=name,
+            ),
+        )
+
 
 def get_client() -> OvermindClient | None:
     """Return a configured client if ``OVERMIND_API_KEY`` is set.
 
-    Always connects to :data:`overmind.core.constants.DEFAULT_BASE_URL`
-    (the Overmind Cloud endpoint).
+    Uses ``OVERMIND_API_URL`` when set, otherwise
+    :data:`overmind.core.constants.DEFAULT_BASE_URL`.
     """
-    base_url = DEFAULT_BASE_URL.rstrip("/")
+    base_url = (os.getenv("OVERMIND_API_URL") or DEFAULT_BASE_URL).rstrip("/")
     token = os.getenv("OVERMIND_API_KEY", "").strip()
     if not token:
         logger.debug("get_client: API not configured (OVERMIND_API_KEY not set)")
@@ -241,9 +394,57 @@ def get_client() -> OvermindClient | None:
     return OvermindClient(api_client=ApiClient(configuration=cfg))
 
 
+def auth_headers(cfg: Configuration) -> dict[str, str]:
+    """Build the correct auth header(s) for a :class:`Configuration`.
+
+    ``get_client`` stores a project key as ``cfg.api_key = {"ApiKeyAuth": token}``
+    and a user JWT as ``cfg.access_token``. Raw string interpolation of
+    ``cfg.api_key`` therefore yields a header like ``Bearer {'ApiKeyAuth': '…'}``
+    which fails server-side auth. Send the project key only as ``X-Api-Key`` and
+    the JWT only as ``Authorization: Bearer`` so the matching authenticator runs
+    (and the other isn't handed a bogus credential that would 401 first).
+    """
+    api_key = cfg.api_key
+    if isinstance(api_key, dict):
+        token = api_key.get("ApiKeyAuth") or next(iter(api_key.values()), "")
+        return {"X-Api-Key": token} if token else {}
+    if cfg.access_token:
+        return {"Authorization": f"Bearer {cfg.access_token}"}
+    if api_key:
+        return {"X-Api-Key": str(api_key)}
+    return {}
+
+
 def is_configured() -> bool:
     """Return True if ``OVERMIND_API_KEY`` is set."""
     return bool(os.getenv("OVERMIND_API_KEY", "").strip())
+
+
+def get_project_id() -> str | None:
+    """Return the project UUID for server-orchestrated workflows.
+
+  Resolution order:
+  1. ``OVERMIND_PROJECT_ID`` environment variable
+  2. ``project_id`` key in ``.overmind/.env`` (if present)
+  3. First project visible to the configured API key (cached)
+    """
+    explicit = os.getenv("OVERMIND_PROJECT_ID", "").strip()
+    if explicit:
+        return explicit
+
+    env_path = Path(".overmind/.env")
+    if env_path.is_file():
+        for line in env_path.read_text().splitlines():
+            stripped = line.strip()
+            if stripped.startswith("OVERMIND_PROJECT_ID="):
+                value = stripped.split("=", 1)[1].strip().strip("'\"")
+                if value:
+                    return value
+
+    client = get_client()
+    if client is None:
+        return None
+    return _resolve_project_uuid(client)
 
 
 # ---------------------------------------------------------------------------
@@ -314,15 +515,6 @@ def _agent_shared_fields(spec: dict, agent_path: str) -> dict[str, Any]:
     return dict(  # noqa: C408
         description=description,
         agent_path=(agent_path or "")[:512] or None,
-        input_schema=spec.get("input_schema"),
-        output_fields=spec.get("output_fields"),
-        structure_weight=spec.get("structure_weight"),
-        total_points=spec.get("total_points"),
-        tool_config=spec.get("tool_config"),
-        tool_usage_weight=spec.get("tool_usage_weight"),
-        consistency_rules=spec.get("consistency_rules"),
-        optimizable_elements=spec.get("optimizable_elements"),
-        fixed_elements=spec.get("fixed_elements"),
     )
 
 
@@ -395,16 +587,16 @@ def upsert_agent(
 # ---------------------------------------------------------------------------
 
 
-def _source_enum(source: str) -> SourceEnum:
-    """Map a string to :class:`SourceEnum`, defaulting to synthetic."""
+def _source_enum(source: str) -> DatasetSourceEnum:
+    """Map a string to :class:`DatasetSourceEnum`, defaulting to synthetic."""
     key = (source or "").strip().lower()
-    mapping: dict[str, SourceEnum] = {
-        "seed": SourceEnum.SEED,
-        "synthetic": SourceEnum.SYNTHETIC,
-        "augmented": SourceEnum.AUGMENTED,
-        "production": SourceEnum.PRODUCTION,
+    mapping: dict[str, DatasetSourceEnum] = {
+        "seed": DatasetSourceEnum.SEED,
+        "synthetic": DatasetSourceEnum.SYNTHETIC,
+        "augmented": DatasetSourceEnum.AUGMENTED,
+        "production": DatasetSourceEnum.PRODUCTION,
     }
-    return mapping.get(key, SourceEnum.SYNTHETIC)
+    return mapping.get(key, DatasetSourceEnum.SYNTHETIC)
 
 
 def _datapoint_request(dp: Any, index: int) -> DatapointRequest:
@@ -482,6 +674,43 @@ def get_active_dataset_id(client: OvermindClient, agent_id: str) -> str | None:
         return None
     active = getattr(agent, "active_dataset", None)
     return str(active) if active else None
+
+
+def sync_registry_from_server(client: OvermindClient) -> list[dict[str, str]]:
+    """Materialise every server-extracted agent into ``.overmind/agents.toml``.
+
+    Lists all agents the backend has extracted for this project (paginated) and
+    writes them into the local registry in one pass — the bulk equivalent of
+    ``overmind agent register``. Agents that lack a usable ``agent_path`` +
+    ``entrypoint_fn`` (so no runnable entrypoint can be built) are skipped.
+
+    Returns the entries written. Local-only registry entries are preserved.
+    """
+    from overmind.core.registry import entrypoint_from_path, register_agents
+
+    extracted: list[dict[str, str]] = []
+    page_num = 1
+    while True:
+        page = client.agents_list(page=page_num, page_size=100)
+        for ag in page.results or []:
+            agent_path = (getattr(ag, "agent_path", "") or "").strip()
+            fn = (getattr(ag, "entrypoint_fn", "") or "").strip()
+            name = (getattr(ag, "slug", "") or getattr(ag, "name", "") or "").strip()
+            if not agent_path or not fn or not name:
+                logger.debug("sync_registry: skipping agent without entrypoint: %s", name)
+                continue
+            extracted.append(
+                {
+                    "name": name,
+                    "entrypoint": entrypoint_from_path(agent_path, fn),
+                    "id": str(getattr(ag, "id", "") or ""),
+                }
+            )
+        if not getattr(page, "next", None):
+            break
+        page_num += 1
+
+    return register_agents(extracted)
 
 
 def delete_dataset(client: OvermindClient, dataset_id: str) -> bool:

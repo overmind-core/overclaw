@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import os
 from unittest.mock import MagicMock, patch
 
@@ -125,78 +124,26 @@ class TestBuildParser:
         out = capsys.readouterr().out
         assert "show" in out.lower()
 
+    # ── agent validate ────────────────────────────────────────────────────
+
+    def test_agent_validate_parsed(self):
+        parser = _build_parser()
+        args = parser.parse_args(["agent", "validate", "my-agent", "--data", "/path/to/seed.json"])
+        assert args.agent_command == "validate"
+        assert args.name == "my-agent"
+        assert args.data == "/path/to/seed.json"
+
+    def test_agent_validate_requires_data(self):
+        parser = _build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["agent", "validate", "my-agent"])
+
     # ── agent with no subcommand ──────────────────────────────────────────
 
     def test_agent_no_subcommand(self):
         parser = _build_parser()
         with pytest.raises(SystemExit):
             parser.parse_args(["agent"])
-
-    # ── setup ─────────────────────────────────────────────────────────────
-
-    def test_setup_parsed(self):
-        parser = _build_parser()
-        args = parser.parse_args(["setup", "my-agent"])
-        assert args.command == "setup"
-        assert args.agent == "my-agent"
-        assert args.fast is False
-        assert args.policy is None
-        assert args.data is None
-
-    def test_setup_with_fast(self):
-        parser = _build_parser()
-        args = parser.parse_args(["setup", "my-agent", "--fast"])
-        assert args.fast is True
-
-    def test_setup_with_policy(self):
-        parser = _build_parser()
-        args = parser.parse_args(["setup", "my-agent", "--policy", "/path/to/doc.md"])
-        assert args.policy == "/path/to/doc.md"
-
-    def test_setup_with_data(self):
-        parser = _build_parser()
-        args = parser.parse_args(["setup", "my-agent", "--data", "/path/to/seed.json"])
-        assert args.data == "/path/to/seed.json"
-
-    def test_setup_missing_agent(self):
-        parser = _build_parser()
-        with pytest.raises(SystemExit):
-            parser.parse_args(["setup"])
-
-    def test_setup_help(self, capsys):
-        parser = _build_parser()
-        with pytest.raises(SystemExit):
-            parser.parse_args(["setup", "--help"])
-        out = capsys.readouterr().out
-        assert "setup" in out.lower()
-        assert "--fast" in out
-        assert "--data" in out
-
-    # ── optimize ──────────────────────────────────────────────────────────
-
-    def test_optimize_parsed(self):
-        parser = _build_parser()
-        args = parser.parse_args(["optimize", "my-agent"])
-        assert args.command == "optimize"
-        assert args.agent == "my-agent"
-        assert args.fast is False
-
-    def test_optimize_with_fast(self):
-        parser = _build_parser()
-        args = parser.parse_args(["optimize", "my-agent", "--fast"])
-        assert args.fast is True
-
-    def test_optimize_missing_agent(self):
-        parser = _build_parser()
-        with pytest.raises(SystemExit):
-            parser.parse_args(["optimize"])
-
-    def test_optimize_help(self, capsys):
-        parser = _build_parser()
-        with pytest.raises(SystemExit):
-            parser.parse_args(["optimize", "--help"])
-        out = capsys.readouterr().out
-        assert "optimize" in out.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -277,53 +224,26 @@ class TestMainDispatch:
                 main()
                 mock_fn.assert_called_once_with("test")
 
-    def test_setup_dispatches(self):
+    def test_agent_validate_dispatches(self):
         with patch("overmind.cli._build_parser") as mock_parser:
-            mock_args = argparse.Namespace(
-                command="setup",
-                agent="my-agent",
-                fast=True,
-                policy=None,
-                data=None,
-                scope_globs=None,
-                max_files=None,
-                max_chars=None,
-                non_interactive=False,
-            )
+            mock_args = MagicMock()
+            mock_args.command = "agent"
+            mock_args.agent_command = "validate"
+            mock_args.name = "test"
+            mock_args.data = "/path/to/seed.json"
             mock_parser.return_value.parse_args.return_value = mock_args
-            with patch("overmind.cli._setup") as mock_fn:
+            with patch("overmind.cli.cmd_validate") as mock_fn:
                 main()
-                mock_fn.assert_called_once_with(
-                    agent_name="my-agent",
-                    fast=True,
-                    policy=None,
-                    data=None,
-                    scope_globs=None,
-                    max_files=None,
-                    max_chars=None,
-                )
+                mock_fn.assert_called_once_with("test", "/path/to/seed.json")
 
-    def test_optimize_dispatches(self):
+    def test_daemon_dispatches(self):
         with patch("overmind.cli._build_parser") as mock_parser:
-            mock_args = argparse.Namespace(
-                command="optimize",
-                agent="my-agent",
-                fast=False,
-                scope_globs=None,
-                max_files=None,
-                max_chars=None,
-                non_interactive=False,
-            )
+            mock_args = MagicMock()
+            mock_args.command = "daemon"
             mock_parser.return_value.parse_args.return_value = mock_args
-            with patch("overmind.cli._optimize") as mock_fn:
+            with patch("overmind.cli._daemon") as mock_fn:
                 main()
-                mock_fn.assert_called_once_with(
-                    agent_name="my-agent",
-                    fast=False,
-                    scope_globs=None,
-                    max_files=None,
-                    max_chars=None,
-                )
+                mock_fn.assert_called_once()
 
     def test_keyboard_interrupt_exits_130(self):
         with patch("overmind.cli._build_parser") as mock_parser:
