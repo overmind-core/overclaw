@@ -20,14 +20,31 @@ __version__ = "1.0.0"
 __all__ = [
     "AgentsApi",
     "AuthApi",
+    "ChatApi",
+    "ChatSessionsApi",
+    "CliApi",
+    "ConnectorCredentialsApi",
     "DatasetsApi",
+    "EvalAnnotationsApi",
+    "EvalRunsApi",
+    "EvalSamplesApi",
+    "EvalScoresApi",
+    "EvaluatorsApi",
     "FeedbackApi",
+    "FinetuningJobsApi",
+    "GithubApi",
+    "GithubRepoApi",
     "HealthApi",
     "JobIterationsApi",
     "JobsApi",
+    "ModelRefsApi",
+    "ModelsApi",
     "ProjectsApi",
+    "TraceTransformRunsApi",
     "TracesApi",
     "V1Api",
+    "WorkflowRunsApi",
+    "WorkshopsApi",
     "ApiResponse",
     "ApiClient",
     "Configuration",
@@ -40,18 +57,127 @@ __all__ = [
     "APITokenCreateRequestRequest",
     "APITokenCreateResponse",
     "APITokenMetadata",
+    "AddDatapointsFromTracesRequest",
+    "AddDatapointsRequest",
     "Agent",
+    "AgentFlow",
+    "AgentFlowExpectedOutput",
+    "AgentFlowMode",
+    "AgentFlowTelemetry",
+    "AgentFlowTelemetryComponent",
+    "AgentFlowTool",
+    "AgentFlowToolArgument",
+    "AgentFlowUtility",
     "AgentList",
+    "AgentOptimizeRequest",
     "AgentRequest",
+    "AgentSourceRepo",
+    "Annotation",
+    "AnnotationRequest",
     "AuthTokensResponse",
+    "BacktestRunStatusEnum",
+    "BlankEnum",
+    "CatalogModel",
+    "CategoryEnum",
+    "ChatMessage",
+    "ChatMessageCreateRequest",
+    "ChatSession",
+    "ChatSessionCreate",
+    "ChatSessionCreateRequest",
+    "ChatSessionList",
+    "ChatSessionUpdate",
+    "ClientCommand",
+    "ClientCommandKindEnum",
+    "ClientCommandResultRequest",
+    "ClientCommandStatusEnum",
+    "ClientSession",
+    "ClientSessionCreateRequest",
+    "ClientSessionPollRequestRequest",
+    "ClientSessionPollResponse",
+    "ClientSessionRequest",
+    "ClientSessionStatusEnum",
+    "CompareSchemasFileRequest",
+    "CompareSchemasRequestRequest",
+    "CompareSchemasResponse",
+    "CompileRubricRequestRequest",
+    "CompileRubricResponse",
+    "ConnectorCredential",
+    "ConnectorCredentialRequest",
+    "ConnectorCredentialsFetchCreate200Response",
+    "ConnectorCredentialsFetchCreateRequest",
+    "ConnectorCredentialsLangfuseProjectsRetrieve200Response",
+    "ConnectorCredentialsLangfuseProjectsRetrieve200ResponseProjectsInner",
+    "ConnectorCredentialsSyncCreate202Response",
+    "ConnectorTypeEnum",
     "Datapoint",
+    "DatapointInputRequest",
     "DatapointRequest",
     "Dataset",
+    "DatasetContext",
+    "DatasetEvalCapabilitiesResponse",
+    "DatasetFromTracesRequest",
+    "DatasetGroup",
     "DatasetList",
     "DatasetRequest",
+    "DatasetSchema",
+    "DatasetSnapshot",
+    "DatasetSnapshotCreateRequest",
+    "DatasetSnapshotRequest",
+    "DatasetSourceEnum",
+    "DatasetStatusEnum",
+    "DatasetValidateRequestRequest",
+    "EvalRun",
+    "EvalRunDataSourceEnum",
+    "EvalRunEvaluatorStat",
+    "EvalRunList",
+    "EvalRunProgress",
+    "EvalRunRequest",
+    "EvalRunVariantProgress",
+    "EvalSample",
+    "EvalSampleList",
     "EvalSpecResponse",
+    "EvalVariant",
+    "EvalVariantModeEnum",
+    "EvalVariantRequest",
+    "Evaluator",
+    "EvaluatorBulkCreateRequestRequest",
+    "EvaluatorBulkCreateResponse",
+    "EvaluatorKindEnum",
+    "EvaluatorList",
+    "EvaluatorRequest",
+    "EvaluatorScopeEnum",
+    "EventTypeEnum",
     "FeedbackCreate",
     "FeedbackCreateRequest",
+    "FinetuningJob",
+    "FinetuningJobEvent",
+    "FinetuningJobList",
+    "FinetuningJobRequest",
+    "FinetuningJobStatusEnum",
+    "FinetuningRecommendRequestRequest",
+    "FixRunApproveResponse",
+    "FixRunPreview",
+    "FixRunPreviewCounts",
+    "FixRunPreviewEntry",
+    "FixRunPreviewEntryKindEnum",
+    "FixRunPreviewFixCount",
+    "FixRunPreviewRow",
+    "FixSlicePreview",
+    "FixSlicePreviewModeEnum",
+    "FixSlicePreviewRequestRequest",
+    "GenerateEvalsResponse",
+    "GitHubConnection",
+    "GitHubOtelPrRequestRequest",
+    "GitHubRemoteRepo",
+    "GitHubRepo",
+    "GitHubRepoAnalyzeRequestRequest",
+    "GitHubRepoAnalyzeUrlRequestRequest",
+    "GitHubRepoStatusEnum",
+    "GitHubReposListResponse",
+    "GitHubStatus",
+    "GithubAuthRetrieve200Response",
+    "InferSchemaRequestRequest",
+    "IntegrationTypeEnum",
     "Job",
     "JobIteration",
     "JobIterationRequest",
@@ -60,47 +186,134 @@ __all__ = [
     "JobRequest",
     "JobStatusEnum",
     "JobTypeEnum",
+    "Kind146Enum",
+    "ModelCatalogResponse",
+    "ModelRef",
+    "ModelRefProviderEnum",
+    "ModelRefRequest",
+    "ModelTierEnum",
+    "OpenDatasetWorkshopResponse",
+    "OptimizationIteration",
+    "OtelStatusEnum",
     "PaginatedAPITokenMetadataList",
     "PaginatedAgentListList",
+    "PaginatedAnnotationList",
+    "PaginatedChatMessageList",
+    "PaginatedChatSessionListList",
+    "PaginatedClientCommandList",
+    "PaginatedClientSessionList",
+    "PaginatedConnectorCredentialList",
     "PaginatedDatapointList",
+    "PaginatedDatasetGroupList",
     "PaginatedDatasetListList",
+    "PaginatedDatasetSnapshotList",
+    "PaginatedEvalRunListList",
+    "PaginatedEvalSampleListList",
+    "PaginatedEvaluatorListList",
+    "PaginatedFinetuningJobEventList",
+    "PaginatedFinetuningJobListList",
     "PaginatedJobIterationList",
     "PaginatedJobListList",
+    "PaginatedModelRefList",
+    "PaginatedOptimizationIterationList",
     "PaginatedProjectList",
     "PaginatedProjectMemberList",
     "PaginatedRootSpanListList",
+    "PaginatedScoreList",
+    "PaginatedTraceTransformRunList",
+    "PaginatedWorkflowRunList",
+    "PaginatedWorkshopList",
+    "PatchedAgentEvalMatrixUpdateRequest",
     "PatchedAgentRequest",
+    "PatchedChatSessionUpdateRequest",
+    "PatchedClientSessionRequest",
+    "PatchedConnectorCredentialRequest",
+    "PatchedEvalRunRequest",
+    "PatchedEvaluatorRequest",
+    "PatchedFinetuningJobRequest",
     "PatchedJobIterationRequest",
     "PatchedJobRequest",
+    "PatchedModelRefRequest",
     "PatchedProjectRequest",
+    "PatchedWorkflowRunRequest",
+    "PatchedWorkshopRequest",
+    "PhaseEnum",
+    "PollCommand",
+    "PreviewRequestRequest",
+    "PreviewResponse",
     "Project",
     "ProjectMember",
     "ProjectMembershipCreateRequest",
     "ProjectRequest",
     "RegisterRequest",
+    "RemoveDatapointsRequest",
+    "RoleEnum",
     "RootSpanList",
-    "SourceEnum",
+    "RunEvaluator",
+    "SchemaFileSummary",
+    "SchemaRoles",
+    "SchemaTypeConflict",
+    "Score",
+    "ScoreDataTypeEnum",
+    "ScoreFailureRoleEnum",
+    "ScoreSourceEnum",
     "Span",
+    "StageEnum",
     "TokenObtainPair",
     "TokenObtainPairRequest",
     "TokenRefresh",
     "TokenRefreshRequest",
     "TraceDetail",
+    "TraceTransformRequestRequest",
+    "TraceTransformRun",
     "TracesServicesList200Response",
+    "TriggeredByEnum",
     "UserMe",
+    "UserResponseRequest",
+    "WorkflowArtifact",
+    "WorkflowArtifactCreateRequest",
+    "WorkflowRun",
+    "WorkflowRunCreateRequest",
+    "WorkflowRunRequest",
+    "WorkflowRunStatusEnum",
+    "Workshop",
+    "WorkshopCreate",
+    "WorkshopCreateRequest",
+    "WorkshopFile",
+    "WorkshopFileKindEnum",
+    "WorkshopRequest",
+    "WorkshopRunSummary",
+    "WorkshopRunSummaryStatusEnum",
 ]
 
 # import apis into sdk package
 from overmind.openapi_client.api.agents_api import AgentsApi as AgentsApi
 from overmind.openapi_client.api.auth_api import AuthApi as AuthApi
+from overmind.openapi_client.api.chat_api import ChatApi as ChatApi
+from overmind.openapi_client.api.chat_sessions_api import ChatSessionsApi as ChatSessionsApi
+from overmind.openapi_client.api.cli_api import CliApi as CliApi
+from overmind.openapi_client.api.connector_credentials_api import ConnectorCredentialsApi as ConnectorCredentialsApi
 from overmind.openapi_client.api.datasets_api import DatasetsApi as DatasetsApi
+from overmind.openapi_client.api.eval_annotations_api import EvalAnnotationsApi as EvalAnnotationsApi
+from overmind.openapi_client.api.eval_runs_api import EvalRunsApi as EvalRunsApi
+from overmind.openapi_client.api.eval_samples_api import EvalSamplesApi as EvalSamplesApi
+from overmind.openapi_client.api.eval_scores_api import EvalScoresApi as EvalScoresApi
+from overmind.openapi_client.api.evaluators_api import EvaluatorsApi as EvaluatorsApi
 from overmind.openapi_client.api.feedback_api import FeedbackApi as FeedbackApi
+from overmind.openapi_client.api.finetuning_jobs_api import FinetuningJobsApi as FinetuningJobsApi
+from overmind.openapi_client.api.github_api import GithubApi as GithubApi
+from overmind.openapi_client.api.github_repo_api import GithubRepoApi as GithubRepoApi
 from overmind.openapi_client.api.health_api import HealthApi as HealthApi
 from overmind.openapi_client.api.job_iterations_api import JobIterationsApi as JobIterationsApi
 from overmind.openapi_client.api.jobs_api import JobsApi as JobsApi
+from overmind.openapi_client.api.model_refs_api import ModelRefsApi as ModelRefsApi
+from overmind.openapi_client.api.models_api import ModelsApi as ModelsApi
 from overmind.openapi_client.api.projects_api import ProjectsApi as ProjectsApi
+from overmind.openapi_client.api.trace_transform_runs_api import TraceTransformRunsApi as TraceTransformRunsApi
 from overmind.openapi_client.api.traces_api import TracesApi as TracesApi
 from overmind.openapi_client.api.v1_api import V1Api as V1Api
+from overmind.openapi_client.api.workflow_runs_api import WorkflowRunsApi as WorkflowRunsApi
+from overmind.openapi_client.api.workshops_api import WorkshopsApi as WorkshopsApi
 
 # import ApiClient
 from overmind.openapi_client.api_response import ApiResponse as ApiResponse
@@ -117,18 +330,127 @@ from overmind.openapi_client.exceptions import ApiException as ApiException
 from overmind.openapi_client.models.api_token_create_request_request import APITokenCreateRequestRequest as APITokenCreateRequestRequest
 from overmind.openapi_client.models.api_token_create_response import APITokenCreateResponse as APITokenCreateResponse
 from overmind.openapi_client.models.api_token_metadata import APITokenMetadata as APITokenMetadata
+from overmind.openapi_client.models.add_datapoints_from_traces_request import AddDatapointsFromTracesRequest as AddDatapointsFromTracesRequest
+from overmind.openapi_client.models.add_datapoints_request import AddDatapointsRequest as AddDatapointsRequest
 from overmind.openapi_client.models.agent import Agent as Agent
+from overmind.openapi_client.models.agent_flow import AgentFlow as AgentFlow
+from overmind.openapi_client.models.agent_flow_expected_output import AgentFlowExpectedOutput as AgentFlowExpectedOutput
+from overmind.openapi_client.models.agent_flow_mode import AgentFlowMode as AgentFlowMode
+from overmind.openapi_client.models.agent_flow_telemetry import AgentFlowTelemetry as AgentFlowTelemetry
+from overmind.openapi_client.models.agent_flow_telemetry_component import AgentFlowTelemetryComponent as AgentFlowTelemetryComponent
+from overmind.openapi_client.models.agent_flow_tool import AgentFlowTool as AgentFlowTool
+from overmind.openapi_client.models.agent_flow_tool_argument import AgentFlowToolArgument as AgentFlowToolArgument
+from overmind.openapi_client.models.agent_flow_utility import AgentFlowUtility as AgentFlowUtility
 from overmind.openapi_client.models.agent_list import AgentList as AgentList
+from overmind.openapi_client.models.agent_optimize_request import AgentOptimizeRequest as AgentOptimizeRequest
 from overmind.openapi_client.models.agent_request import AgentRequest as AgentRequest
+from overmind.openapi_client.models.agent_source_repo import AgentSourceRepo as AgentSourceRepo
+from overmind.openapi_client.models.annotation import Annotation as Annotation
+from overmind.openapi_client.models.annotation_request import AnnotationRequest as AnnotationRequest
 from overmind.openapi_client.models.auth_tokens_response import AuthTokensResponse as AuthTokensResponse
+from overmind.openapi_client.models.backtest_run_status_enum import BacktestRunStatusEnum as BacktestRunStatusEnum
+from overmind.openapi_client.models.blank_enum import BlankEnum as BlankEnum
+from overmind.openapi_client.models.catalog_model import CatalogModel as CatalogModel
+from overmind.openapi_client.models.category_enum import CategoryEnum as CategoryEnum
+from overmind.openapi_client.models.chat_message import ChatMessage as ChatMessage
+from overmind.openapi_client.models.chat_message_create_request import ChatMessageCreateRequest as ChatMessageCreateRequest
+from overmind.openapi_client.models.chat_session import ChatSession as ChatSession
+from overmind.openapi_client.models.chat_session_create import ChatSessionCreate as ChatSessionCreate
+from overmind.openapi_client.models.chat_session_create_request import ChatSessionCreateRequest as ChatSessionCreateRequest
+from overmind.openapi_client.models.chat_session_list import ChatSessionList as ChatSessionList
+from overmind.openapi_client.models.chat_session_update import ChatSessionUpdate as ChatSessionUpdate
+from overmind.openapi_client.models.client_command import ClientCommand as ClientCommand
+from overmind.openapi_client.models.client_command_kind_enum import ClientCommandKindEnum as ClientCommandKindEnum
+from overmind.openapi_client.models.client_command_result_request import ClientCommandResultRequest as ClientCommandResultRequest
+from overmind.openapi_client.models.client_command_status_enum import ClientCommandStatusEnum as ClientCommandStatusEnum
+from overmind.openapi_client.models.client_session import ClientSession as ClientSession
+from overmind.openapi_client.models.client_session_create_request import ClientSessionCreateRequest as ClientSessionCreateRequest
+from overmind.openapi_client.models.client_session_poll_request_request import ClientSessionPollRequestRequest as ClientSessionPollRequestRequest
+from overmind.openapi_client.models.client_session_poll_response import ClientSessionPollResponse as ClientSessionPollResponse
+from overmind.openapi_client.models.client_session_request import ClientSessionRequest as ClientSessionRequest
+from overmind.openapi_client.models.client_session_status_enum import ClientSessionStatusEnum as ClientSessionStatusEnum
+from overmind.openapi_client.models.compare_schemas_file_request import CompareSchemasFileRequest as CompareSchemasFileRequest
+from overmind.openapi_client.models.compare_schemas_request_request import CompareSchemasRequestRequest as CompareSchemasRequestRequest
+from overmind.openapi_client.models.compare_schemas_response import CompareSchemasResponse as CompareSchemasResponse
+from overmind.openapi_client.models.compile_rubric_request_request import CompileRubricRequestRequest as CompileRubricRequestRequest
+from overmind.openapi_client.models.compile_rubric_response import CompileRubricResponse as CompileRubricResponse
+from overmind.openapi_client.models.connector_credential import ConnectorCredential as ConnectorCredential
+from overmind.openapi_client.models.connector_credential_request import ConnectorCredentialRequest as ConnectorCredentialRequest
+from overmind.openapi_client.models.connector_credentials_fetch_create200_response import ConnectorCredentialsFetchCreate200Response as ConnectorCredentialsFetchCreate200Response
+from overmind.openapi_client.models.connector_credentials_fetch_create_request import ConnectorCredentialsFetchCreateRequest as ConnectorCredentialsFetchCreateRequest
+from overmind.openapi_client.models.connector_credentials_langfuse_projects_retrieve200_response import ConnectorCredentialsLangfuseProjectsRetrieve200Response as ConnectorCredentialsLangfuseProjectsRetrieve200Response
+from overmind.openapi_client.models.connector_credentials_langfuse_projects_retrieve200_response_projects_inner import ConnectorCredentialsLangfuseProjectsRetrieve200ResponseProjectsInner as ConnectorCredentialsLangfuseProjectsRetrieve200ResponseProjectsInner
+from overmind.openapi_client.models.connector_credentials_sync_create202_response import ConnectorCredentialsSyncCreate202Response as ConnectorCredentialsSyncCreate202Response
+from overmind.openapi_client.models.connector_type_enum import ConnectorTypeEnum as ConnectorTypeEnum
 from overmind.openapi_client.models.datapoint import Datapoint as Datapoint
+from overmind.openapi_client.models.datapoint_input_request import DatapointInputRequest as DatapointInputRequest
 from overmind.openapi_client.models.datapoint_request import DatapointRequest as DatapointRequest
 from overmind.openapi_client.models.dataset import Dataset as Dataset
+from overmind.openapi_client.models.dataset_context import DatasetContext as DatasetContext
+from overmind.openapi_client.models.dataset_eval_capabilities_response import DatasetEvalCapabilitiesResponse as DatasetEvalCapabilitiesResponse
+from overmind.openapi_client.models.dataset_from_traces_request import DatasetFromTracesRequest as DatasetFromTracesRequest
+from overmind.openapi_client.models.dataset_group import DatasetGroup as DatasetGroup
 from overmind.openapi_client.models.dataset_list import DatasetList as DatasetList
 from overmind.openapi_client.models.dataset_request import DatasetRequest as DatasetRequest
+from overmind.openapi_client.models.dataset_schema import DatasetSchema as DatasetSchema
+from overmind.openapi_client.models.dataset_snapshot import DatasetSnapshot as DatasetSnapshot
+from overmind.openapi_client.models.dataset_snapshot_create_request import DatasetSnapshotCreateRequest as DatasetSnapshotCreateRequest
+from overmind.openapi_client.models.dataset_snapshot_request import DatasetSnapshotRequest as DatasetSnapshotRequest
+from overmind.openapi_client.models.dataset_source_enum import DatasetSourceEnum as DatasetSourceEnum
+from overmind.openapi_client.models.dataset_status_enum import DatasetStatusEnum as DatasetStatusEnum
+from overmind.openapi_client.models.dataset_validate_request_request import DatasetValidateRequestRequest as DatasetValidateRequestRequest
+from overmind.openapi_client.models.eval_run import EvalRun as EvalRun
+from overmind.openapi_client.models.eval_run_data_source_enum import EvalRunDataSourceEnum as EvalRunDataSourceEnum
+from overmind.openapi_client.models.eval_run_evaluator_stat import EvalRunEvaluatorStat as EvalRunEvaluatorStat
+from overmind.openapi_client.models.eval_run_list import EvalRunList as EvalRunList
+from overmind.openapi_client.models.eval_run_progress import EvalRunProgress as EvalRunProgress
+from overmind.openapi_client.models.eval_run_request import EvalRunRequest as EvalRunRequest
+from overmind.openapi_client.models.eval_run_variant_progress import EvalRunVariantProgress as EvalRunVariantProgress
+from overmind.openapi_client.models.eval_sample import EvalSample as EvalSample
+from overmind.openapi_client.models.eval_sample_list import EvalSampleList as EvalSampleList
 from overmind.openapi_client.models.eval_spec_response import EvalSpecResponse as EvalSpecResponse
+from overmind.openapi_client.models.eval_variant import EvalVariant as EvalVariant
+from overmind.openapi_client.models.eval_variant_mode_enum import EvalVariantModeEnum as EvalVariantModeEnum
+from overmind.openapi_client.models.eval_variant_request import EvalVariantRequest as EvalVariantRequest
+from overmind.openapi_client.models.evaluator import Evaluator as Evaluator
+from overmind.openapi_client.models.evaluator_bulk_create_request_request import EvaluatorBulkCreateRequestRequest as EvaluatorBulkCreateRequestRequest
+from overmind.openapi_client.models.evaluator_bulk_create_response import EvaluatorBulkCreateResponse as EvaluatorBulkCreateResponse
+from overmind.openapi_client.models.evaluator_kind_enum import EvaluatorKindEnum as EvaluatorKindEnum
+from overmind.openapi_client.models.evaluator_list import EvaluatorList as EvaluatorList
+from overmind.openapi_client.models.evaluator_request import EvaluatorRequest as EvaluatorRequest
+from overmind.openapi_client.models.evaluator_scope_enum import EvaluatorScopeEnum as EvaluatorScopeEnum
+from overmind.openapi_client.models.event_type_enum import EventTypeEnum as EventTypeEnum
 from overmind.openapi_client.models.feedback_create import FeedbackCreate as FeedbackCreate
 from overmind.openapi_client.models.feedback_create_request import FeedbackCreateRequest as FeedbackCreateRequest
+from overmind.openapi_client.models.finetuning_job import FinetuningJob as FinetuningJob
+from overmind.openapi_client.models.finetuning_job_event import FinetuningJobEvent as FinetuningJobEvent
+from overmind.openapi_client.models.finetuning_job_list import FinetuningJobList as FinetuningJobList
+from overmind.openapi_client.models.finetuning_job_request import FinetuningJobRequest as FinetuningJobRequest
+from overmind.openapi_client.models.finetuning_job_status_enum import FinetuningJobStatusEnum as FinetuningJobStatusEnum
+from overmind.openapi_client.models.finetuning_recommend_request_request import FinetuningRecommendRequestRequest as FinetuningRecommendRequestRequest
+from overmind.openapi_client.models.fix_run_approve_response import FixRunApproveResponse as FixRunApproveResponse
+from overmind.openapi_client.models.fix_run_preview import FixRunPreview as FixRunPreview
+from overmind.openapi_client.models.fix_run_preview_counts import FixRunPreviewCounts as FixRunPreviewCounts
+from overmind.openapi_client.models.fix_run_preview_entry import FixRunPreviewEntry as FixRunPreviewEntry
+from overmind.openapi_client.models.fix_run_preview_entry_kind_enum import FixRunPreviewEntryKindEnum as FixRunPreviewEntryKindEnum
+from overmind.openapi_client.models.fix_run_preview_fix_count import FixRunPreviewFixCount as FixRunPreviewFixCount
+from overmind.openapi_client.models.fix_run_preview_row import FixRunPreviewRow as FixRunPreviewRow
+from overmind.openapi_client.models.fix_slice_preview import FixSlicePreview as FixSlicePreview
+from overmind.openapi_client.models.fix_slice_preview_mode_enum import FixSlicePreviewModeEnum as FixSlicePreviewModeEnum
+from overmind.openapi_client.models.fix_slice_preview_request_request import FixSlicePreviewRequestRequest as FixSlicePreviewRequestRequest
+from overmind.openapi_client.models.generate_evals_response import GenerateEvalsResponse as GenerateEvalsResponse
+from overmind.openapi_client.models.git_hub_connection import GitHubConnection as GitHubConnection
+from overmind.openapi_client.models.git_hub_otel_pr_request_request import GitHubOtelPrRequestRequest as GitHubOtelPrRequestRequest
+from overmind.openapi_client.models.git_hub_remote_repo import GitHubRemoteRepo as GitHubRemoteRepo
+from overmind.openapi_client.models.git_hub_repo import GitHubRepo as GitHubRepo
+from overmind.openapi_client.models.git_hub_repo_analyze_request_request import GitHubRepoAnalyzeRequestRequest as GitHubRepoAnalyzeRequestRequest
+from overmind.openapi_client.models.git_hub_repo_analyze_url_request_request import GitHubRepoAnalyzeUrlRequestRequest as GitHubRepoAnalyzeUrlRequestRequest
+from overmind.openapi_client.models.git_hub_repo_status_enum import GitHubRepoStatusEnum as GitHubRepoStatusEnum
+from overmind.openapi_client.models.git_hub_repos_list_response import GitHubReposListResponse as GitHubReposListResponse
+from overmind.openapi_client.models.git_hub_status import GitHubStatus as GitHubStatus
+from overmind.openapi_client.models.github_auth_retrieve200_response import GithubAuthRetrieve200Response as GithubAuthRetrieve200Response
+from overmind.openapi_client.models.infer_schema_request_request import InferSchemaRequestRequest as InferSchemaRequestRequest
+from overmind.openapi_client.models.integration_type_enum import IntegrationTypeEnum as IntegrationTypeEnum
 from overmind.openapi_client.models.job import Job as Job
 from overmind.openapi_client.models.job_iteration import JobIteration as JobIteration
 from overmind.openapi_client.models.job_iteration_request import JobIterationRequest as JobIterationRequest
@@ -137,32 +459,102 @@ from overmind.openapi_client.models.job_list import JobList as JobList
 from overmind.openapi_client.models.job_request import JobRequest as JobRequest
 from overmind.openapi_client.models.job_status_enum import JobStatusEnum as JobStatusEnum
 from overmind.openapi_client.models.job_type_enum import JobTypeEnum as JobTypeEnum
+from overmind.openapi_client.models.kind146_enum import Kind146Enum as Kind146Enum
+from overmind.openapi_client.models.model_catalog_response import ModelCatalogResponse as ModelCatalogResponse
+from overmind.openapi_client.models.model_ref import ModelRef as ModelRef
+from overmind.openapi_client.models.model_ref_provider_enum import ModelRefProviderEnum as ModelRefProviderEnum
+from overmind.openapi_client.models.model_ref_request import ModelRefRequest as ModelRefRequest
+from overmind.openapi_client.models.model_tier_enum import ModelTierEnum as ModelTierEnum
+from overmind.openapi_client.models.open_dataset_workshop_response import OpenDatasetWorkshopResponse as OpenDatasetWorkshopResponse
+from overmind.openapi_client.models.optimization_iteration import OptimizationIteration as OptimizationIteration
+from overmind.openapi_client.models.otel_status_enum import OtelStatusEnum as OtelStatusEnum
 from overmind.openapi_client.models.paginated_api_token_metadata_list import PaginatedAPITokenMetadataList as PaginatedAPITokenMetadataList
 from overmind.openapi_client.models.paginated_agent_list_list import PaginatedAgentListList as PaginatedAgentListList
+from overmind.openapi_client.models.paginated_annotation_list import PaginatedAnnotationList as PaginatedAnnotationList
+from overmind.openapi_client.models.paginated_chat_message_list import PaginatedChatMessageList as PaginatedChatMessageList
+from overmind.openapi_client.models.paginated_chat_session_list_list import PaginatedChatSessionListList as PaginatedChatSessionListList
+from overmind.openapi_client.models.paginated_client_command_list import PaginatedClientCommandList as PaginatedClientCommandList
+from overmind.openapi_client.models.paginated_client_session_list import PaginatedClientSessionList as PaginatedClientSessionList
+from overmind.openapi_client.models.paginated_connector_credential_list import PaginatedConnectorCredentialList as PaginatedConnectorCredentialList
 from overmind.openapi_client.models.paginated_datapoint_list import PaginatedDatapointList as PaginatedDatapointList
+from overmind.openapi_client.models.paginated_dataset_group_list import PaginatedDatasetGroupList as PaginatedDatasetGroupList
 from overmind.openapi_client.models.paginated_dataset_list_list import PaginatedDatasetListList as PaginatedDatasetListList
+from overmind.openapi_client.models.paginated_dataset_snapshot_list import PaginatedDatasetSnapshotList as PaginatedDatasetSnapshotList
+from overmind.openapi_client.models.paginated_eval_run_list_list import PaginatedEvalRunListList as PaginatedEvalRunListList
+from overmind.openapi_client.models.paginated_eval_sample_list_list import PaginatedEvalSampleListList as PaginatedEvalSampleListList
+from overmind.openapi_client.models.paginated_evaluator_list_list import PaginatedEvaluatorListList as PaginatedEvaluatorListList
+from overmind.openapi_client.models.paginated_finetuning_job_event_list import PaginatedFinetuningJobEventList as PaginatedFinetuningJobEventList
+from overmind.openapi_client.models.paginated_finetuning_job_list_list import PaginatedFinetuningJobListList as PaginatedFinetuningJobListList
 from overmind.openapi_client.models.paginated_job_iteration_list import PaginatedJobIterationList as PaginatedJobIterationList
 from overmind.openapi_client.models.paginated_job_list_list import PaginatedJobListList as PaginatedJobListList
+from overmind.openapi_client.models.paginated_model_ref_list import PaginatedModelRefList as PaginatedModelRefList
+from overmind.openapi_client.models.paginated_optimization_iteration_list import PaginatedOptimizationIterationList as PaginatedOptimizationIterationList
 from overmind.openapi_client.models.paginated_project_list import PaginatedProjectList as PaginatedProjectList
 from overmind.openapi_client.models.paginated_project_member_list import PaginatedProjectMemberList as PaginatedProjectMemberList
 from overmind.openapi_client.models.paginated_root_span_list_list import PaginatedRootSpanListList as PaginatedRootSpanListList
+from overmind.openapi_client.models.paginated_score_list import PaginatedScoreList as PaginatedScoreList
+from overmind.openapi_client.models.paginated_trace_transform_run_list import PaginatedTraceTransformRunList as PaginatedTraceTransformRunList
+from overmind.openapi_client.models.paginated_workflow_run_list import PaginatedWorkflowRunList as PaginatedWorkflowRunList
+from overmind.openapi_client.models.paginated_workshop_list import PaginatedWorkshopList as PaginatedWorkshopList
+from overmind.openapi_client.models.patched_agent_eval_matrix_update_request import PatchedAgentEvalMatrixUpdateRequest as PatchedAgentEvalMatrixUpdateRequest
 from overmind.openapi_client.models.patched_agent_request import PatchedAgentRequest as PatchedAgentRequest
+from overmind.openapi_client.models.patched_chat_session_update_request import PatchedChatSessionUpdateRequest as PatchedChatSessionUpdateRequest
+from overmind.openapi_client.models.patched_client_session_request import PatchedClientSessionRequest as PatchedClientSessionRequest
+from overmind.openapi_client.models.patched_connector_credential_request import PatchedConnectorCredentialRequest as PatchedConnectorCredentialRequest
+from overmind.openapi_client.models.patched_eval_run_request import PatchedEvalRunRequest as PatchedEvalRunRequest
+from overmind.openapi_client.models.patched_evaluator_request import PatchedEvaluatorRequest as PatchedEvaluatorRequest
+from overmind.openapi_client.models.patched_finetuning_job_request import PatchedFinetuningJobRequest as PatchedFinetuningJobRequest
 from overmind.openapi_client.models.patched_job_iteration_request import PatchedJobIterationRequest as PatchedJobIterationRequest
 from overmind.openapi_client.models.patched_job_request import PatchedJobRequest as PatchedJobRequest
+from overmind.openapi_client.models.patched_model_ref_request import PatchedModelRefRequest as PatchedModelRefRequest
 from overmind.openapi_client.models.patched_project_request import PatchedProjectRequest as PatchedProjectRequest
+from overmind.openapi_client.models.patched_workflow_run_request import PatchedWorkflowRunRequest as PatchedWorkflowRunRequest
+from overmind.openapi_client.models.patched_workshop_request import PatchedWorkshopRequest as PatchedWorkshopRequest
+from overmind.openapi_client.models.phase_enum import PhaseEnum as PhaseEnum
+from overmind.openapi_client.models.poll_command import PollCommand as PollCommand
+from overmind.openapi_client.models.preview_request_request import PreviewRequestRequest as PreviewRequestRequest
+from overmind.openapi_client.models.preview_response import PreviewResponse as PreviewResponse
 from overmind.openapi_client.models.project import Project as Project
 from overmind.openapi_client.models.project_member import ProjectMember as ProjectMember
 from overmind.openapi_client.models.project_membership_create_request import ProjectMembershipCreateRequest as ProjectMembershipCreateRequest
 from overmind.openapi_client.models.project_request import ProjectRequest as ProjectRequest
 from overmind.openapi_client.models.register_request import RegisterRequest as RegisterRequest
+from overmind.openapi_client.models.remove_datapoints_request import RemoveDatapointsRequest as RemoveDatapointsRequest
+from overmind.openapi_client.models.role_enum import RoleEnum as RoleEnum
 from overmind.openapi_client.models.root_span_list import RootSpanList as RootSpanList
-from overmind.openapi_client.models.source_enum import SourceEnum as SourceEnum
+from overmind.openapi_client.models.run_evaluator import RunEvaluator as RunEvaluator
+from overmind.openapi_client.models.schema_file_summary import SchemaFileSummary as SchemaFileSummary
+from overmind.openapi_client.models.schema_roles import SchemaRoles as SchemaRoles
+from overmind.openapi_client.models.schema_type_conflict import SchemaTypeConflict as SchemaTypeConflict
+from overmind.openapi_client.models.score import Score as Score
+from overmind.openapi_client.models.score_data_type_enum import ScoreDataTypeEnum as ScoreDataTypeEnum
+from overmind.openapi_client.models.score_failure_role_enum import ScoreFailureRoleEnum as ScoreFailureRoleEnum
+from overmind.openapi_client.models.score_source_enum import ScoreSourceEnum as ScoreSourceEnum
 from overmind.openapi_client.models.span import Span as Span
+from overmind.openapi_client.models.stage_enum import StageEnum as StageEnum
 from overmind.openapi_client.models.token_obtain_pair import TokenObtainPair as TokenObtainPair
 from overmind.openapi_client.models.token_obtain_pair_request import TokenObtainPairRequest as TokenObtainPairRequest
 from overmind.openapi_client.models.token_refresh import TokenRefresh as TokenRefresh
 from overmind.openapi_client.models.token_refresh_request import TokenRefreshRequest as TokenRefreshRequest
 from overmind.openapi_client.models.trace_detail import TraceDetail as TraceDetail
+from overmind.openapi_client.models.trace_transform_request_request import TraceTransformRequestRequest as TraceTransformRequestRequest
+from overmind.openapi_client.models.trace_transform_run import TraceTransformRun as TraceTransformRun
 from overmind.openapi_client.models.traces_services_list200_response import TracesServicesList200Response as TracesServicesList200Response
+from overmind.openapi_client.models.triggered_by_enum import TriggeredByEnum as TriggeredByEnum
 from overmind.openapi_client.models.user_me import UserMe as UserMe
+from overmind.openapi_client.models.user_response_request import UserResponseRequest as UserResponseRequest
+from overmind.openapi_client.models.workflow_artifact import WorkflowArtifact as WorkflowArtifact
+from overmind.openapi_client.models.workflow_artifact_create_request import WorkflowArtifactCreateRequest as WorkflowArtifactCreateRequest
+from overmind.openapi_client.models.workflow_run import WorkflowRun as WorkflowRun
+from overmind.openapi_client.models.workflow_run_create_request import WorkflowRunCreateRequest as WorkflowRunCreateRequest
+from overmind.openapi_client.models.workflow_run_request import WorkflowRunRequest as WorkflowRunRequest
+from overmind.openapi_client.models.workflow_run_status_enum import WorkflowRunStatusEnum as WorkflowRunStatusEnum
+from overmind.openapi_client.models.workshop import Workshop as Workshop
+from overmind.openapi_client.models.workshop_create import WorkshopCreate as WorkshopCreate
+from overmind.openapi_client.models.workshop_create_request import WorkshopCreateRequest as WorkshopCreateRequest
+from overmind.openapi_client.models.workshop_file import WorkshopFile as WorkshopFile
+from overmind.openapi_client.models.workshop_file_kind_enum import WorkshopFileKindEnum as WorkshopFileKindEnum
+from overmind.openapi_client.models.workshop_request import WorkshopRequest as WorkshopRequest
+from overmind.openapi_client.models.workshop_run_summary import WorkshopRunSummary as WorkshopRunSummary
+from overmind.openapi_client.models.workshop_run_summary_status_enum import WorkshopRunSummaryStatusEnum as WorkshopRunSummaryStatusEnum
 

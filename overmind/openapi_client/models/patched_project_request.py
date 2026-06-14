@@ -20,6 +20,7 @@ import json
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, field_validator
 from typing import Any, ClassVar, Dict, List, Optional
 from typing_extensions import Annotated
+from overmind.openapi_client.models.integration_type_enum import IntegrationTypeEnum
 from typing import Optional, Set
 from typing_extensions import Self
 
@@ -27,12 +28,13 @@ class PatchedProjectRequest(BaseModel):
     """
     PatchedProjectRequest
     """ # noqa: E501
+    description: Optional[StrictStr] = ''
     name: Optional[Annotated[str, Field(min_length=1, strict=True, max_length=255)]] = None
     slug: Optional[Annotated[str, Field(min_length=1, strict=True, max_length=255)]] = None
-    description: Optional[StrictStr] = None
+    integration_type: Optional[IntegrationTypeEnum] = None
     is_active: Optional[StrictBool] = None
     settings: Optional[Any] = None
-    __properties: ClassVar[List[str]] = ["name", "slug", "description", "is_active", "settings"]
+    __properties: ClassVar[List[str]] = ["description", "name", "slug", "integration_type", "is_active", "settings"]
 
     @field_validator('slug')
     def slug_validate_regular_expression(cls, value):
@@ -100,9 +102,10 @@ class PatchedProjectRequest(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
+            "description": obj.get("description") if obj.get("description") is not None else '',
             "name": obj.get("name"),
             "slug": obj.get("slug"),
-            "description": obj.get("description"),
+            "integration_type": obj.get("integration_type"),
             "is_active": obj.get("is_active"),
             "settings": obj.get("settings")
         })

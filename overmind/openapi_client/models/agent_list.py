@@ -18,10 +18,11 @@ import re  # noqa: F401
 import json
 
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, field_validator
-from typing import Any, ClassVar, Dict, List, Optional, Union
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr, field_validator
+from typing import Any, ClassVar, Dict, List, Optional
 from typing_extensions import Annotated
 from uuid import UUID
+from overmind.openapi_client.models.dataset_status_enum import DatasetStatusEnum
 from typing import Optional, Set
 from typing_extensions import Self
 
@@ -36,19 +37,19 @@ class AgentList(BaseModel):
     description: Optional[StrictStr] = None
     agent_path: Optional[Annotated[str, Field(strict=True, max_length=512)]] = None
     model: Optional[Annotated[str, Field(strict=True, max_length=128)]] = None
-    structure_weight: Optional[Union[StrictFloat, StrictInt]] = None
-    total_points: Optional[Union[StrictFloat, StrictInt]] = None
-    tool_usage_weight: Optional[Union[StrictFloat, StrictInt]] = None
     display_name: Optional[Annotated[str, Field(strict=True, max_length=512)]] = None
     status: Optional[Annotated[str, Field(strict=True, max_length=20)]] = None
     tags: Optional[Any] = None
     entrypoint_fn: Optional[Annotated[str, Field(strict=True, max_length=255)]] = None
     analyzer_model: Optional[Annotated[str, Field(strict=True, max_length=128)]] = None
-    dataset_size: Optional[Annotated[int, Field(le=9223372036854775807, strict=True, ge=-9223372036854775808)]] = None
+    dataset_size: StrictInt
     dataset_has_expected_output: Optional[StrictBool] = None
+    dataset_status: Optional[DatasetStatusEnum] = None
+    cli_version: Optional[Annotated[str, Field(strict=True, max_length=20)]] = None
+    modality: StrictStr = Field(description="Capability-card modality (text/code/tabular/multimodal…), \"\" when unanalyzed.")
     created_at: datetime
     updated_at: datetime
-    __properties: ClassVar[List[str]] = ["id", "project", "name", "slug", "description", "agent_path", "model", "structure_weight", "total_points", "tool_usage_weight", "display_name", "status", "tags", "entrypoint_fn", "analyzer_model", "dataset_size", "dataset_has_expected_output", "created_at", "updated_at"]
+    __properties: ClassVar[List[str]] = ["id", "project", "name", "slug", "description", "agent_path", "model", "display_name", "status", "tags", "entrypoint_fn", "analyzer_model", "dataset_size", "dataset_has_expected_output", "dataset_status", "cli_version", "modality", "created_at", "updated_at"]
 
     @field_validator('slug')
     def slug_validate_regular_expression(cls, value):
@@ -90,9 +91,13 @@ class AgentList(BaseModel):
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
         """
         excluded_fields: Set[str] = set([
             "id",
+            "dataset_size",
+            "modality",
             "created_at",
             "updated_at",
         ])
@@ -126,9 +131,6 @@ class AgentList(BaseModel):
             "description": obj.get("description"),
             "agent_path": obj.get("agent_path"),
             "model": obj.get("model"),
-            "structure_weight": obj.get("structure_weight"),
-            "total_points": obj.get("total_points"),
-            "tool_usage_weight": obj.get("tool_usage_weight"),
             "display_name": obj.get("display_name"),
             "status": obj.get("status"),
             "tags": obj.get("tags"),
@@ -136,6 +138,9 @@ class AgentList(BaseModel):
             "analyzer_model": obj.get("analyzer_model"),
             "dataset_size": obj.get("dataset_size"),
             "dataset_has_expected_output": obj.get("dataset_has_expected_output"),
+            "dataset_status": obj.get("dataset_status"),
+            "cli_version": obj.get("cli_version"),
+            "modality": obj.get("modality"),
             "created_at": obj.get("created_at"),
             "updated_at": obj.get("updated_at")
         })

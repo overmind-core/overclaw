@@ -62,6 +62,15 @@ AGENT_NAME = "overmind.agent.name"
 # the on-start processor.  Stored in the OTel context so child spans pick
 # it up automatically.
 WORKFLOW_NAME = "overmind.workflow.name"
+# Workflow-engine correlation (daemon ``run_agent`` stamps these on root spans).
+WORKFLOW_RUN_ID = "overmind.workflow_run.id"
+WORKFLOW_ITERATION = "overmind.workflow_run.iteration"
+WORKFLOW_CASE_ID = "overmind.workflow_run.case"
+RUN_KIND = "overmind.run.kind"  # production | baseline | candidate_eval | smoke
+CANDIDATE_PLAN = "overmind.candidate.plan"
+CANDIDATE_EVAL_WORKFLOW_ID = "overmind.candidate_eval.workflow_id"
+INPUT_DATA = "overmind.input.data"
+OUTPUT_DATA = "overmind.output.data"
 # Stable per-conversation identifier used by chat agents to group multiple
 # traces under the same user-visible session.
 CONVERSATION_ID = "overmind.conversation.id"

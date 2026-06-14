@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, field_
 from typing import Any, ClassVar, Dict, List, Optional
 from typing_extensions import Annotated
 from uuid import UUID
+from overmind.openapi_client.models.integration_type_enum import IntegrationTypeEnum
 from typing import Optional, Set
 from typing_extensions import Self
 
@@ -30,14 +31,15 @@ class Project(BaseModel):
     Project
     """ # noqa: E501
     id: UUID
+    description: Optional[StrictStr] = ''
     name: Annotated[str, Field(strict=True, max_length=255)]
     slug: Annotated[str, Field(strict=True, max_length=255)]
-    description: Optional[StrictStr] = None
+    integration_type: Optional[IntegrationTypeEnum] = None
     is_active: Optional[StrictBool] = None
     settings: Optional[Any] = None
     created_at: datetime
     updated_at: datetime
-    __properties: ClassVar[List[str]] = ["id", "name", "slug", "description", "is_active", "settings", "created_at", "updated_at"]
+    __properties: ClassVar[List[str]] = ["id", "description", "name", "slug", "integration_type", "is_active", "settings", "created_at", "updated_at"]
 
     @field_validator('slug')
     def slug_validate_regular_expression(cls, value):
@@ -109,9 +111,10 @@ class Project(BaseModel):
 
         _obj = cls.model_validate({
             "id": obj.get("id"),
+            "description": obj.get("description") if obj.get("description") is not None else '',
             "name": obj.get("name"),
             "slug": obj.get("slug"),
-            "description": obj.get("description"),
+            "integration_type": obj.get("integration_type"),
             "is_active": obj.get("is_active"),
             "settings": obj.get("settings"),
             "created_at": obj.get("created_at"),

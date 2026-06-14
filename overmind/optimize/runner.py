@@ -798,6 +798,26 @@ elif os.environ.get("OVERMIND_API_KEY"):
         # SystemExit / RuntimeError — init failure; swallow so the agent can still run.
         pass
 
+def _ocl_invoke_tagged(fn, data):
+    _tags_raw = os.environ.get("OVERMIND_RUN_TAGS")
+    if not _tags_raw:
+        return _ocl_invoke(fn, data)
+    try:
+        from overmind.tracing import set_tag, start_span
+        import overmind.attrs as _a
+        tags = json.loads(_tags_raw)
+        if not isinstance(tags, dict):
+            return _ocl_invoke(fn, data)
+        with start_span("agent.run"):
+            for k, v in tags.items():
+                set_tag(k, v)
+            set_tag(_a.INPUT_DATA, data)
+            result = _ocl_invoke(fn, data)
+            set_tag(_a.OUTPUT_DATA, result)
+            return result
+    except Exception:
+        return _ocl_invoke(fn, data)
+
 def _ocl_force_flush():
     from overmind.tracing import force_flush_traces as _ocl_ff
     _ocl_ff(timeout_millis=3000)
@@ -860,7 +880,7 @@ def _ocl_invoke(fn, data):
 _real_stdout = sys.stdout
 sys.stdout = io.StringIO()
 try:
-    result = _ocl_invoke(fn, data)
+    result = _ocl_invoke_tagged(fn, data)
     if inspect.isawaitable(result):
         result = asyncio.run(result)
 finally:
@@ -1085,6 +1105,7 @@ class AgentRunner:
         timeout: int | None = None,
         trace_file: str | Path | None = None,
         shadow_config: ShadowConfig | None = None,
+        run_env: dict[str, str] | None = None,
     ) -> RunOutput:
         """Execute the agent in a subprocess. Returns structured output.
 
@@ -1103,6 +1124,8 @@ class AgentRunner:
         wrapper = self._get_wrapper(entry_abs, shadow_config=shadow_config)
         cmd = self._build_command(wrapper)
         env = self._build_env(trace_file=trace_file, shadow_config=shadow_config)
+        if run_env:
+            env.update(run_env)
 
         input_json = json.dumps(input_data, default=str)
 

@@ -27,12 +27,14 @@ class DatapointRequest(BaseModel):
     """
     DatapointRequest
     """ # noqa: E501
-    order: Optional[Annotated[int, Field(le=9223372036854775807, strict=True, ge=0)]] = None
+    order: Optional[Annotated[int, Field(le=2147483647, strict=True, ge=0)]] = None
     input: Optional[Any] = None
     expected_output: Optional[Any] = None
     persona: Optional[Annotated[str, Field(strict=True, max_length=128)]] = None
     tags: Optional[Any] = None
-    __properties: ClassVar[List[str]] = ["order", "input", "expected_output", "persona", "tags"]
+    source_trace_id: Optional[Annotated[str, Field(strict=True, max_length=64)]] = None
+    extra: Optional[Any] = None
+    __properties: ClassVar[List[str]] = ["order", "input", "expected_output", "persona", "tags", "source_trace_id", "extra"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -88,6 +90,11 @@ class DatapointRequest(BaseModel):
         if self.tags is None and "tags" in self.model_fields_set:
             _dict['tags'] = None
 
+        # set to None if extra (nullable) is None
+        # and model_fields_set contains the field
+        if self.extra is None and "extra" in self.model_fields_set:
+            _dict['extra'] = None
+
         return _dict
 
     @classmethod
@@ -104,7 +111,9 @@ class DatapointRequest(BaseModel):
             "input": obj.get("input"),
             "expected_output": obj.get("expected_output"),
             "persona": obj.get("persona"),
-            "tags": obj.get("tags")
+            "tags": obj.get("tags"),
+            "source_trace_id": obj.get("source_trace_id"),
+            "extra": obj.get("extra")
         })
         return _obj
 

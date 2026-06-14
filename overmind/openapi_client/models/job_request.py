@@ -36,8 +36,8 @@ class JobRequest(BaseModel):
     celery_task_id: Optional[Annotated[str, Field(strict=True, max_length=255)]] = None
     result: Optional[Any] = None
     analyzer_model: Optional[Annotated[str, Field(strict=True, max_length=128)]] = None
-    num_iterations: Optional[Annotated[int, Field(le=9223372036854775807, strict=True, ge=-9223372036854775808)]] = None
-    candidates_per_iteration: Optional[Annotated[int, Field(le=9223372036854775807, strict=True, ge=-9223372036854775808)]] = None
+    num_iterations: Optional[Annotated[int, Field(le=2147483647, strict=True, ge=-2147483648)]] = None
+    candidates_per_iteration: Optional[Annotated[int, Field(le=2147483647, strict=True, ge=-2147483648)]] = None
     data_source: Optional[Annotated[str, Field(min_length=1, strict=True, max_length=20)]] = None
     baseline_score: Optional[Union[StrictFloat, StrictInt]] = None
     best_score: Optional[Union[StrictFloat, StrictInt]] = None

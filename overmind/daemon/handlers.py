@@ -126,12 +126,20 @@ class CommandHandlers:
         blocks — ``mode`` distinguishes them and the server scores the returned
         ``results`` (and ingests OTLP traces out of band).
         """
+        import json
+
+        from overmind import attrs as oc_attrs
         from overmind.optimize.runner import AgentRunner, RunnerConfig
 
         mode = payload.get("mode", "baseline")
         try:
             agent_name, agent_path, fn = self._agent_config(payload)
             dataset = payload.get("dataset") or []
+            workflow_run_id = str(payload.get("workflow_run_id") or "")
+            iteration = str(payload.get("iteration", 0))
+            candidate_index = payload.get("candidate_index")
+            candidate_plan = payload.get("candidate_plan") or {}
+            base_correlation = dict(payload.get("trace_correlation") or {})
 
             server_mgr = self._server_manager(agent_name)
             if server_mgr.is_server_mode:
@@ -154,9 +162,23 @@ class CommandHandlers:
             results = []
             for i, case in enumerate(dataset):
                 inp = case.get("input", case) if isinstance(case, dict) else {}
-                run_result = runner.run(inp if isinstance(inp, dict) else {})
+                inp = inp if isinstance(inp, dict) else {}
+                case_id = case.get("id", f"case_{i}") if isinstance(case, dict) else f"case_{i}"
+                tags = {
+                    **base_correlation,
+                    oc_attrs.WORKFLOW_RUN_ID: workflow_run_id,
+                    oc_attrs.WORKFLOW_ITERATION: iteration,
+                    oc_attrs.WORKFLOW_CASE_ID: case_id,
+                }
+                if candidate_index is not None:
+                    tags[oc_attrs.OPTIMIZE_CANDIDATE_INDEX] = str(candidate_index)
+                if candidate_plan:
+                    tags[oc_attrs.CANDIDATE_PLAN] = candidate_plan
+                run_env = {"OVERMIND_RUN_TAGS": json.dumps(tags, default=str)}
+                run_result = runner.run(inp, run_env=run_env)
                 results.append({
                     "index": i,
+                    "case_id": case_id,
                     "input": inp,
                     "output": run_result.data,
                     "success": run_result.success,

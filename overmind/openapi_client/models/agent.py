@@ -18,10 +18,13 @@ import re  # noqa: F401
 import json
 
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, field_validator
-from typing import Any, ClassVar, Dict, List, Optional, Union
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr, field_validator
+from typing import Any, ClassVar, Dict, List, Optional
 from typing_extensions import Annotated
 from uuid import UUID
+from overmind.openapi_client.models.agent_flow import AgentFlow
+from overmind.openapi_client.models.agent_source_repo import AgentSourceRepo
+from overmind.openapi_client.models.dataset_status_enum import DatasetStatusEnum
 from typing import Optional, Set
 from typing_extensions import Self
 
@@ -30,37 +33,20 @@ class Agent(BaseModel):
     Agent
     """ # noqa: E501
     id: UUID
-    tool_config: Optional[Any] = None
-    consistency_rules: Optional[Any] = None
-    optimizable_elements: Optional[Any] = None
-    fixed_elements: Optional[Any] = None
-    eval_dataset: Optional[Any] = None
+    dataset_size: StrictInt
+    flow: AgentFlow
+    source_repo: Optional[AgentSourceRepo]
     name: Annotated[str, Field(strict=True, max_length=255)]
-    slug: Annotated[str, Field(strict=True, max_length=255)]
+    slug: Annotated[str, Field(strict=True)]
     description: Optional[StrictStr] = None
     agent_path: Optional[Annotated[str, Field(strict=True, max_length=512)]] = None
     model: Optional[Annotated[str, Field(strict=True, max_length=128)]] = None
-    input_schema: Optional[Any] = None
-    output_fields: Optional[Any] = None
-    structure_weight: Optional[Union[StrictFloat, StrictInt]] = None
-    total_points: Optional[Union[StrictFloat, StrictInt]] = None
-    tool_usage_weight: Optional[Union[StrictFloat, StrictInt]] = None
+    context_md: Optional[StrictStr] = None
     policy_markdown: Optional[StrictStr] = None
     policy_data: Optional[Any] = None
-    proposed_criteria: Optional[Any] = None
-    tool_analysis: Optional[Any] = None
-    output_schema: Optional[Any] = None
-    tools_summary: Optional[StrictStr] = None
-    decision_logic: Optional[StrictStr] = None
-    scope: Optional[Any] = None
-    dataset_size: Optional[Annotated[int, Field(le=9223372036854775807, strict=True, ge=-9223372036854775808)]] = None
-    dataset_input_keys: Optional[Any] = None
     dataset_has_expected_output: Optional[StrictBool] = None
-    evaluation_criteria: Optional[Any] = None
+    dataset_status: Optional[DatasetStatusEnum] = None
     improvement_metadata: Optional[Any] = None
-    agent_description: Optional[Any] = None
-    backtest_model_suggestions: Optional[Any] = None
-    backtest_metadata: Optional[Any] = None
     tags: Optional[Any] = None
     display_name: Optional[Annotated[str, Field(strict=True, max_length=512)]] = None
     status: Optional[Annotated[str, Field(strict=True, max_length=20)]] = None
@@ -71,11 +57,12 @@ class Agent(BaseModel):
     usage_stats: Optional[Any] = None
     last_activity_at: Optional[datetime] = None
     is_deleted: Optional[StrictBool] = None
+    cli_version: Optional[Annotated[str, Field(strict=True, max_length=20)]] = None
     created_at: datetime
     updated_at: datetime
     project: UUID
     active_dataset: Optional[UUID] = None
-    __properties: ClassVar[List[str]] = ["id", "tool_config", "consistency_rules", "optimizable_elements", "fixed_elements", "eval_dataset", "name", "slug", "description", "agent_path", "model", "input_schema", "output_fields", "structure_weight", "total_points", "tool_usage_weight", "policy_markdown", "policy_data", "proposed_criteria", "tool_analysis", "output_schema", "tools_summary", "decision_logic", "scope", "dataset_size", "dataset_input_keys", "dataset_has_expected_output", "evaluation_criteria", "improvement_metadata", "agent_description", "backtest_model_suggestions", "backtest_metadata", "tags", "display_name", "status", "entrypoint_fn", "analyzer_model", "optimization_summary", "setup_summary", "usage_stats", "last_activity_at", "is_deleted", "created_at", "updated_at", "project", "active_dataset"]
+    __properties: ClassVar[List[str]] = ["id", "dataset_size", "flow", "source_repo", "name", "slug", "description", "agent_path", "model", "context_md", "policy_markdown", "policy_data", "dataset_has_expected_output", "dataset_status", "improvement_metadata", "tags", "display_name", "status", "entrypoint_fn", "analyzer_model", "optimization_summary", "setup_summary", "usage_stats", "last_activity_at", "is_deleted", "cli_version", "created_at", "updated_at", "project", "active_dataset"]
 
     @field_validator('slug')
     def slug_validate_regular_expression(cls, value):
@@ -117,9 +104,17 @@ class Agent(BaseModel):
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
         """
         excluded_fields: Set[str] = set([
             "id",
+            "dataset_size",
+            "flow",
+            "source_repo",
+            "slug",
             "created_at",
             "updated_at",
         ])
@@ -129,95 +124,26 @@ class Agent(BaseModel):
             exclude=excluded_fields,
             exclude_none=True,
         )
-        # set to None if tool_config (nullable) is None
+        # override the default output from pydantic by calling `to_dict()` of flow
+        if self.flow:
+            _dict['flow'] = self.flow.to_dict()
+        # override the default output from pydantic by calling `to_dict()` of source_repo
+        if self.source_repo:
+            _dict['source_repo'] = self.source_repo.to_dict()
+        # set to None if source_repo (nullable) is None
         # and model_fields_set contains the field
-        if self.tool_config is None and "tool_config" in self.model_fields_set:
-            _dict['tool_config'] = None
-
-        # set to None if consistency_rules (nullable) is None
-        # and model_fields_set contains the field
-        if self.consistency_rules is None and "consistency_rules" in self.model_fields_set:
-            _dict['consistency_rules'] = None
-
-        # set to None if optimizable_elements (nullable) is None
-        # and model_fields_set contains the field
-        if self.optimizable_elements is None and "optimizable_elements" in self.model_fields_set:
-            _dict['optimizable_elements'] = None
-
-        # set to None if fixed_elements (nullable) is None
-        # and model_fields_set contains the field
-        if self.fixed_elements is None and "fixed_elements" in self.model_fields_set:
-            _dict['fixed_elements'] = None
-
-        # set to None if eval_dataset (nullable) is None
-        # and model_fields_set contains the field
-        if self.eval_dataset is None and "eval_dataset" in self.model_fields_set:
-            _dict['eval_dataset'] = None
-
-        # set to None if input_schema (nullable) is None
-        # and model_fields_set contains the field
-        if self.input_schema is None and "input_schema" in self.model_fields_set:
-            _dict['input_schema'] = None
-
-        # set to None if output_fields (nullable) is None
-        # and model_fields_set contains the field
-        if self.output_fields is None and "output_fields" in self.model_fields_set:
-            _dict['output_fields'] = None
+        if self.source_repo is None and "source_repo" in self.model_fields_set:
+            _dict['source_repo'] = None
 
         # set to None if policy_data (nullable) is None
         # and model_fields_set contains the field
         if self.policy_data is None and "policy_data" in self.model_fields_set:
             _dict['policy_data'] = None
 
-        # set to None if proposed_criteria (nullable) is None
-        # and model_fields_set contains the field
-        if self.proposed_criteria is None and "proposed_criteria" in self.model_fields_set:
-            _dict['proposed_criteria'] = None
-
-        # set to None if tool_analysis (nullable) is None
-        # and model_fields_set contains the field
-        if self.tool_analysis is None and "tool_analysis" in self.model_fields_set:
-            _dict['tool_analysis'] = None
-
-        # set to None if output_schema (nullable) is None
-        # and model_fields_set contains the field
-        if self.output_schema is None and "output_schema" in self.model_fields_set:
-            _dict['output_schema'] = None
-
-        # set to None if scope (nullable) is None
-        # and model_fields_set contains the field
-        if self.scope is None and "scope" in self.model_fields_set:
-            _dict['scope'] = None
-
-        # set to None if dataset_input_keys (nullable) is None
-        # and model_fields_set contains the field
-        if self.dataset_input_keys is None and "dataset_input_keys" in self.model_fields_set:
-            _dict['dataset_input_keys'] = None
-
-        # set to None if evaluation_criteria (nullable) is None
-        # and model_fields_set contains the field
-        if self.evaluation_criteria is None and "evaluation_criteria" in self.model_fields_set:
-            _dict['evaluation_criteria'] = None
-
         # set to None if improvement_metadata (nullable) is None
         # and model_fields_set contains the field
         if self.improvement_metadata is None and "improvement_metadata" in self.model_fields_set:
             _dict['improvement_metadata'] = None
-
-        # set to None if agent_description (nullable) is None
-        # and model_fields_set contains the field
-        if self.agent_description is None and "agent_description" in self.model_fields_set:
-            _dict['agent_description'] = None
-
-        # set to None if backtest_model_suggestions (nullable) is None
-        # and model_fields_set contains the field
-        if self.backtest_model_suggestions is None and "backtest_model_suggestions" in self.model_fields_set:
-            _dict['backtest_model_suggestions'] = None
-
-        # set to None if backtest_metadata (nullable) is None
-        # and model_fields_set contains the field
-        if self.backtest_metadata is None and "backtest_metadata" in self.model_fields_set:
-            _dict['backtest_metadata'] = None
 
         # set to None if tags (nullable) is None
         # and model_fields_set contains the field
@@ -262,37 +188,20 @@ class Agent(BaseModel):
 
         _obj = cls.model_validate({
             "id": obj.get("id"),
-            "tool_config": obj.get("tool_config"),
-            "consistency_rules": obj.get("consistency_rules"),
-            "optimizable_elements": obj.get("optimizable_elements"),
-            "fixed_elements": obj.get("fixed_elements"),
-            "eval_dataset": obj.get("eval_dataset"),
+            "dataset_size": obj.get("dataset_size"),
+            "flow": AgentFlow.from_dict(obj["flow"]) if obj.get("flow") is not None else None,
+            "source_repo": AgentSourceRepo.from_dict(obj["source_repo"]) if obj.get("source_repo") is not None else None,
             "name": obj.get("name"),
             "slug": obj.get("slug"),
             "description": obj.get("description"),
             "agent_path": obj.get("agent_path"),
             "model": obj.get("model"),
-            "input_schema": obj.get("input_schema"),
-            "output_fields": obj.get("output_fields"),
-            "structure_weight": obj.get("structure_weight"),
-            "total_points": obj.get("total_points"),
-            "tool_usage_weight": obj.get("tool_usage_weight"),
+            "context_md": obj.get("context_md"),
             "policy_markdown": obj.get("policy_markdown"),
             "policy_data": obj.get("policy_data"),
-            "proposed_criteria": obj.get("proposed_criteria"),
-            "tool_analysis": obj.get("tool_analysis"),
-            "output_schema": obj.get("output_schema"),
-            "tools_summary": obj.get("tools_summary"),
-            "decision_logic": obj.get("decision_logic"),
-            "scope": obj.get("scope"),
-            "dataset_size": obj.get("dataset_size"),
-            "dataset_input_keys": obj.get("dataset_input_keys"),
             "dataset_has_expected_output": obj.get("dataset_has_expected_output"),
-            "evaluation_criteria": obj.get("evaluation_criteria"),
+            "dataset_status": obj.get("dataset_status"),
             "improvement_metadata": obj.get("improvement_metadata"),
-            "agent_description": obj.get("agent_description"),
-            "backtest_model_suggestions": obj.get("backtest_model_suggestions"),
-            "backtest_metadata": obj.get("backtest_metadata"),
             "tags": obj.get("tags"),
             "display_name": obj.get("display_name"),
             "status": obj.get("status"),
@@ -303,6 +212,7 @@ class Agent(BaseModel):
             "usage_stats": obj.get("usage_stats"),
             "last_activity_at": obj.get("last_activity_at"),
             "is_deleted": obj.get("is_deleted"),
+            "cli_version": obj.get("cli_version"),
             "created_at": obj.get("created_at"),
             "updated_at": obj.get("updated_at"),
             "project": obj.get("project"),

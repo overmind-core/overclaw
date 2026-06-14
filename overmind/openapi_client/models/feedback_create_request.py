@@ -18,8 +18,9 @@ import re  # noqa: F401
 import json
 
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Any, ClassVar, Dict, List
+from typing import Any, ClassVar, Dict, List, Optional
 from typing_extensions import Annotated
+from overmind.openapi_client.models.category_enum import CategoryEnum
 from typing import Optional, Set
 from typing_extensions import Self
 
@@ -27,8 +28,9 @@ class FeedbackCreateRequest(BaseModel):
     """
     FeedbackCreateRequest
     """ # noqa: E501
+    category: Optional[CategoryEnum] = None
     feedback: Annotated[str, Field(min_length=1, strict=True)]
-    __properties: ClassVar[List[str]] = ["feedback"]
+    __properties: ClassVar[List[str]] = ["category", "feedback"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -81,6 +83,7 @@ class FeedbackCreateRequest(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
+            "category": obj.get("category"),
             "feedback": obj.get("feedback")
         })
         return _obj
