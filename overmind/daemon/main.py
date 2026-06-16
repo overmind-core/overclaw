@@ -1,34 +1,72 @@
-"""CLI daemon main loop — polling command runner.
-
-The daemon registers a :class:`ClientSession` with the server, then polls the
-``/api/cli/sessions/{id}/poll/`` endpoint every couple of seconds. Each poll
-doubles as a liveness heartbeat and returns the commands the server wants run
-on this machine. Commands are executed on a single background worker (handler
-state — applied patches, agent servers — must not run concurrently) while the
-main thread keeps polling, so a long-running command never starves the
-heartbeat. The server keeps returning outstanding commands until a result is
-submitted, so a dropped connection or a restarted server self-heals on the next
-poll with no special reconnect logic.
-"""
+"""CLI daemon main loop — one command at a time (Overclaw)."""
 
 from __future__ import annotations
 
 import logging
+import os
 import socket
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any
 
 import overmind
 from overmind.client import get_client, get_project_id, is_configured
-from overmind.daemon.handlers import CommandHandlers
+from overmind.daemon.handlers import CommandHandler
 
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 2.0
-MAX_RETRIES = 3
+HEARTBEAT_INTERVAL = 30.0
+MAX_RETRIES = 5
+BACKOFF_BASE = 2
+BACKOFF_CAP = 60
 
+
+def _daemon_project_root() -> Path:
+    """Project root the daemon operates on: the directory it was launched in.
+
+    Walk up from cwd to the nearest ancestor that has ``.overmind/``, but never
+    cross the enclosing git repository boundary. Without the boundary, a stray
+    ``~/.overmind`` hijacks a daemon launched inside an un-inited repo: the bundler
+    roots at ``$HOME``, the agent's entry path resolves to a non-existent file, and
+    ``upload_bundle`` dies with a cryptic ``KeyError`` on that path. Falls back to
+    the git root, then cwd.
+    """
+    cwd = Path.cwd().resolve()
+    boundary = cwd
+    for parent in [cwd, *cwd.parents]:
+        if (parent / ".git").exists():
+            boundary = parent
+            break
+    for parent in [cwd, *cwd.parents]:
+        if (parent / ".overmind").is_dir():
+            return parent
+        if parent == boundary:
+            break
+    return boundary
+
+
+def _heartbeat_loop(client, session_id: str, stop: threading.Event) -> None:
+    """Send periodic liveness beats while the daemon is idle or busy."""
+    while not stop.wait(HEARTBEAT_INTERVAL):
+        try:
+            client.heartbeat(session_id)
+        except Exception:
+            logger.warning("Heartbeat failed for session %s", session_id, exc_info=True)
+
+def _read_session_id_from_file() -> str | None:
+    """Read session id from file."""
+    session_id_file = Path.home() / ".overmind" / "session_id"
+    if session_id_file.exists():
+        return session_id_file.read_text().strip()
+    return None
+
+def write_session_id_to_file(session_id: str) -> None:
+    """Write session id to file."""
+    session_id_file = Path.home() / ".overmind" / "session_id"
+    session_id_file.parent.mkdir(parents=True, exist_ok=True)
+    session_id_file.write_text(session_id)
 
 def run_daemon(
     *,
@@ -47,9 +85,25 @@ def run_daemon(
     if not project_id:
         raise SystemExit("OVERMIND_PROJECT_ID is required")
 
+    root = _daemon_project_root()
+    api_url = os.getenv("OVERMIND_API_URL") or "https://api.overmindlab.ai"
+    logger.info(
+        "Overmind daemon starting (v%s) — project=%s root=%s api=%s",
+        overmind.__version__,
+        project_id,
+        root,
+        api_url,
+    )
+
+    # try to read session id from file
+    if not session_id:
+        session_id = _read_session_id_from_file()
+
     if session_id:
         sid = session_id
+        logger.info("Reusing CLI session %s", sid)
     else:
+        logger.info("Registering CLI session on %s …", socket.gethostname())
         session = client.create_cli_session(
             project_id,
             hostname=socket.gethostname(),
@@ -58,73 +112,89 @@ def run_daemon(
         )
         sid = str(session.id)
         logger.info("Registered CLI session %s", sid)
+        write_session_id_to_file(sid)
 
-    handlers = CommandHandlers(client, agent_name=agent_name)
-    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="overmind-cmd")
-    lock = threading.Lock()
-    in_flight: set[str] = set()
-    completed: set[str] = set()
+    handlers = CommandHandler(client, root=root, agent_name=agent_name)
+    logger.info(
+        "Listening for commands on session %s (polling every %.0fs). Press Ctrl+C to stop.",
+        sid,
+        POLL_INTERVAL,
+    )
 
-    def execute(command: dict[str, Any]) -> None:
-        command_id = str(command.get("id", ""))
-        logger.info("Running command %s kind=%s", command_id, command.get("kind"))
-        try:
-            success, result, error = handlers.dispatch(command)
-            _submit_result_with_retry(
-                client,
-                command_id,
-                success=success,
-                result=result,
-                error=error,
-            )
-        except Exception:
-            logger.exception("Command %s crashed", command_id)
-        finally:
-            with lock:
-                in_flight.discard(command_id)
-                completed.add(command_id)
+    stop_heartbeat = threading.Event()
+    heartbeat_thread = threading.Thread(
+        target=_heartbeat_loop,
+        args=(client, sid, stop_heartbeat),
+        name="overmind-heartbeat",
+        daemon=True,
+    )
+    heartbeat_thread.start()
 
-    logger.info("Polling for commands on session %s (every %.0fs)", sid, POLL_INTERVAL)
-    while True:
-        try:
-            commands = client.poll_session(
-                sid,
-                agent_name=agent_name or "",
-                cli_version=overmind.__version__,
-            )
-            for command in commands:
-                command_id = str(command.get("id", ""))
-                if not command_id:
-                    continue
-                with lock:
-                    if command_id in in_flight or command_id in completed:
-                        continue
-                    in_flight.add(command_id)
-                executor.submit(execute, command)
-        except KeyboardInterrupt:
-            break
-        except Exception:
-            logger.warning("Poll failed; retrying in %.0fs", POLL_INTERVAL, exc_info=True)
+    try:
+        while True:
+            try:
+                if not single_loop(client, sid, handlers):
+                    time.sleep(POLL_INTERVAL)
+            except KeyboardInterrupt:
+                break
+    finally:
+        logger.info("Daemon stopping (session %s)", sid)
+        stop_heartbeat.set()
+        heartbeat_thread.join(timeout=1.0)
 
-        try:
-            time.sleep(POLL_INTERVAL)
-        except KeyboardInterrupt:
-            break
 
-    executor.shutdown(wait=False, cancel_futures=True)
+def single_loop(client, session_id: str, handlers: CommandHandler) -> bool:
+    """Process at most one command. Returns True if work was done."""
+    try:
+        command = client.fetch_next_command(session_id)
+    except Exception:
+        logger.warning("Failed to fetch next command", exc_info=True)
+        return False
+
+    if command is None:
+        return False
+
+    command_id = str(command.get("id", ""))
+    logger.info("Executing command %s kind=%s", command_id, command.get("kind"))
+    try:
+        success, result, error = handlers.dispatch(command)
+    except Exception as exc:
+        success, result, error = False, {}, str(exc)
+        logger.exception("Command %s crashed", command_id)
+
+    if success:
+        logger.info("Command %s completed", command_id)
+    else:
+        logger.warning("Command %s failed: %s", command_id, error or "(no detail)")
+
+    try:
+        _submit_result_with_retry(
+            client,
+            session_id,
+            command_id,
+            success=success,
+            result=result,
+            error=error,
+        )
+    except Exception:
+        logger.exception("Could not report result for command %s", command_id)
+    return True
 
 
 def _submit_result_with_retry(
     client,
+    session_id: str,
     command_id: str,
     *,
     success: bool,
     result: dict[str, Any],
     error: str,
 ) -> None:
-    for attempt in range(MAX_RETRIES):
+    attempt = 0
+    while True:
         try:
             client.submit_command_result(
+                session_id,
                 command_id,
                 success=success,
                 result=result,
@@ -132,6 +202,14 @@ def _submit_result_with_retry(
             )
             return
         except Exception:
-            if attempt == MAX_RETRIES - 1:
-                logger.exception("Failed to submit result for command %s", command_id)
-            time.sleep(2**attempt)
+            attempt += 1
+            if attempt >= MAX_RETRIES:
+                raise
+            delay = min(BACKOFF_CAP, BACKOFF_BASE**attempt)
+            logger.warning(
+                "Failed to report result for %s (attempt %d) — retrying in %ss",
+                command_id,
+                attempt,
+                delay,
+            )
+            time.sleep(delay)

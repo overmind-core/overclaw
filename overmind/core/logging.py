@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -30,6 +31,7 @@ from overmind.core.constants import OVERMIND_DIR_NAME
 
 _LOGGER_NAME = "overmind"
 _ROOT_CONFIGURED = False
+_CONSOLE_CONFIGURED = False
 
 
 def _find_overmind_dir(start: Path | None = None) -> Path | None:
@@ -44,42 +46,61 @@ def _find_overmind_dir(start: Path | None = None) -> Path | None:
         cur = cur.parent
 
 
-def setup_logging(level: int | None = None) -> Path:
+def setup_logging(level: int | None = None, *, console: bool = False) -> Path:
     """Configure the ``overmind`` logger to write to ``.overmind/logs/``.
 
     Idempotent: subsequent calls reuse the same handlers.  The log level
     is read from ``OVERMIND_LOG_LEVEL`` (default ``INFO``) unless *level*
     is provided explicitly.  Returns the path to the active log file.
+
+    When *console* is true, a stderr handler is attached on top of the file
+    handler so long-running, non-interactive commands (notably ``overmind
+    start``) stream their progress to the terminal instead of only the log
+    file.  The console handler is tracked independently of the file handler,
+    so a later ``console=True`` call still attaches it even when the CLI
+    entrypoint already configured file logging.
     """
-    global _ROOT_CONFIGURED
+    global _ROOT_CONFIGURED, _CONSOLE_CONFIGURED
 
     overmind_dir = _find_overmind_dir() or (Path.cwd() / OVERMIND_DIR_NAME)
     log_dir = overmind_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "overmind.log"
 
-    if _ROOT_CONFIGURED:
-        return log_path
-
     if level is None:
         level_name = os.environ.get("OVERMIND_LOG_LEVEL", "INFO").upper()
         level = getattr(logging, level_name, logging.INFO)
 
     logger = logging.getLogger(_LOGGER_NAME)
-    logger.setLevel(level)
-    logger.propagate = False
 
-    file_handler = logging.FileHandler(log_path, encoding="utf-8")
-    file_handler.setLevel(level)
-    file_handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s %(levelname)-5s %(name)s: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
+    if not _ROOT_CONFIGURED:
+        logger.setLevel(level)
+        logger.propagate = False
+
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setLevel(level)
+        file_handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s %(levelname)-5s %(name)s: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
         )
-    )
-    logger.addHandler(file_handler)
+        logger.addHandler(file_handler)
+        _ROOT_CONFIGURED = True
 
-    _ROOT_CONFIGURED = True
+    if console and not _CONSOLE_CONFIGURED:
+        # Keep the effective level permissive enough for the console handler.
+        if logger.level == logging.NOTSET or logger.level > level:
+            logger.setLevel(level)
+
+        console_handler = logging.StreamHandler(sys.stderr)
+        console_handler.setLevel(level)
+        console_handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)-5s %(message)s", datefmt="%H:%M:%S")
+        )
+        logger.addHandler(console_handler)
+        _CONSOLE_CONFIGURED = True
+
     return log_path
 
 

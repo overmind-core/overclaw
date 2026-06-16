@@ -22,10 +22,10 @@ from overmind.openapi_client.api.job_iterations_api import JobIterationsApi
 from overmind.openapi_client.api.jobs_api import JobsApi
 from overmind.openapi_client.api.model_refs_api import ModelRefsApi
 from overmind.openapi_client.api.models_api import ModelsApi
+from overmind.openapi_client.api.optimize_runs_api import OptimizeRunsApi
 from overmind.openapi_client.api.projects_api import ProjectsApi
 from overmind.openapi_client.api.trace_transform_runs_api import TraceTransformRunsApi
 from overmind.openapi_client.api.traces_api import TracesApi
 from overmind.openapi_client.api.v1_api import V1Api
-from overmind.openapi_client.api.workflow_runs_api import WorkflowRunsApi
 from overmind.openapi_client.api.workshops_api import WorkshopsApi
 

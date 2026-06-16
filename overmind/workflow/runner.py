@@ -1,8 +1,7 @@
-"""Run a server-orchestrated workflow from the CLI."""
+"""Run a server-orchestrated optimize run from the CLI."""
 
 from __future__ import annotations
 
-import json
 import logging
 import socket
 import time
@@ -21,15 +20,15 @@ TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 def _require_client():
     if not is_configured():
         raise SystemExit(
-            "Server workflow requires OVERMIND_API_URL, OVERMIND_API_KEY, and OVERMIND_PROJECT_ID.\n"
-            "Run `overmind init` or pass --local to use the legacy on-machine pipeline."
+            "Optimize requires OVERMIND_API_URL, OVERMIND_API_KEY, and OVERMIND_PROJECT_ID.\n"
+            "Run `overmind init` first."
         )
     client = get_client()
     if client is None:
         raise SystemExit("Could not create Overmind API client.")
     project_id = get_project_id()
     if not project_id:
-        raise SystemExit("OVERMIND_PROJECT_ID is required for server workflows.")
+        raise SystemExit("OVERMIND_PROJECT_ID is required.")
     return client, project_id
 
 
@@ -39,26 +38,26 @@ def _entrypoint_fn(agent_name: str) -> str:
     return entry.get("fn_name") or "run"
 
 
-def run_server_workflow(
+def run_optimize(
     agent_name: str,
-    workflow_name: str,
     *,
     config: dict[str, Any] | None = None,
     fast: bool = False,
     manage_daemon: bool = True,
     console=None,
 ) -> Any:
-    """Start a workflow on the server, run a daemon, poll until done."""
+    """Start an optimize run on the server, run a daemon, poll until done."""
     from rich.console import Console
     from rich.live import Live
     from rich.panel import Panel
     from rich.spinner import Spinner
 
     console = console or Console()
-    client, project_id = _require_client()
+    client, _project_id = _require_client()
 
     agent = client.resolve_agent(agent_name)
-    agent_id = str(agent.id) if agent else None
+    if agent is None:
+        raise SystemExit(f"Agent {agent_name!r} not found on the platform.")
 
     wf_config = dict(config or {})
     wf_config.setdefault("agent_name", agent_name)
@@ -69,7 +68,7 @@ def run_server_workflow(
         wf_config.setdefault("max_iterations", 3)
 
     session = client.create_cli_session(
-        project_id,
+        _project_id,
         hostname=socket.gethostname(),
         cli_version=overmind.__version__,
         agent_name=agent_name,
@@ -87,29 +86,27 @@ def run_server_workflow(
 
     console.print(
         Panel(
-            f"[bold]Workflow[/bold] [cyan]{workflow_name}[/cyan]\n"
-            f"[dim]Agent: {agent_name} · Session: {session_id[:8]}…[/dim]",
+            f"[bold]Optimize[/bold] [cyan]{agent_name}[/cyan]\n"
+            f"[dim]Session: {session_id[:8]}…[/dim]",
             border_style="cyan",
         )
     )
 
     try:
-        run = client.start_workflow_run(
-            project_id,
-            workflow_name=workflow_name,
-            agent_id=agent_id,
+        run = client.start_optimize_run(
+            str(agent.id),
             client_session_id=session_id,
             config=wf_config,
         )
-        run_id = str(run.id)
-        logger.info("Started workflow %s run %s", workflow_name, run_id)
+        run_id = str(run.get("id", ""))
+        logger.info("Started optimize run %s", run_id)
 
         with Live(console=console, refresh_per_second=4) as live:
             while True:
-                run = client.workflow_runs_retrieve(id=run_id)
-                status = getattr(run.status, "value", str(run.status))
-                block = run.current_block or "—"
-                live.update(Spinner("dots", text=f"{status} · block={block}"))
+                run = client.optimize_runs_retrieve(run_id)
+                status = str(run.get("status", ""))
+                phase = (run.get("result") or {}).get("phase", "—")
+                live.update(Spinner("dots", text=f"{status} · phase={phase}"))
 
                 if status in TERMINAL_STATUSES:
                     break
@@ -122,49 +119,57 @@ def run_server_workflow(
 
                 time.sleep(2)
 
-        run = client.workflow_runs_retrieve(id=run_id)
-        final_status = getattr(run.status, "value", str(run.status))
+        final_status = str(run.get("status", ""))
         if final_status == "completed":
-            console.print(f"\n[green]Workflow completed.[/green] Run ID: {run_id}")
+            console.print(f"\n[green]Optimize completed.[/green] Run ID: {run_id}")
         elif final_status == "failed":
-            console.print(f"\n[red]Workflow failed:[/red] {run.error or 'unknown error'}")
+            console.print(f"\n[red]Optimize failed:[/red] {run.get('error') or 'unknown error'}")
             raise SystemExit(1)
         else:
-            console.print(f"\n[yellow]Workflow ended with status {final_status}[/yellow]")
+            console.print(f"\n[yellow]Optimize ended with status {final_status}[/yellow]")
         return run
     finally:
         if daemon is not None:
             daemon.stop()
 
 
-def _handle_user_approval(client, run_id: str, run: Any, console, *, fast: bool) -> None:
+def _handle_user_approval(client, run_id: str, run: dict, console, *, fast: bool) -> None:
     from rich.prompt import Confirm
 
-    ctx = run.context if isinstance(run.context, dict) else {}
-    user_prompt = ctx.get("user_prompt") or {}
+    result = run.get("result") if isinstance(run.get("result"), dict) else {}
+    user_prompt = result.get("user_prompt") or {}
     prompt_type = user_prompt.get("type", "approval")
 
     if fast:
-        client.submit_workflow_user_response(run_id, approved=True)
+        client.submit_optimize_user_response(run_id, approved=True)
+        return
+
+    if prompt_type == "dataset_incompatible":
+        console.print("\n[bold red]Dataset incompatible with the entrypoint[/bold red]")
+        console.print(user_prompt.get("message", ""))
+        proceed = Confirm.ask("Proceed with this dataset anyway?", default=False)
+        client.submit_optimize_user_response(run_id, approved=proceed, feedback={"approved": proceed})
+        if not proceed:
+            raise SystemExit(1)
         return
 
     if prompt_type == "criteria_approval":
         eval_spec = user_prompt.get("eval_spec", {})
-        fields = eval_spec.get("output_fields") or eval_spec.get("output_fields", {})
-        console.print("\n[bold]Proposed evaluation criteria[/bold]")
-        if isinstance(fields, dict):
-            for name, spec in fields.items():
-                weight = spec.get("weight", "?") if isinstance(spec, dict) else "?"
-                console.print(f"  • [cyan]{name}[/cyan] (weight {weight})")
-        else:
-            console.print(json.dumps(eval_spec, indent=2)[:2000])
+        fields = eval_spec.get("output_fields") or []
+        console.print("\n[bold]Proposed eval criteria[/bold]")
+        for field in fields:
+            console.print(f"  • {field.get('name')} (weight {field.get('weight')})")
 
     approved = Confirm.ask("Approve and continue?", default=True)
-    client.submit_workflow_user_response(
-        run_id,
-        approved=approved,
-        feedback={"approved": approved},
-    )
-    if not approved:
-        console.print("[yellow]Workflow cancelled by user.[/yellow]")
-        raise SystemExit(1)
+    client.submit_optimize_user_response(run_id, approved=approved)
+
+
+# Backward-compatible alias used by workflow_cmd
+def run_server_workflow(
+    agent_name: str,
+    workflow_name: str,
+    **kwargs: Any,
+) -> Any:
+    if workflow_name not in ("optimize_loop", "optimize_setup", "optimize"):
+        raise SystemExit(f"Workflow {workflow_name!r} is no longer supported; use optimize.")
+    return run_optimize(agent_name, **kwargs)

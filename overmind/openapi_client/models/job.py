@@ -18,7 +18,7 @@ import re  # noqa: F401
 import json
 
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr, field_validator
 from typing import Any, ClassVar, Dict, List, Optional, Union
 from typing_extensions import Annotated
 from uuid import UUID
@@ -50,12 +50,29 @@ class Job(BaseModel):
     report_markdown: Optional[StrictStr] = None
     best_agent_code: Optional[StrictStr] = None
     backtest_results: Optional[Any] = None
+    kind: Optional[StrictStr] = None
+    payload: Optional[Any] = None
+    seq: Optional[Annotated[int, Field(le=9223372036854775807, strict=True, ge=-9223372036854775808)]] = None
+    error: Optional[StrictStr] = None
     created_at: datetime
     updated_at: datetime
     project: Optional[UUID] = None
     agent: Optional[UUID] = None
     triggered_by: Optional[StrictInt] = None
-    __properties: ClassVar[List[str]] = ["id", "iterations", "agent_display_name", "job_type", "prompt_slug", "status", "celery_task_id", "result", "analyzer_model", "num_iterations", "candidates_per_iteration", "data_source", "baseline_score", "best_score", "improvement", "report_markdown", "best_agent_code", "backtest_results", "created_at", "updated_at", "project", "agent", "triggered_by"]
+    parent: Optional[UUID] = None
+    client_session: Optional[UUID] = None
+    eval_run: Optional[UUID] = None
+    __properties: ClassVar[List[str]] = ["id", "iterations", "agent_display_name", "job_type", "prompt_slug", "status", "celery_task_id", "result", "analyzer_model", "num_iterations", "candidates_per_iteration", "data_source", "baseline_score", "best_score", "improvement", "report_markdown", "best_agent_code", "backtest_results", "kind", "payload", "seq", "error", "created_at", "updated_at", "project", "agent", "triggered_by", "parent", "client_session", "eval_run"]
+
+    @field_validator('kind')
+    def kind_validate_enum(cls, value):
+        """Validates the enum"""
+        if value is None:
+            return value
+
+        if value not in set(['upload_bundle', 'run_agent', 'apply_patch', 'reset', '']):
+            raise ValueError("must be one of enum values ('upload_bundle', 'run_agent', 'apply_patch', 'reset', '')")
+        return value
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -138,6 +155,11 @@ class Job(BaseModel):
         if self.backtest_results is None and "backtest_results" in self.model_fields_set:
             _dict['backtest_results'] = None
 
+        # set to None if payload (nullable) is None
+        # and model_fields_set contains the field
+        if self.payload is None and "payload" in self.model_fields_set:
+            _dict['payload'] = None
+
         # set to None if project (nullable) is None
         # and model_fields_set contains the field
         if self.project is None and "project" in self.model_fields_set:
@@ -152,6 +174,21 @@ class Job(BaseModel):
         # and model_fields_set contains the field
         if self.triggered_by is None and "triggered_by" in self.model_fields_set:
             _dict['triggered_by'] = None
+
+        # set to None if parent (nullable) is None
+        # and model_fields_set contains the field
+        if self.parent is None and "parent" in self.model_fields_set:
+            _dict['parent'] = None
+
+        # set to None if client_session (nullable) is None
+        # and model_fields_set contains the field
+        if self.client_session is None and "client_session" in self.model_fields_set:
+            _dict['client_session'] = None
+
+        # set to None if eval_run (nullable) is None
+        # and model_fields_set contains the field
+        if self.eval_run is None and "eval_run" in self.model_fields_set:
+            _dict['eval_run'] = None
 
         return _dict
 
@@ -183,11 +220,18 @@ class Job(BaseModel):
             "report_markdown": obj.get("report_markdown"),
             "best_agent_code": obj.get("best_agent_code"),
             "backtest_results": obj.get("backtest_results"),
+            "kind": obj.get("kind"),
+            "payload": obj.get("payload"),
+            "seq": obj.get("seq"),
+            "error": obj.get("error"),
             "created_at": obj.get("created_at"),
             "updated_at": obj.get("updated_at"),
             "project": obj.get("project"),
             "agent": obj.get("agent"),
-            "triggered_by": obj.get("triggered_by")
+            "triggered_by": obj.get("triggered_by"),
+            "parent": obj.get("parent"),
+            "client_session": obj.get("client_session"),
+            "eval_run": obj.get("eval_run")
         })
         return _obj
 

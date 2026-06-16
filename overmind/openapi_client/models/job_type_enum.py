@@ -20,7 +20,7 @@ from typing_extensions import Self
 
 class JobTypeEnum(str, Enum):
     """
-    * `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync
+    * `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync * `langfuse_import` - Langfuse Import * `optimize` - Optimize * `optimize_command` - Optimize Command
     """
 
     """
@@ -32,6 +32,9 @@ class JobTypeEnum(str, Enum):
     PROMPT_TUNING = 'prompt_tuning'
     MODEL_BACKTESTING = 'model_backtesting'
     CONNECTOR_SYNC = 'connector_sync'
+    LANGFUSE_IMPORT = 'langfuse_import'
+    OPTIMIZE = 'optimize'
+    OPTIMIZE_COMMAND = 'optimize_command'
 
     @classmethod
     def from_json(cls, json_str: str) -> Self:

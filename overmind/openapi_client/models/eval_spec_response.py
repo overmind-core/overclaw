@@ -34,10 +34,13 @@ class EvalSpecResponse(BaseModel):
     total_points: Union[StrictFloat, StrictInt]
     tool_config: Optional[Any]
     tool_usage_weight: Union[StrictFloat, StrictInt]
+    evaluation_criteria: Optional[List[StrictStr]] = None
     consistency_rules: Optional[Any]
     optimizable_elements: Optional[Any]
     fixed_elements: Optional[Any]
-    __properties: ClassVar[List[str]] = ["agent_description", "agent_path", "input_schema", "output_fields", "structure_weight", "total_points", "tool_config", "tool_usage_weight", "consistency_rules", "optimizable_elements", "fixed_elements"]
+    policy_markdown: Optional[StrictStr] = None
+    policy_data: Optional[Any] = None
+    __properties: ClassVar[List[str]] = ["agent_description", "agent_path", "input_schema", "output_fields", "structure_weight", "total_points", "tool_config", "tool_usage_weight", "evaluation_criteria", "consistency_rules", "optimizable_elements", "fixed_elements", "policy_markdown", "policy_data"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -108,6 +111,11 @@ class EvalSpecResponse(BaseModel):
         if self.fixed_elements is None and "fixed_elements" in self.model_fields_set:
             _dict['fixed_elements'] = None
 
+        # set to None if policy_data (nullable) is None
+        # and model_fields_set contains the field
+        if self.policy_data is None and "policy_data" in self.model_fields_set:
+            _dict['policy_data'] = None
+
         return _dict
 
     @classmethod
@@ -128,9 +136,12 @@ class EvalSpecResponse(BaseModel):
             "total_points": obj.get("total_points"),
             "tool_config": obj.get("tool_config"),
             "tool_usage_weight": obj.get("tool_usage_weight"),
+            "evaluation_criteria": obj.get("evaluation_criteria"),
             "consistency_rules": obj.get("consistency_rules"),
             "optimizable_elements": obj.get("optimizable_elements"),
-            "fixed_elements": obj.get("fixed_elements")
+            "fixed_elements": obj.get("fixed_elements"),
+            "policy_markdown": obj.get("policy_markdown"),
+            "policy_data": obj.get("policy_data")
         })
         return _obj
 

@@ -35,10 +35,12 @@ Example::
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import os
 import re
 import threading
+import time
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
@@ -52,13 +54,10 @@ from overmind.openapi_client.api.cli_api import CliApi
 from overmind.openapi_client.api.datasets_api import DatasetsApi
 from overmind.openapi_client.api.job_iterations_api import JobIterationsApi
 from overmind.openapi_client.api.jobs_api import JobsApi
+from overmind.openapi_client.api.optimize_runs_api import OptimizeRunsApi
 from overmind.openapi_client.api.projects_api import ProjectsApi
 from overmind.openapi_client.api.traces_api import TracesApi
-from overmind.openapi_client.api.workflow_runs_api import WorkflowRunsApi
 from overmind.openapi_client.models.agent_request import AgentRequest
-from overmind.openapi_client.models.client_command_result_request import (
-    ClientCommandResultRequest,
-)
 from overmind.openapi_client.models.client_session import ClientSession
 from overmind.openapi_client.models.client_session_create_request import (
     ClientSessionCreateRequest,
@@ -69,14 +68,6 @@ from overmind.openapi_client.models.dataset_source_enum import DatasetSourceEnum
 from overmind.openapi_client.models.job_status_enum import JobStatusEnum
 from overmind.openapi_client.models.patched_agent_request import PatchedAgentRequest
 from overmind.openapi_client.models.patched_job_request import PatchedJobRequest
-from overmind.openapi_client.models.user_response_request import UserResponseRequest
-from overmind.openapi_client.models.workflow_artifact_create_request import (
-    WorkflowArtifactCreateRequest,
-)
-from overmind.openapi_client.models.workflow_run import WorkflowRun
-from overmind.openapi_client.models.workflow_run_create_request import (
-    WorkflowRunCreateRequest,
-)
 
 logger = logging.getLogger("overmind.client")
 
@@ -152,7 +143,7 @@ class OvermindClient(
     JobsApi,
     ProjectsApi,
     TracesApi,
-    WorkflowRunsApi,
+    OptimizeRunsApi,
 ):
     """Convenience facade over the generated OpenAPI client.
 
@@ -237,9 +228,18 @@ class OvermindClient(
     # Workflow / CLI daemon
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _response_bytes(resp) -> bytes:
+        """Read body from a RESTResponse (urllib3 uses preload_content=False)."""
+        data = resp.data
+        if data is None:
+            data = resp.read()
+        if not data:
+            return b""
+        return data if isinstance(data, bytes) else str(data).encode()
+
     def _api_json_post(self, path: str, body: dict) -> dict:
         """POST JSON to an API path (for bodies with fields missing from OpenAPI models)."""
-        import json
 
         url = self.api_client.configuration.host.rstrip("/") + path
         headers = {
@@ -250,35 +250,38 @@ class OvermindClient(
             method="POST",
             url=url,
             headers=headers,
-            body=json.dumps(body),
+            body=body,
         )
+        raw = self._response_bytes(resp)
         if resp.status >= 400:
-            raise RuntimeError(f"API POST {path} failed ({resp.status}): {resp.data}")
-        if not resp.data:
+            detail = raw.decode() if raw else None
+            raise RuntimeError(f"API POST {path} failed ({resp.status}): {detail}")
+        if not raw:
             return {}
-        return json.loads(resp.data)
+        return json.loads(raw)
 
-    def poll_session(
-        self,
-        session_id: str,
-        *,
-        agent_name: str = "",
-        cli_version: str = "",
-    ) -> list[dict]:
-        """Poll the server for the next commands to run on this session.
-
-        A single round-trip that replaces the old SSE stream + heartbeat: it
-        refreshes the session's liveness server-side and returns every command
-        still awaiting execution (ordered by ``seq``). The daemon calls this on
-        a short interval; because the server keeps returning outstanding
-        commands until a result is submitted, a dropped connection or a
-        restarted daemon recovers automatically on the next poll.
-        """
-        data = self._api_json_post(
-            f"/api/cli/sessions/{session_id}/poll/",
-            {"agent_name": agent_name, "cli_version": cli_version},
-        )
-        return data.get("commands", []) if isinstance(data, dict) else []
+    def fetch_next_command(self, session_id: str) -> dict | None:
+        """Claim the next pending command for this session (one at a time)."""
+        url = self.api_client.configuration.host.rstrip("/") + f"/api/cli/sessions/{session_id}/commands/next/"
+        headers = auth_headers(self.api_client.configuration)
+        resp = self.api_client.rest_client.request(method="POST", url=url, headers=headers, body={})
+        if resp.status == 204:
+            logger.debug("fetch_next_command: no pending commands (session=%s)", session_id)
+            return None
+        raw = self._response_bytes(resp)
+        if not raw:
+            return None
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return None
+        command = data.get("command")
+        if command:
+            logger.debug(
+                "fetch_next_command: claimed command %s kind=%s",
+                command.get("id"),
+                command.get("kind"),
+            )
+        return command
 
     def create_cli_session(
         self,
@@ -295,78 +298,77 @@ class OvermindClient(
         ).to_dict()
         body["project"] = project_id
         data = self._api_json_post("/api/cli/sessions/", body)
-
+        logger.info(
+            "create_cli_session: session=%s project=%s host=%s",
+            data.get("id") if isinstance(data, dict) else "?",
+            project_id,
+            hostname or "?",
+        )
         return ClientSession.from_dict(data)
 
-    def start_workflow_run(
+    def heartbeat(self, session_id: str) -> Any:
+        """Send a liveness beat without claiming a command."""
+        data = self._api_json_post(f"/api/cli/sessions/{session_id}/heartbeat/", {})
+        logger.debug("heartbeat: session=%s ok", session_id)
+        return ClientSession.from_dict(data)
+
+    def start_optimize_run(
         self,
-        project_id: str,
+        agent_id: str,
         *,
-        workflow_name: str,
-        agent_id: str | None = None,
         client_session_id: str | None = None,
         config: dict | None = None,
     ) -> Any:
-        body = WorkflowRunCreateRequest(
-            workflow_name=workflow_name,
-            agent_id=agent_id,
-            client_session_id=client_session_id,
-            config=config or {},
-        ).to_dict()
-        body["project"] = project_id
-        data = self._api_json_post("/api/workflow-runs/", body)
+        body = {"client_session_id": client_session_id, "config": config or {}}
+        data = self._api_json_post(f"/api/agents/{agent_id}/optimize/", body)
+        return data
 
-        return WorkflowRun.from_dict(data)
+    def optimize_runs_retrieve(self, run_id: str) -> Any:
+        return self._api_json_get(f"/api/optimize-runs/{run_id}/")
 
-    def submit_workflow_user_response(
+    def submit_optimize_user_response(
         self,
         run_id: str,
         *,
         approved: bool = True,
         feedback: dict | None = None,
     ) -> Any:
-        return self.workflow_runs_user_response_create(
-            id=run_id,
-            user_response_request=UserResponseRequest(
-                approved=approved,
-                feedback=feedback or {},
-            ),
+        return self._api_json_post(
+            f"/api/optimize-runs/{run_id}/user-response/",
+            {"approved": approved, "feedback": feedback or {}},
         )
+
+    def _api_json_get(self, path: str) -> dict:
+        url = self.api_client.configuration.host.rstrip("/") + path
+        headers = auth_headers(self.api_client.configuration)
+        resp = self.api_client.rest_client.request(method="GET", url=url, headers=headers)
+        raw = self._response_bytes(resp)
+        if resp.status >= 400:
+            detail = raw.decode() if raw else None
+            raise RuntimeError(f"API GET {path} failed ({resp.status}): {detail}")
+        if not raw:
+            return {}
+        return json.loads(raw)
 
     def submit_command_result(
         self,
+        session_id: str,
         command_id: str,
         *,
         success: bool,
         result: dict | None = None,
         error: str = "",
     ) -> Any:
-        return self.cli_commands_result_create(
-            id=command_id,
-            client_command_result_request=ClientCommandResultRequest(
-                success=success,
-                result=result or {},
-                error=error,
-            ),
+        logger.debug(
+            "submit_command_result: session=%s command=%s success=%s",
+            session_id,
+            command_id,
+            success,
         )
-
-    def upload_workflow_artifact(
-        self,
-        run_id: str,
-        *,
-        kind: str,
-        content: dict,
-        name: str = "",
-    ) -> Any:
-        return self.workflow_runs_artifacts_create(
-            id=run_id,
-            workflow_artifact_create_request=WorkflowArtifactCreateRequest(
-                kind=kind,
-                content=content,
-                name=name,
-            ),
+        return self._api_json_post(
+            f"/api/cli/sessions/{session_id}/commands/{command_id}/result/",
+            {"success": success, "result": result or {}, "error": error},
         )
-
 
 def get_client() -> OvermindClient | None:
     """Return a configured client if ``OVERMIND_API_KEY`` is set.
@@ -805,7 +807,6 @@ class ApiReporter:
         backtest_results: dict | None = None,
     ) -> None:
         """Stamp the Job as completed."""
-        import time
 
         improvement = best_score - baseline_score
         self._logs.append({
@@ -829,7 +830,6 @@ class ApiReporter:
 
     def on_failed(self, reason: str = "") -> None:
         """Stamp the Job as failed."""
-        import time
 
         self._logs.append({"ts": time.time(), "level": "error", "msg": f"Run failed: {reason}"})
         _fire(

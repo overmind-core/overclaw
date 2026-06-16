@@ -20,7 +20,7 @@ from typing_extensions import Self
 
 class JobStatusEnum(str, Enum):
     """
-    * `pending` - Pending * `running` - Running * `completed` - Completed * `failed` - Failed * `cancelled` - Cancelled
+    * `pending` - Pending * `running` - Running * `waiting_user` - Waiting User * `completed` - Completed * `failed` - Failed * `cancelled` - Cancelled
     """
 
     """
@@ -28,6 +28,7 @@ class JobStatusEnum(str, Enum):
     """
     PENDING = 'pending'
     RUNNING = 'running'
+    WAITING_USER = 'waiting_user'
     COMPLETED = 'completed'
     FAILED = 'failed'
     CANCELLED = 'cancelled'

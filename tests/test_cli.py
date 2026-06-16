@@ -245,6 +245,19 @@ class TestMainDispatch:
                 main()
                 mock_fn.assert_called_once()
 
+    def test_start_parsed_and_dispatches(self):
+        parser = _build_parser()
+        args = parser.parse_args(["start"])
+        assert args.command == "start"
+
+        with patch("overmind.cli._build_parser") as mock_parser:
+            mock_args = MagicMock()
+            mock_args.command = "start"
+            mock_parser.return_value.parse_args.return_value = mock_args
+            with patch("overmind.cli._daemon") as mock_fn:
+                main()
+                mock_fn.assert_called_once()
+
     def test_keyboard_interrupt_exits_130(self):
         with patch("overmind.cli._build_parser") as mock_parser:
             mock_args = MagicMock()

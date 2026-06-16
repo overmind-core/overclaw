@@ -13,8 +13,9 @@ Commands:
     overmind agent update <name> <module:function>     Update a registered agent's entrypoint
     overmind agent show <name>                         Show agent registration and pipeline status
     overmind agent validate <name> --data PATH         Run the agent against test data
-    overmind daemon [--agent NAME]                     Run CLI daemon (server workflow executor)
-    overmind workflow <name> [--workflow NAME]         Start server-orchestrated workflow
+    overmind start [--agent NAME]                      Run CLI daemon (server workflow executor)
+    overmind optimize <name>                            Start server-driven optimization
+    overmind workflow <name> [--workflow NAME]          Alias for optimize (deprecated)
 """
 
 from __future__ import annotations
@@ -43,6 +44,8 @@ from overmind.commands.agent_cmd import (
 from overmind.commands.daemon_cmd import build_subparser as _build_daemon_parser
 from overmind.commands.daemon_cmd import main as _daemon
 from overmind.commands.init_cmd import main as _init
+from overmind.commands.optimize_cmd import build_subparser as _build_optimize_parser
+from overmind.commands.optimize_cmd import main as _optimize
 from overmind.commands.workflow_cmd import build_subparser as _build_workflow_parser
 from overmind.commands.workflow_cmd import main as _workflow
 from overmind.core.constants import OVERMIND_DIR_NAME, overmind_rel
@@ -63,7 +66,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "Typical workflow:\n"
             "  1. overmind init                                  # set API keys + models\n"
             "  2. overmind agent register <name> <module:fn>     # register your agent\n"
-            "  3. overmind daemon                                # connect this machine to the server\n"
+            "  3. overmind start                                 # connect this machine to the server\n"
             "  4. overmind workflow <name>                       # run server-orchestrated optimization\n"
         ),
     )
@@ -284,8 +287,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to a JSON file or directory of JSON files with test cases",
     )
 
-    # ── daemon / workflow (client-server FSM) ───────────────────────────────
+    # ── daemon / optimize ───────────────────────────────────────────────────
     _build_daemon_parser(subparsers)
+    _build_optimize_parser(subparsers)
     _build_workflow_parser(subparsers)
 
     return parser
@@ -350,8 +354,12 @@ def main() -> None:
                 context.attach(context.set_value(attrs.AGENT_NAME, args.name))
                 cmd_validate(args.name, args.data)
 
-        elif args.command == "daemon":
+        elif args.command in ("start", "daemon"):
             _daemon(args)
+
+        elif args.command == "optimize":
+            context.attach(context.set_value(attrs.AGENT_NAME, args.agent_name))
+            _optimize(args)
 
         elif args.command == "workflow":
             context.attach(context.set_value(attrs.AGENT_NAME, args.agent_name))

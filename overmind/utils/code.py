@@ -890,6 +890,15 @@ class AgentBundle:
             search_paths=search_paths,
         )
 
+        # The BFS silently skips an entry that doesn't exist under the root,
+        # leaving local_files without entry_rel — without this guard the build
+        # later dies with a cryptic ``KeyError`` on the entry path.
+        if entry_rel not in local_files:
+            raise FileNotFoundError(
+                f"Agent entry file {entry_rel!r} was not found under project root {root}. "
+                f"Start the Overmind daemon from your project root."
+            )
+
         if optimizable_paths is None:
             opt_set = set(local_files.keys())
         else:

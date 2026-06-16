@@ -36,6 +36,8 @@ class Agent(BaseModel):
     dataset_size: StrictInt
     flow: AgentFlow
     source_repo: Optional[AgentSourceRepo]
+    eval_metrics_validated: StrictBool
+    eval_metrics_validated_by_email: Optional[StrictStr]
     name: Annotated[str, Field(strict=True, max_length=255)]
     slug: Annotated[str, Field(strict=True)]
     description: Optional[StrictStr] = None
@@ -44,6 +46,7 @@ class Agent(BaseModel):
     context_md: Optional[StrictStr] = None
     policy_markdown: Optional[StrictStr] = None
     policy_data: Optional[Any] = None
+    eval_metrics_validated_at: Optional[datetime] = None
     dataset_has_expected_output: Optional[StrictBool] = None
     dataset_status: Optional[DatasetStatusEnum] = None
     improvement_metadata: Optional[Any] = None
@@ -61,8 +64,9 @@ class Agent(BaseModel):
     created_at: datetime
     updated_at: datetime
     project: UUID
+    eval_metrics_validated_by: Optional[StrictInt] = None
     active_dataset: Optional[UUID] = None
-    __properties: ClassVar[List[str]] = ["id", "dataset_size", "flow", "source_repo", "name", "slug", "description", "agent_path", "model", "context_md", "policy_markdown", "policy_data", "dataset_has_expected_output", "dataset_status", "improvement_metadata", "tags", "display_name", "status", "entrypoint_fn", "analyzer_model", "optimization_summary", "setup_summary", "usage_stats", "last_activity_at", "is_deleted", "cli_version", "created_at", "updated_at", "project", "active_dataset"]
+    __properties: ClassVar[List[str]] = ["id", "dataset_size", "flow", "source_repo", "eval_metrics_validated", "eval_metrics_validated_by_email", "name", "slug", "description", "agent_path", "model", "context_md", "policy_markdown", "policy_data", "eval_metrics_validated_at", "dataset_has_expected_output", "dataset_status", "improvement_metadata", "tags", "display_name", "status", "entrypoint_fn", "analyzer_model", "optimization_summary", "setup_summary", "usage_stats", "last_activity_at", "is_deleted", "cli_version", "created_at", "updated_at", "project", "eval_metrics_validated_by", "active_dataset"]
 
     @field_validator('slug')
     def slug_validate_regular_expression(cls, value):
@@ -108,12 +112,16 @@ class Agent(BaseModel):
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
         """
         excluded_fields: Set[str] = set([
             "id",
             "dataset_size",
             "flow",
             "source_repo",
+            "eval_metrics_validated",
+            "eval_metrics_validated_by_email",
             "slug",
             "created_at",
             "updated_at",
@@ -135,10 +143,20 @@ class Agent(BaseModel):
         if self.source_repo is None and "source_repo" in self.model_fields_set:
             _dict['source_repo'] = None
 
+        # set to None if eval_metrics_validated_by_email (nullable) is None
+        # and model_fields_set contains the field
+        if self.eval_metrics_validated_by_email is None and "eval_metrics_validated_by_email" in self.model_fields_set:
+            _dict['eval_metrics_validated_by_email'] = None
+
         # set to None if policy_data (nullable) is None
         # and model_fields_set contains the field
         if self.policy_data is None and "policy_data" in self.model_fields_set:
             _dict['policy_data'] = None
+
+        # set to None if eval_metrics_validated_at (nullable) is None
+        # and model_fields_set contains the field
+        if self.eval_metrics_validated_at is None and "eval_metrics_validated_at" in self.model_fields_set:
+            _dict['eval_metrics_validated_at'] = None
 
         # set to None if improvement_metadata (nullable) is None
         # and model_fields_set contains the field
@@ -170,6 +188,11 @@ class Agent(BaseModel):
         if self.last_activity_at is None and "last_activity_at" in self.model_fields_set:
             _dict['last_activity_at'] = None
 
+        # set to None if eval_metrics_validated_by (nullable) is None
+        # and model_fields_set contains the field
+        if self.eval_metrics_validated_by is None and "eval_metrics_validated_by" in self.model_fields_set:
+            _dict['eval_metrics_validated_by'] = None
+
         # set to None if active_dataset (nullable) is None
         # and model_fields_set contains the field
         if self.active_dataset is None and "active_dataset" in self.model_fields_set:
@@ -191,6 +214,8 @@ class Agent(BaseModel):
             "dataset_size": obj.get("dataset_size"),
             "flow": AgentFlow.from_dict(obj["flow"]) if obj.get("flow") is not None else None,
             "source_repo": AgentSourceRepo.from_dict(obj["source_repo"]) if obj.get("source_repo") is not None else None,
+            "eval_metrics_validated": obj.get("eval_metrics_validated"),
+            "eval_metrics_validated_by_email": obj.get("eval_metrics_validated_by_email"),
             "name": obj.get("name"),
             "slug": obj.get("slug"),
             "description": obj.get("description"),
@@ -199,6 +224,7 @@ class Agent(BaseModel):
             "context_md": obj.get("context_md"),
             "policy_markdown": obj.get("policy_markdown"),
             "policy_data": obj.get("policy_data"),
+            "eval_metrics_validated_at": obj.get("eval_metrics_validated_at"),
             "dataset_has_expected_output": obj.get("dataset_has_expected_output"),
             "dataset_status": obj.get("dataset_status"),
             "improvement_metadata": obj.get("improvement_metadata"),
@@ -216,6 +242,7 @@ class Agent(BaseModel):
             "created_at": obj.get("created_at"),
             "updated_at": obj.get("updated_at"),
             "project": obj.get("project"),
+            "eval_metrics_validated_by": obj.get("eval_metrics_validated_by"),
             "active_dataset": obj.get("active_dataset")
         })
         return _obj

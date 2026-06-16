@@ -47,9 +47,12 @@ class AgentList(BaseModel):
     dataset_status: Optional[DatasetStatusEnum] = None
     cli_version: Optional[Annotated[str, Field(strict=True, max_length=20)]] = None
     modality: StrictStr = Field(description="Capability-card modality (text/code/tabular/multimodal…), \"\" when unanalyzed.")
+    eval_metrics_validated: StrictBool
+    eval_metrics_validated_at: Optional[datetime] = None
+    eval_metrics_validated_by_email: Optional[StrictStr]
     created_at: datetime
     updated_at: datetime
-    __properties: ClassVar[List[str]] = ["id", "project", "name", "slug", "description", "agent_path", "model", "display_name", "status", "tags", "entrypoint_fn", "analyzer_model", "dataset_size", "dataset_has_expected_output", "dataset_status", "cli_version", "modality", "created_at", "updated_at"]
+    __properties: ClassVar[List[str]] = ["id", "project", "name", "slug", "description", "agent_path", "model", "display_name", "status", "tags", "entrypoint_fn", "analyzer_model", "dataset_size", "dataset_has_expected_output", "dataset_status", "cli_version", "modality", "eval_metrics_validated", "eval_metrics_validated_at", "eval_metrics_validated_by_email", "created_at", "updated_at"]
 
     @field_validator('slug')
     def slug_validate_regular_expression(cls, value):
@@ -93,11 +96,15 @@ class AgentList(BaseModel):
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
         """
         excluded_fields: Set[str] = set([
             "id",
             "dataset_size",
             "modality",
+            "eval_metrics_validated",
+            "eval_metrics_validated_by_email",
             "created_at",
             "updated_at",
         ])
@@ -111,6 +118,16 @@ class AgentList(BaseModel):
         # and model_fields_set contains the field
         if self.tags is None and "tags" in self.model_fields_set:
             _dict['tags'] = None
+
+        # set to None if eval_metrics_validated_at (nullable) is None
+        # and model_fields_set contains the field
+        if self.eval_metrics_validated_at is None and "eval_metrics_validated_at" in self.model_fields_set:
+            _dict['eval_metrics_validated_at'] = None
+
+        # set to None if eval_metrics_validated_by_email (nullable) is None
+        # and model_fields_set contains the field
+        if self.eval_metrics_validated_by_email is None and "eval_metrics_validated_by_email" in self.model_fields_set:
+            _dict['eval_metrics_validated_by_email'] = None
 
         return _dict
 
@@ -141,6 +158,9 @@ class AgentList(BaseModel):
             "dataset_status": obj.get("dataset_status"),
             "cli_version": obj.get("cli_version"),
             "modality": obj.get("modality"),
+            "eval_metrics_validated": obj.get("eval_metrics_validated"),
+            "eval_metrics_validated_at": obj.get("eval_metrics_validated_at"),
+            "eval_metrics_validated_by_email": obj.get("eval_metrics_validated_by_email"),
             "created_at": obj.get("created_at"),
             "updated_at": obj.get("updated_at")
         })

@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 
 def build_subparser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
-        "daemon",
+        "start",
+        aliases=["daemon"],
         help="Run the CLI daemon (polling command runner)",
     )
     p.add_argument(
@@ -28,7 +29,7 @@ def build_subparser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def main(args: argparse.Namespace) -> None:
-    setup_logging()
+    setup_logging(console=True)
     run_daemon(
         agent_name=getattr(args, "agent_name", None),
         session_id=getattr(args, "session_id", None),

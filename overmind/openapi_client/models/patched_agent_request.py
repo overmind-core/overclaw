@@ -18,7 +18,7 @@ import re  # noqa: F401
 import json
 
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr
 from typing import Any, ClassVar, Dict, List, Optional
 from typing_extensions import Annotated
 from uuid import UUID
@@ -37,6 +37,7 @@ class PatchedAgentRequest(BaseModel):
     context_md: Optional[StrictStr] = None
     policy_markdown: Optional[StrictStr] = None
     policy_data: Optional[Any] = None
+    eval_metrics_validated_at: Optional[datetime] = None
     dataset_has_expected_output: Optional[StrictBool] = None
     dataset_status: Optional[DatasetStatusEnum] = None
     improvement_metadata: Optional[Any] = None
@@ -52,8 +53,9 @@ class PatchedAgentRequest(BaseModel):
     is_deleted: Optional[StrictBool] = None
     cli_version: Optional[Annotated[str, Field(strict=True, max_length=20)]] = None
     project: Optional[UUID] = None
+    eval_metrics_validated_by: Optional[StrictInt] = None
     active_dataset: Optional[UUID] = None
-    __properties: ClassVar[List[str]] = ["name", "description", "agent_path", "model", "context_md", "policy_markdown", "policy_data", "dataset_has_expected_output", "dataset_status", "improvement_metadata", "tags", "display_name", "status", "entrypoint_fn", "analyzer_model", "optimization_summary", "setup_summary", "usage_stats", "last_activity_at", "is_deleted", "cli_version", "project", "active_dataset"]
+    __properties: ClassVar[List[str]] = ["name", "description", "agent_path", "model", "context_md", "policy_markdown", "policy_data", "eval_metrics_validated_at", "dataset_has_expected_output", "dataset_status", "improvement_metadata", "tags", "display_name", "status", "entrypoint_fn", "analyzer_model", "optimization_summary", "setup_summary", "usage_stats", "last_activity_at", "is_deleted", "cli_version", "project", "eval_metrics_validated_by", "active_dataset"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -99,6 +101,11 @@ class PatchedAgentRequest(BaseModel):
         if self.policy_data is None and "policy_data" in self.model_fields_set:
             _dict['policy_data'] = None
 
+        # set to None if eval_metrics_validated_at (nullable) is None
+        # and model_fields_set contains the field
+        if self.eval_metrics_validated_at is None and "eval_metrics_validated_at" in self.model_fields_set:
+            _dict['eval_metrics_validated_at'] = None
+
         # set to None if improvement_metadata (nullable) is None
         # and model_fields_set contains the field
         if self.improvement_metadata is None and "improvement_metadata" in self.model_fields_set:
@@ -129,6 +136,11 @@ class PatchedAgentRequest(BaseModel):
         if self.last_activity_at is None and "last_activity_at" in self.model_fields_set:
             _dict['last_activity_at'] = None
 
+        # set to None if eval_metrics_validated_by (nullable) is None
+        # and model_fields_set contains the field
+        if self.eval_metrics_validated_by is None and "eval_metrics_validated_by" in self.model_fields_set:
+            _dict['eval_metrics_validated_by'] = None
+
         # set to None if active_dataset (nullable) is None
         # and model_fields_set contains the field
         if self.active_dataset is None and "active_dataset" in self.model_fields_set:
@@ -153,6 +165,7 @@ class PatchedAgentRequest(BaseModel):
             "context_md": obj.get("context_md"),
             "policy_markdown": obj.get("policy_markdown"),
             "policy_data": obj.get("policy_data"),
+            "eval_metrics_validated_at": obj.get("eval_metrics_validated_at"),
             "dataset_has_expected_output": obj.get("dataset_has_expected_output"),
             "dataset_status": obj.get("dataset_status"),
             "improvement_metadata": obj.get("improvement_metadata"),
@@ -168,6 +181,7 @@ class PatchedAgentRequest(BaseModel):
             "is_deleted": obj.get("is_deleted"),
             "cli_version": obj.get("cli_version"),
             "project": obj.get("project"),
+            "eval_metrics_validated_by": obj.get("eval_metrics_validated_by"),
             "active_dataset": obj.get("active_dataset")
         })
         return _obj

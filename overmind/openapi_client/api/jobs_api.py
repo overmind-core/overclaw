@@ -584,7 +584,7 @@ class JobsApi:
         created_after: Optional[datetime] = None,
         created_before: Optional[datetime] = None,
         data_source: Optional[StrictStr] = None,
-        job_type: Annotated[Optional[StrictStr], Field(description="* `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync")] = None,
+        job_type: Annotated[Optional[StrictStr], Field(description="* `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync * `langfuse_import` - Langfuse Import * `optimize` - Optimize * `optimize_command` - Optimize Command")] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
         page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
@@ -593,7 +593,7 @@ class JobsApi:
         score_max: Optional[Union[StrictFloat, StrictInt]] = None,
         score_min: Optional[Union[StrictFloat, StrictInt]] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
-        status: Annotated[Optional[StrictStr], Field(description="* `pending` - Pending * `running` - Running * `completed` - Completed * `failed` - Failed * `cancelled` - Cancelled")] = None,
+        status: Annotated[Optional[StrictStr], Field(description="* `pending` - Pending * `running` - Running * `waiting_user` - Waiting User * `completed` - Completed * `failed` - Failed * `cancelled` - Cancelled")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -620,7 +620,7 @@ class JobsApi:
         :type created_before: datetime
         :param data_source:
         :type data_source: str
-        :param job_type: * `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync
+        :param job_type: * `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync * `langfuse_import` - Langfuse Import * `optimize` - Optimize * `optimize_command` - Optimize Command
         :type job_type: str
         :param ordering: Which field to use when ordering the results.
         :type ordering: str
@@ -638,7 +638,7 @@ class JobsApi:
         :type score_min: float
         :param search: A search term.
         :type search: str
-        :param status: * `pending` - Pending * `running` - Running * `completed` - Completed * `failed` - Failed * `cancelled` - Cancelled
+        :param status: * `pending` - Pending * `running` - Running * `waiting_user` - Waiting User * `completed` - Completed * `failed` - Failed * `cancelled` - Cancelled
         :type status: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -706,7 +706,7 @@ class JobsApi:
         created_after: Optional[datetime] = None,
         created_before: Optional[datetime] = None,
         data_source: Optional[StrictStr] = None,
-        job_type: Annotated[Optional[StrictStr], Field(description="* `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync")] = None,
+        job_type: Annotated[Optional[StrictStr], Field(description="* `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync * `langfuse_import` - Langfuse Import * `optimize` - Optimize * `optimize_command` - Optimize Command")] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
         page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
@@ -715,7 +715,7 @@ class JobsApi:
         score_max: Optional[Union[StrictFloat, StrictInt]] = None,
         score_min: Optional[Union[StrictFloat, StrictInt]] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
-        status: Annotated[Optional[StrictStr], Field(description="* `pending` - Pending * `running` - Running * `completed` - Completed * `failed` - Failed * `cancelled` - Cancelled")] = None,
+        status: Annotated[Optional[StrictStr], Field(description="* `pending` - Pending * `running` - Running * `waiting_user` - Waiting User * `completed` - Completed * `failed` - Failed * `cancelled` - Cancelled")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -742,7 +742,7 @@ class JobsApi:
         :type created_before: datetime
         :param data_source:
         :type data_source: str
-        :param job_type: * `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync
+        :param job_type: * `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync * `langfuse_import` - Langfuse Import * `optimize` - Optimize * `optimize_command` - Optimize Command
         :type job_type: str
         :param ordering: Which field to use when ordering the results.
         :type ordering: str
@@ -760,7 +760,7 @@ class JobsApi:
         :type score_min: float
         :param search: A search term.
         :type search: str
-        :param status: * `pending` - Pending * `running` - Running * `completed` - Completed * `failed` - Failed * `cancelled` - Cancelled
+        :param status: * `pending` - Pending * `running` - Running * `waiting_user` - Waiting User * `completed` - Completed * `failed` - Failed * `cancelled` - Cancelled
         :type status: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -828,7 +828,7 @@ class JobsApi:
         created_after: Optional[datetime] = None,
         created_before: Optional[datetime] = None,
         data_source: Optional[StrictStr] = None,
-        job_type: Annotated[Optional[StrictStr], Field(description="* `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync")] = None,
+        job_type: Annotated[Optional[StrictStr], Field(description="* `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync * `langfuse_import` - Langfuse Import * `optimize` - Optimize * `optimize_command` - Optimize Command")] = None,
         ordering: Annotated[Optional[StrictStr], Field(description="Which field to use when ordering the results.")] = None,
         page: Annotated[Optional[StrictInt], Field(description="A page number within the paginated result set.")] = None,
         page_size: Annotated[Optional[StrictInt], Field(description="Number of results to return per page.")] = None,
@@ -837,7 +837,7 @@ class JobsApi:
         score_max: Optional[Union[StrictFloat, StrictInt]] = None,
         score_min: Optional[Union[StrictFloat, StrictInt]] = None,
         search: Annotated[Optional[StrictStr], Field(description="A search term.")] = None,
-        status: Annotated[Optional[StrictStr], Field(description="* `pending` - Pending * `running` - Running * `completed` - Completed * `failed` - Failed * `cancelled` - Cancelled")] = None,
+        status: Annotated[Optional[StrictStr], Field(description="* `pending` - Pending * `running` - Running * `waiting_user` - Waiting User * `completed` - Completed * `failed` - Failed * `cancelled` - Cancelled")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -864,7 +864,7 @@ class JobsApi:
         :type created_before: datetime
         :param data_source:
         :type data_source: str
-        :param job_type: * `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync
+        :param job_type: * `inference` - Inference * `uploaded_outputs_setup` - Uploaded Outputs Setup * `judge_scoring` - Judge Scoring * `prompt_tuning` - Prompt Tuning * `model_backtesting` - Model Backtesting * `connector_sync` - Connector Sync * `langfuse_import` - Langfuse Import * `optimize` - Optimize * `optimize_command` - Optimize Command
         :type job_type: str
         :param ordering: Which field to use when ordering the results.
         :type ordering: str
@@ -882,7 +882,7 @@ class JobsApi:
         :type score_min: float
         :param search: A search term.
         :type search: str
-        :param status: * `pending` - Pending * `running` - Running * `completed` - Completed * `failed` - Failed * `cancelled` - Cancelled
+        :param status: * `pending` - Pending * `running` - Running * `waiting_user` - Waiting User * `completed` - Completed * `failed` - Failed * `cancelled` - Cancelled
         :type status: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
