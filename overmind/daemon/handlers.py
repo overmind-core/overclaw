@@ -67,6 +67,9 @@ class HandlerContext:
     repo_root: Path
     agent_name: str = ""
     _runners: dict = field(default_factory=dict)
+    # The branch the user was on when we first auto-stashed their uncommitted work,
+    # so the final cleanup can put them back exactly where they started (req 12).
+    _autostash_branch: str | None = None
 
     @classmethod
     def create(cls, *, agent_name: str = "") -> HandlerContext:
@@ -202,11 +205,69 @@ _COMMIT_ENV = {
 }
 
 
-def _assert_clean(repo_root: Path) -> None:
-    if safety.run_git(repo_root, ["status", "--porcelain"]).strip():
-        raise RuntimeError(
-            "your repo has uncommitted changes; commit or stash them, then resume the run"
-        )
+# Tag our auto-stash so we only ever pop work *we* set aside, never a stash the
+# user created themselves.
+_AUTOSTASH_MSG = "overmind-autostash"
+
+
+def _current_branch(repo_root: Path) -> str:
+    try:
+        return safety.run_git(repo_root, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
+    except Exception:
+        return ""
+
+
+def _is_dirty(repo_root: Path) -> bool:
+    try:
+        return bool(safety.run_git(repo_root, ["status", "--porcelain"]).strip())
+    except Exception:
+        return False
+
+
+def _has_autostash(repo_root: Path) -> bool:
+    try:
+        return _AUTOSTASH_MSG in safety.run_git(repo_root, ["stash", "list"])
+    except Exception:
+        return False
+
+
+def _ensure_user_stash(repo_root: Path, ctx: HandlerContext) -> None:
+    """Set the user's uncommitted work aside once, before we move off their branch.
+
+    Req 12: a dirty repo must not block the run. Rather than refuse to switch
+    branches, we stash the user's changes (including untracked files) and record
+    the branch they were on, so :func:`_restore_user_stash` can put everything
+    back exactly as we found it when the run finishes.
+    """
+    if ctx._autostash_branch is not None:
+        return  # already stashed for this run
+    if not _is_dirty(repo_root):
+        return
+    origin = _current_branch(repo_root)
+    safety.run_git(repo_root, ["stash", "push", "--include-untracked", "-m", _AUTOSTASH_MSG])
+    ctx._autostash_branch = origin or ""
+    logger.info(
+        "auto-stashed your uncommitted changes (%s); they'll be restored when the run finishes",
+        _AUTOSTASH_MSG,
+    )
+
+
+def _restore_user_stash(repo_root: Path, ctx: HandlerContext) -> None:
+    """Return the user to their original branch and pop the auto-stash, if any."""
+    branch = ctx._autostash_branch
+    if branch is None:
+        return
+    if branch:
+        _git_ok(repo_root, ["checkout", branch])
+    if _has_autostash(repo_root):
+        try:
+            safety.run_git(repo_root, ["stash", "pop"])
+        except Exception as exc:  # noqa: BLE001 — surface but don't crash cleanup
+            logger.warning(
+                "could not auto-restore your stashed changes: %s — run `git stash pop` to recover",
+                exc,
+            )
+    ctx._autostash_branch = None
 
 
 def _git_ok(repo_root: Path, args: list[str]) -> bool:
@@ -266,11 +327,12 @@ def _apply_patch(payload: dict, ctx: HandlerContext) -> tuple[bool, dict, str]:
     if not base and not branch:  # legacy working-tree apply
         if not diff.strip():
             return True, {"applied": False, "reason": "empty diff"}, ""
-        safety.run_git(repo, ["apply", "--whitespace=nowarn", "-"], stdin=diff)
+        _apply_or_raise(repo, diff)
         return True, {"applied": True}, ""
 
-    if payload.get("assert_clean"):
-        _assert_clean(repo)
+    # Tolerate a dirty working tree (req 12): stash the user's uncommitted work
+    # before we touch branches instead of refusing to run.
+    _ensure_user_stash(repo, ctx)
     _sync_base(repo, base, (payload.get("base_sha") or "").strip())
 
     target = branch or base
@@ -281,12 +343,27 @@ def _apply_patch(payload: dict, ctx: HandlerContext) -> tuple[bool, dict, str]:
 
     applied = False
     if diff.strip():
-        safety.run_git(repo, ["apply", "--whitespace=nowarn", "-"], stdin=diff)
+        _apply_or_raise(repo, diff)
         safety.run_git(repo, ["add", "-A"])
         safety.run_git(repo, ["commit", "-m", "overmind: optimize"], env=_COMMIT_ENV)
         applied = True
     head = safety.run_git(repo, ["rev-parse", "HEAD"]).strip()
     return True, {"applied": applied, "branch": target, "head": head}, ""
+
+
+def _apply_or_raise(repo_root: Path, diff: str) -> None:
+    """``git apply`` the diff, raising a clear, actionable error if it doesn't land.
+
+    This is the *one* failure req 12 cares about: a dirty tree is fine, but if the
+    optimizer's patch can't be applied we stop and tell the user to resolve it."""
+    try:
+        safety.run_git(repo_root, ["apply", "--whitespace=nowarn", "-"], stdin=diff)
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            "the optimizer's patch did not apply to your working tree "
+            f"({str(exc)[:300]}); resolve the conflict (or commit/stash local edits to the "
+            "same files) and resume the run"
+        ) from exc
 
 
 def _reset(payload: dict, ctx: HandlerContext) -> tuple[bool, dict, str]:
@@ -315,6 +392,10 @@ def _reset(payload: dict, ctx: HandlerContext) -> tuple[bool, dict, str]:
     for name in targets:
         if name and name != base and _git_ok(repo, ["branch", "-D", name]):
             deleted.append(name)
+    # End-of-run cleanup (cleanup_prefix set): return the user to the branch they
+    # started on and restore the work we stashed at the start (req 12).
+    if cleanup_prefix:
+        _restore_user_stash(repo, ctx)
     return True, {"reset": True, "checked_out": base, "deleted": deleted}, ""
 
 

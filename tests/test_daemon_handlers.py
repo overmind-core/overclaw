@@ -273,12 +273,26 @@ def test_apply_patch_accumulates_winner_on_working_branch(tmp_project: Path):
     assert "winner-marker" in target.read_text()
 
 
-def test_apply_patch_assert_clean_rejects_dirty_repo(tmp_project: Path):
+def test_apply_patch_stashes_and_restores_dirty_tree(tmp_project: Path):
+    """Req 12: a dirty repo must not block the run.
+
+    The daemon auto-stashes the user's uncommitted work (tracked edits + untracked
+    files) when it first switches branches, and the end-of-run cleanup ``reset``
+    returns them to their branch with that work restored intact.
+    """
     repo = tmp_project
     _init_repo(repo)
-    (repo / "scratch.txt").write_text("uncommitted work")  # dirty (untracked)
+    target = repo / "agents" / "agent1" / "sample_agent.py"
+    pristine = target.read_text()
+
+    # User has uncommitted work: a tracked edit + a brand-new untracked file.
+    target.write_text(pristine + "\n# user-wip\n")
+    (repo / "scratch.txt").write_text("uncommitted work")
+    assert _current_branch(repo) == "main"
+
     ctx = handlers.HandlerContext.create()
 
+    # First branch op (working-branch prep) must succeed despite the dirty tree.
     ok, _result, error = handlers.dispatch(
         {
             "kind": "apply_patch",
@@ -287,14 +301,61 @@ def test_apply_patch_assert_clean_rejects_dirty_repo(tmp_project: Path):
                 "branch": "overmind/optimize/abc1234/work",
                 "diff": "",
                 "reset_to_base": True,
-                "assert_clean": True,
+            },
+        },
+        ctx,
+    )
+    assert ok is True, error
+    # We're on the work branch, and the user's edits are stashed away (clean tree).
+    assert _current_branch(repo) == "overmind/optimize/abc1234/work"
+    assert "# user-wip" not in target.read_text()
+    assert not (repo / "scratch.txt").exists()
+    assert ctx._autostash_branch == "main"
+
+    # End-of-run cleanup returns the user to main with their work restored.
+    ok, _result, error = handlers.dispatch(
+        {
+            "kind": "reset",
+            "payload": {"base_branch": "main", "cleanup_prefix": "overmind/optimize/abc1234"},
+        },
+        ctx,
+    )
+    assert ok is True, error
+    assert _current_branch(repo) == "main"
+    assert target.read_text() == pristine + "\n# user-wip\n"
+    assert (repo / "scratch.txt").read_text() == "uncommitted work"
+    assert ctx._autostash_branch is None
+
+
+def test_apply_patch_raises_clear_error_on_unappliable_patch(tmp_project: Path):
+    """Req 12: the *one* fatal case is a patch that genuinely won't apply."""
+    repo = tmp_project
+    _init_repo(repo)
+    bogus_diff = (
+        "diff --git a/agents/agent1/sample_agent.py b/agents/agent1/sample_agent.py\n"
+        "--- a/agents/agent1/sample_agent.py\n"
+        "+++ b/agents/agent1/sample_agent.py\n"
+        "@@ -999,3 +999,3 @@\n"
+        "-this context line does not exist in the file\n"
+        "+replacement\n"
+    )
+    ctx = handlers.HandlerContext.create()
+
+    ok, _result, error = handlers.dispatch(
+        {
+            "kind": "apply_patch",
+            "payload": {
+                "base_branch": "main",
+                "branch": "overmind/optimize/abc1234/i0c0",
+                "diff": bogus_diff,
+                "reset_to_base": True,
             },
         },
         ctx,
     )
 
     assert ok is False
-    assert "uncommitted changes" in error
+    assert "did not apply" in error
 
 
 def test_apply_patch_parks_on_base_sha_mismatch(tmp_project: Path):
