@@ -100,6 +100,57 @@ def test_run_command_invokes_runner(tmp_project: Path, monkeypatch):
     )
     assert ok is True, error
     assert result["output"] == {"echo": "hi"}
+    # When telemetry is live the run carries a 32-hex trace id for correlation; an
+    # offline daemon simply omits it. Either way it must never be malformed.
+    if "trace_id" in result:
+        assert len(result["trace_id"]) == 32
+        int(result["trace_id"], 16)
+
+
+def test_run_command_returns_trace_id_for_correlation(tmp_project: Path, monkeypatch):
+    """When tracing is live, the run command carries its span's 32-hex trace id back.
+
+    The server stores this on the command result; the baseline batch's ids become
+    each later replay's ``original_trace_id`` so the two traces can be compared.
+    """
+    from contextlib import contextmanager
+
+    class _FakeSpanContext:
+        is_valid = True
+        trace_id = 0x0123456789ABCDEF0123456789ABCDEF
+
+    class _FakeSpan:
+        def get_span_context(self):
+            return _FakeSpanContext()
+
+    @contextmanager
+    def _fake_trace(_payload):
+        yield _FakeSpan()
+
+    monkeypatch.setattr(handlers, "_run_trace", _fake_trace)
+
+    class FakeOut:
+        success = True
+        data = {"echo": "hi"}
+        stdout = "ran"
+        stderr = ""
+        error = ""
+
+    class FakeRunner:
+        def ensure_environment(self):
+            return None
+
+        def run(self, input_data):
+            return FakeOut()
+
+    ctx = handlers.HandlerContext.create()
+    monkeypatch.setattr(ctx, "runner_for", lambda *a, **k: FakeRunner())
+    ok, result, error = handlers.dispatch(
+        {"kind": "run_command", "payload": {"agent_path": "agents/agent1/sample_agent.py", "input": {}}},
+        ctx,
+    )
+    assert ok is True, error
+    assert result["trace_id"] == "0123456789abcdef0123456789abcdef"
 
 
 def test_run_command_failure_is_reported(tmp_project: Path, monkeypatch):

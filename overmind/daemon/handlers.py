@@ -155,16 +155,41 @@ def _upload_bundle(payload: dict, ctx: HandlerContext) -> tuple[bool, dict, str]
     return True, {"bundle": {"entry_file": bundle.entry_file, "files": files}}, ""
 
 
+def _span_trace_id(span) -> str:
+    """32-char hex trace id of *span*, or "" when telemetry is disabled.
+
+    This is the same id the OTLP exporter ships the agent's trace under, so the
+    server can line each run up with the run / candidate that produced it
+    (``baseline_trace_ids`` → a replay's ``original_trace_id``). Best-effort: a
+    daemon with no SDK (offline) just reports no trace id and the run continues.
+    """
+    try:
+        sctx = span.get_span_context()
+        if sctx and sctx.is_valid:
+            return format(sctx.trace_id, "032x")
+    except Exception:
+        pass
+    return ""
+
+
 def _run_command(payload: dict, ctx: HandlerContext) -> tuple[bool, dict, str]:
     agent_dir, entry_file, fn = _resolve_entry(payload, ctx)
     runner = ctx.runner_for(agent_dir, entry_file, fn)
     runner.ensure_environment()
-    with _run_trace(payload):
+    with _run_trace(payload) as span:
         out = runner.run(payload.get("input") or {})
+        trace_id = _span_trace_id(span)
     if out.success:
-        return True, {"output": out.data, "stdout": (out.stdout or "")[-_MAX_TAIL:]}, ""
+        result = {"output": out.data, "stdout": (out.stdout or "")[-_MAX_TAIL:]}
+    else:
+        result = {"output": None, "stderr": (out.stderr or "")[-_MAX_TAIL:]}
+    # Carry the trace id back even on failure so a failed replay stays correlatable.
+    if trace_id:
+        result["trace_id"] = trace_id
+    if out.success:
+        return True, result, ""
     error = out.error or (out.stderr or "")[-_MAX_TAIL:] or "agent run failed"
-    return False, {"output": None, "stderr": (out.stderr or "")[-_MAX_TAIL:]}, error[:_MAX_TAIL]
+    return False, result, error[:_MAX_TAIL]
 
 
 # Identity stamped onto the ephemeral candidate/winner commits, passed via env so
