@@ -9,10 +9,10 @@ Commands:
     overmind agent update <name> <module:function>     Update a registered agent's entrypoint
     overmind agent show <name>                         Show agent registration and pipeline status
     overmind setup <name> [--data PATH] [--fast]      Analyze agent and define eval criteria
-    overmind optimize <name> [--fast]                  Run the optimization loop
+    overmind optimize <name> [--fast]                  Run the optimization loop (local)
+    overmind start [name]                              Start the server-driven optimization daemon
+    overmind remote-optimize <name>                    Trigger + stream a server-driven run
     overmind doctor <name>                             Diagnose bundle scope and eval spec (read-only)
-    overmind sync [name]                               Sync local setup artifacts to Overmind
-    overmind sync-optimize [name]                      Sync local optimize artifacts to Overmind
 """
 
 from __future__ import annotations
@@ -38,12 +38,12 @@ from overmind.commands.agent_cmd import (
     cmd_validate,
 )
 from overmind.commands.init_cmd import main as _init
-from overmind.commands.optimize_cmd import main as _optimize
-from overmind.commands.optimize_step_cmd import (
-    build_subparser as _build_optimize_step_parser,
-)
-from overmind.commands.optimize_step_cmd import main as _optimize_step
 from overmind.commands.setup_cmd import main as _setup
+
+# NOTE: the local optimizer commands (``optimize`` / ``optimize-step``) are imported
+# lazily inside ``main`` / ``_build_parser`` so the slim ``overmind start`` daemon
+# never drags in ``overmind.optimize.optimizer`` (the ~150KB local optimizer). See
+# tests/test_cli_import_closure.py which guards this.
 from overmind.core.constants import OVERMIND_DIR_NAME, overmind_rel
 from overmind.core.logging import setup_logging
 from overmind.core.paths import load_overmind_dotenv
@@ -424,6 +424,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     # ── optimize-step (skill-driven) ────────────────────────────────────────
+    # Lazy import: the argparse builder itself is light, but importing it here (not
+    # at module top) keeps the import graph for ``start`` from touching the optimizer.
+    from overmind.commands.optimize_step_cmd import build_subparser as _build_optimize_step_parser
+
     _build_optimize_step_parser(subparsers)
 
     # ── doctor ───────────────────────────────────────────────────────────────
@@ -442,6 +446,100 @@ def _build_parser() -> argparse.ArgumentParser:
         "agent",
         metavar="AGENT_NAME",
         help="registered agent name (see: overmind agent list)",
+    )
+
+    # ── start (server-driven daemon) ─────────────────────────────────────────
+    start_p = subparsers.add_parser(
+        "start",
+        formatter_class=_FMT,
+        help="Start the optimization daemon (connect this repo to the server)",
+        description=(
+            "Connect this project to the Overmind server and poll for optimization\n"
+            "work. The server orchestrates each run; this daemon executes the\n"
+            "primitive commands it issues (bundle upload, agent runs, patch\n"
+            "apply/reset) against your real repo and reports results back.\n"
+            "\n"
+            "Leave it running, then trigger optimization from the web UI (or with\n"
+            "`overmind remote-optimize <name>`). Press Ctrl-C to stop."
+        ),
+        epilog=("Examples:\n  overmind start\n  overmind start lead-qualification\n"),
+    )
+    start_p.add_argument(
+        "agent",
+        metavar="AGENT_NAME",
+        nargs="?",
+        default="",
+        help="optional registered agent name this daemon is primarily serving",
+    )
+    start_p.add_argument(
+        "--poll-interval",
+        type=float,
+        default=2.0,
+        metavar="SECONDS",
+        help="seconds between poll cycles when idle (default: 2.0)",
+    )
+
+    # ── remote-optimize (server-driven, all-in-one) ──────────────────────────
+    ropt_p = subparsers.add_parser(
+        "remote-optimize",
+        formatter_class=_FMT,
+        help="Trigger a server-driven optimization run and stream it to completion",
+        description=(
+            "Register a session, ask the server to start an optimization run for\n"
+            "the agent, then drive the daemon loop here while streaming live run\n"
+            "status until it reaches a terminal state.\n"
+            "\n"
+            "Unlike `overmind optimize` (which runs the whole loop locally), this\n"
+            "lets the server brain orchestrate while this process only executes the\n"
+            "commands it issues. Register the agent first (`overmind agent register`)."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  overmind remote-optimize lead-qualification\n"
+            "  overmind remote-optimize lead-qualification --num-iterations 3 --yes\n"
+        ),
+    )
+    ropt_p.add_argument(
+        "agent",
+        metavar="AGENT_NAME",
+        help="registered agent name (see: overmind agent list)",
+    )
+    ropt_p.add_argument(
+        "--num-iterations",
+        type=int,
+        default=None,
+        metavar="N",
+        help="override the number of optimization iterations (server default otherwise)",
+    )
+    ropt_p.add_argument(
+        "--candidates",
+        type=int,
+        default=None,
+        metavar="N",
+        help="candidates to try per iteration (server default otherwise)",
+    )
+    ropt_p.add_argument(
+        "--require-approval",
+        action="store_true",
+        help="ask the server to pause for eval-criteria approval before scoring",
+    )
+    ropt_p.add_argument(
+        "--no-pr",
+        action="store_true",
+        help="do not open a pull request when the run improves the agent",
+    )
+    ropt_p.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="auto-approve any criteria prompt (non-interactive)",
+    )
+    ropt_p.add_argument(
+        "--poll-interval",
+        type=float,
+        default=2.0,
+        metavar="SECONDS",
+        help="seconds between run-status polls (default: 2.0)",
     )
 
     return parser
@@ -522,15 +620,40 @@ def main() -> None:
             )
 
         elif args.command == "optimize":
+            from overmind.commands.optimize_cmd import main as _optimize
+
             _kw = _bundle_cli_kwargs(args)
             context.attach(context.set_value(attrs.AGENT_NAME, args.agent))
             _optimize(agent_name=args.agent, fast=args.fast, **_kw)
 
         elif args.command == "optimize-step":
+            from overmind.commands.optimize_step_cmd import main as _optimize_step
+
             agent_name = getattr(args, "agent", None)
             if agent_name:
                 context.attach(context.set_value(attrs.AGENT_NAME, agent_name))
             raise SystemExit(_optimize_step(args))
+
+        elif args.command == "start":
+            from overmind.daemon.main import run_daemon
+
+            if args.agent:
+                context.attach(context.set_value(attrs.AGENT_NAME, args.agent))
+            run_daemon(agent_name=args.agent, poll_interval=args.poll_interval)
+
+        elif args.command == "remote-optimize":
+            from overmind.orchestrator import optimize as _remote_optimize
+
+            context.attach(context.set_value(attrs.AGENT_NAME, args.agent))
+            _remote_optimize(
+                args.agent,
+                poll_interval=args.poll_interval,
+                auto_approve=args.yes,
+                max_iterations=args.num_iterations,
+                candidates_per_iteration=args.candidates,
+                require_criteria_approval=args.require_approval,
+                open_pr=not args.no_pr,
+            )
 
     except KeyboardInterrupt:
         span = _otel_trace.get_current_span()

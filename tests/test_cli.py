@@ -315,7 +315,9 @@ class TestMainDispatch:
                 non_interactive=False,
             )
             mock_parser.return_value.parse_args.return_value = mock_args
-            with patch("overmind.cli._optimize") as mock_fn:
+            # _optimize is lazy-imported inside main() now (slim-daemon boundary),
+            # so patch it at its source module rather than on the cli module.
+            with patch("overmind.commands.optimize_cmd.main") as mock_fn:
                 main()
                 mock_fn.assert_called_once_with(
                     agent_name="my-agent",

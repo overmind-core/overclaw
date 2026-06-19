@@ -171,6 +171,15 @@ OPTIMIZE_N_CANDIDATES_GENERATED = "overmind.optimize.n_candidates_generated"
 OPTIMIZE_N_CANDIDATES_VALID = "overmind.optimize.n_candidates_valid"
 OPTIMIZE_CANDIDATE_INDEX = "overmind.optimize.candidate_index"
 OPTIMIZE_CANDIDATE_METHOD = "overmind.optimize.candidate_method"
+# Server-driven daemon command traces (claw/overmind/daemon/handlers.py) — each
+# run_command the daemon executes opens a span stamped with the optimization
+# context so the backend can correlate the agent run to its run / candidate.
+# ``trace_type`` is ``"original"`` for a baseline replay, ``"replay"`` for a
+# candidate (patched) replay.
+OPTIMIZE_RUN_ID = "overmind.optimize.run_id"
+OPTIMIZE_PROJECT_ID = "overmind.optimize.project_id"
+OPTIMIZE_DATAPOINT_INDEX = "overmind.optimize.datapoint_index"
+OPTIMIZE_TRACE_TYPE = "overmind.optimize.trace_type"
 OPTIMIZE_CANDIDATE_SCORE = "overmind.optimize.candidate_score"
 OPTIMIZE_CANDIDATE_ADJUSTED_SCORE = "overmind.optimize.candidate_adjusted_score"
 OPTIMIZE_COMPLEXITY_PENALTY = "overmind.optimize.complexity_penalty"

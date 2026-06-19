@@ -1,0 +1,301 @@
+"""Command handlers — execute one server-issued primitive against the repo.
+
+Each handler returns ``(success, result, error)``. ``result`` is the JSON the
+server stores on the command (and folds into scoring/diagnosis); ``error`` is a
+short human-readable failure string that drives the server's retry logic.
+"""
+
+from __future__ import annotations
+
+import logging
+from contextlib import nullcontext
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from overmind.daemon import safety
+
+logger = logging.getLogger("overmind.daemon.handlers")
+
+_MAX_TAIL = 2000
+
+
+def _as_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _run_trace(payload: dict):
+    """Best-effort span around a server-driven agent run.
+
+    Stamps the optimization context (run / agent / candidate / iteration /
+    datapoint / project ids + ``trace_type``) so the backend can correlate the
+    agent's trace to the run and candidate that produced it. Returns a no-op
+    context manager when the SDK isn't initialized, so an offline daemon never
+    fails a command over telemetry.
+    """
+    try:
+        from overmind import attrs, tracing
+
+        tracing.get_tracer()  # raises if the SDK isn't initialized
+    except Exception:
+        return nullcontext()
+
+    candidate_index = _as_int(payload.get("candidate_index"), -1)
+    trace_type = payload.get("trace_type") or ("original" if candidate_index < 0 else "replay")
+    return tracing.start_child_span(
+        "overmind.optimize.run_command",
+        span_type=tracing.SpanType.ENTRY_POINT,
+        attributes={
+            attrs.OPTIMIZE_RUN_ID: str(payload.get("run_id") or ""),
+            attrs.AGENT_ID: str(payload.get("agent_id") or ""),
+            attrs.OPTIMIZE_PROJECT_ID: str(payload.get("project_id") or ""),
+            attrs.OPTIMIZE_ITERATION: _as_int(payload.get("iteration"), -1),
+            attrs.OPTIMIZE_CANDIDATE_INDEX: candidate_index,
+            attrs.OPTIMIZE_DATAPOINT_INDEX: _as_int(payload.get("datapoint_index"), -1),
+            attrs.OPTIMIZE_TRACE_TYPE: trace_type,
+        },
+    )
+
+
+@dataclass
+class HandlerContext:
+    """Per-daemon execution context: where the repo is + a runner cache."""
+
+    project_root: Path
+    repo_root: Path
+    agent_name: str = ""
+    _runners: dict = field(default_factory=dict)
+
+    @classmethod
+    def create(cls, *, agent_name: str = "") -> HandlerContext:
+        from overmind.core.registry import project_root
+
+        root = project_root()
+        try:
+            top = safety.run_git(root, ["rev-parse", "--show-toplevel"]).strip()
+            repo_root = Path(top) if top else root
+        except Exception:
+            repo_root = root
+        return cls(project_root=root, repo_root=repo_root, agent_name=agent_name)
+
+    def runner_for(self, agent_dir: Path, entry_file: str, fn_name: str):
+        from overmind.optimize.runner import AgentRunner
+
+        key = (str(agent_dir), entry_file, fn_name)
+        runner = self._runners.get(key)
+        if runner is None:
+            runner = AgentRunner(agent_dir=agent_dir, entry_file=entry_file, entrypoint_fn=fn_name)
+            self._runners[key] = runner
+        return runner
+
+
+def dispatch(command: dict, ctx: HandlerContext) -> tuple[bool, dict, str]:
+    kind = command.get("kind", "")
+    payload = command.get("payload") or {}
+    handler = _HANDLERS.get(kind)
+    if handler is None:
+        return False, {}, f"unknown command kind: {kind!r}"
+    try:
+        return handler(payload, ctx)
+    except Exception as exc:
+        logger.exception("command handler failed kind=%s", kind)
+        return False, {}, str(exc)[:_MAX_TAIL]
+
+
+def _resolve_entry(payload: dict, ctx: HandlerContext) -> tuple[Path, str, str]:
+    """Resolve a command to ``(agent_dir, entry_file, fn_name)``.
+
+    Prefers the server-supplied ``agent_path`` when it exists locally, then
+    falls back to the local registry (by synced agent id, then name).
+    """
+    fn = (payload.get("entrypoint_fn") or "").strip() or "run"
+    if ":" in fn:
+        fn = fn.rsplit(":", 1)[-1]
+
+    agent_path = (payload.get("agent_path") or "").strip()
+    if agent_path:
+        p = Path(agent_path)
+        if not p.is_absolute():
+            p = (ctx.project_root / p).resolve()
+        if p.is_file():
+            return p.parent, p.name, fn
+
+    from overmind.core.registry import load_registry
+
+    registry = load_registry()
+    agent_id = payload.get("agent_id")
+    name = payload.get("agent_name") or ctx.agent_name
+    entry = None
+    if agent_id:
+        entry = next((e for e in registry.values() if e.get("id") == str(agent_id)), None)
+    if entry is None and name and name in registry:
+        entry = registry[name]
+    if entry and entry.get("file_path") and Path(entry["file_path"]).is_file():
+        fp = Path(entry["file_path"])
+        return fp.parent, fp.name, entry.get("fn_name") or fn
+
+    raise RuntimeError(
+        f"cannot resolve agent entrypoint (agent_path={agent_path!r}, agent_id={agent_id!r}); "
+        "start the daemon from the agent's project root and register it with "
+        "`overmind agent register <name> <module:function>`"
+    )
+
+
+def _upload_bundle(payload: dict, ctx: HandlerContext) -> tuple[bool, dict, str]:
+    from overmind.core.registry import project_root_from_agent_file
+    from overmind.utils.code import AgentBundle
+
+    agent_dir, entry_file, fn = _resolve_entry(payload, ctx)
+    entry_path = agent_dir / entry_file
+    root = project_root_from_agent_file(entry_path) or ctx.project_root
+    bundle = AgentBundle.from_entry_point(str(entry_path), str(root), fn)
+    files = [{"path": rel, "content": src} for rel, src in bundle.original_files.items()]
+    return True, {"bundle": {"entry_file": bundle.entry_file, "files": files}}, ""
+
+
+def _run_command(payload: dict, ctx: HandlerContext) -> tuple[bool, dict, str]:
+    agent_dir, entry_file, fn = _resolve_entry(payload, ctx)
+    runner = ctx.runner_for(agent_dir, entry_file, fn)
+    runner.ensure_environment()
+    with _run_trace(payload):
+        out = runner.run(payload.get("input") or {})
+    if out.success:
+        return True, {"output": out.data, "stdout": (out.stdout or "")[-_MAX_TAIL:]}, ""
+    error = out.error or (out.stderr or "")[-_MAX_TAIL:] or "agent run failed"
+    return False, {"output": None, "stderr": (out.stderr or "")[-_MAX_TAIL:]}, error[:_MAX_TAIL]
+
+
+# Identity stamped onto the ephemeral candidate/winner commits, passed via env so
+# we never need a non-allowlisted `git -c user.email=…`.
+_COMMIT_ENV = {
+    "GIT_AUTHOR_NAME": "Overmind Optimizer",
+    "GIT_AUTHOR_EMAIL": "overmind-bot@users.noreply.github.com",
+    "GIT_COMMITTER_NAME": "Overmind Optimizer",
+    "GIT_COMMITTER_EMAIL": "overmind-bot@users.noreply.github.com",
+}
+
+
+def _assert_clean(repo_root: Path) -> None:
+    if safety.run_git(repo_root, ["status", "--porcelain"]).strip():
+        raise RuntimeError(
+            "your repo has uncommitted changes; commit or stash them, then resume the run"
+        )
+
+
+def _git_ok(repo_root: Path, args: list[str]) -> bool:
+    """Run an allowlisted git command, swallowing failure (e.g. deleting a missing branch)."""
+    try:
+        safety.run_git(repo_root, args)
+        return True
+    except Exception:
+        return False
+
+
+def _sync_base(repo_root: Path, base_branch: str, base_sha: str) -> None:
+    """Park (raise) unless the local *base_branch* is at the optimizer's *base_sha*.
+
+    We never ``reset --hard`` the user's branch: if their local default has drifted
+    from the commit the server cloned at, the candidate diffs may not apply, so we
+    ask them to sync rather than silently rewriting their history.
+    """
+    if not base_sha or not base_branch:
+        return
+
+    def ref_sha() -> str:
+        try:
+            return safety.run_git(repo_root, ["rev-parse", base_branch]).strip()
+        except Exception:
+            return ""
+
+    if ref_sha() == base_sha:
+        return
+    _git_ok(repo_root, ["fetch"])
+    if ref_sha() == base_sha:
+        return
+    raise RuntimeError(
+        f"your local '{base_branch}' is not at the commit the optimizer started from "
+        f"({base_sha[:10]}); run `git checkout {base_branch} && git pull` to sync, then resume"
+    )
+
+
+def _branches_with_prefix(repo_root: Path, prefix: str) -> list[str]:
+    out = safety.run_git(repo_root, ["branch", "--format=%(refname:short)"])
+    return [line.strip() for line in out.splitlines() if line.strip().startswith(prefix)]
+
+
+def _apply_patch(payload: dict, ctx: HandlerContext) -> tuple[bool, dict, str]:
+    """Mirror a server branch: be on ``branch`` (off ``base_branch``), ``diff`` committed.
+
+    ``reset_to_base`` recreates ``branch`` from ``base_branch`` (candidate / smoke
+    fix); without it the diff is committed onto the current branch (winner
+    accumulation). With neither branch field set we fall back to the legacy
+    apply-to-working-tree behavior.
+    """
+    base = (payload.get("base_branch") or "").strip()
+    branch = (payload.get("branch") or "").strip()
+    diff = payload.get("diff") or ""
+    repo = ctx.repo_root
+
+    if not base and not branch:  # legacy working-tree apply
+        if not diff.strip():
+            return True, {"applied": False, "reason": "empty diff"}, ""
+        safety.run_git(repo, ["apply", "--whitespace=nowarn", "-"], stdin=diff)
+        return True, {"applied": True}, ""
+
+    if payload.get("assert_clean"):
+        _assert_clean(repo)
+    _sync_base(repo, base, (payload.get("base_sha") or "").strip())
+
+    target = branch or base
+    if payload.get("reset_to_base") and base:
+        safety.run_git(repo, ["checkout", "-B", target, base])
+    else:
+        safety.run_git(repo, ["checkout", target])
+
+    applied = False
+    if diff.strip():
+        safety.run_git(repo, ["apply", "--whitespace=nowarn", "-"], stdin=diff)
+        safety.run_git(repo, ["add", "-A"])
+        safety.run_git(repo, ["commit", "-m", "overmind: optimize"], env=_COMMIT_ENV)
+        applied = True
+    head = safety.run_git(repo, ["rev-parse", "HEAD"]).strip()
+    return True, {"applied": applied, "branch": target, "head": head}, ""
+
+
+def _reset(payload: dict, ctx: HandlerContext) -> tuple[bool, dict, str]:
+    """Return to ``base_branch`` and drop ``branch`` / every ``cleanup_prefix*`` branch.
+
+    With no branch fields we fall back to the legacy reverse-apply of ``diff``.
+    """
+    base = (payload.get("base_branch") or "").strip()
+    branch = (payload.get("branch") or "").strip()
+    cleanup_prefix = (payload.get("cleanup_prefix") or "").strip()
+    repo = ctx.repo_root
+
+    if not base and not branch and not cleanup_prefix:  # legacy reverse-apply
+        diff = payload.get("diff") or ""
+        if not diff.strip():
+            return True, {"reset": False, "reason": "empty diff"}, ""
+        safety.run_git(repo, ["apply", "-R", "--whitespace=nowarn", "-"], stdin=diff)
+        return True, {"reset": True}, ""
+
+    if base:
+        safety.run_git(repo, ["checkout", "-f", base])  # -f discards agent artifacts
+    deleted: list[str] = []
+    targets = [branch] if branch else []
+    if cleanup_prefix:
+        targets += _branches_with_prefix(repo, cleanup_prefix)
+    for name in targets:
+        if name and name != base and _git_ok(repo, ["branch", "-D", name]):
+            deleted.append(name)
+    return True, {"reset": True, "checked_out": base, "deleted": deleted}, ""
+
+
+_HANDLERS = {
+    "upload_bundle": _upload_bundle,
+    "run_command": _run_command,
+    "apply_patch": _apply_patch,
+    "reset": _reset,
+}
