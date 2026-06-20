@@ -20,8 +20,11 @@ from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from overmind import entry_point, init
 
 load_dotenv()
+
+init(service_name="contract-extractor")
 
 _MODEL = os.environ.get("CONTRACT_EXTRACTOR_MODEL", "gpt-4o")
 
@@ -130,6 +133,7 @@ def _post_process(data: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+@entry_point("Contract Extractor")
 def run(input_data: dict[str, Any]) -> dict[str, Any]:
     contract_text = input_data.get("contract_text", "")
     clause_types = input_data.get("clause_types", [])

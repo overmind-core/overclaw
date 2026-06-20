@@ -20,10 +20,13 @@ from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from overmind import entry_point, init
 from prompts import SYSTEM_PROMPT
 from tools import TOOL_FNS, TOOL_SCHEMAS
 
 load_dotenv()
+
+init(service_name="clinical-coder")
 
 _MODEL = os.environ.get("CLINICAL_CODER_MODEL", "gpt-4o")
 _MAX_TOOL_ROUNDS = 8
@@ -62,6 +65,7 @@ def _extract_json(text: str) -> dict[str, Any]:
     }
 
 
+@entry_point("Clinical Coder")
 def run(input_data: dict[str, Any]) -> dict[str, Any]:
     note = input_data.get("clinical_note", "")
     procedure = input_data.get("procedure", "")

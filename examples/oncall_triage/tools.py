@@ -11,6 +11,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from overmind import tool
+
 _DATA_DIR = Path(__file__).parent / "data"
 
 
@@ -22,6 +24,7 @@ def _load(name: str) -> Any:
         return json.load(f)
 
 
+@tool("fetch_logs")
 def fetch_logs(service: str, minutes: int = 15) -> dict[str, Any]:
     """Fetch logs for a service."""
     data = _load("logs.json")
@@ -29,6 +32,7 @@ def fetch_logs(service: str, minutes: int = 15) -> dict[str, Any]:
     return {"service": service, "minutes": minutes, "entries": entries[-50:]}
 
 
+@tool("query_metrics")
 def query_metrics(service: str, metric: str) -> dict[str, Any]:
     """Query metrics."""
     data = _load("metrics.json")
@@ -36,18 +40,21 @@ def query_metrics(service: str, metric: str) -> dict[str, Any]:
     return {"service": service, "metric": metric, "data": svc.get(metric, [])}
 
 
+@tool("search_runbook")
 def search_runbook(service: str) -> dict[str, Any]:
     """Search the runbook."""
     data = _load("runbooks.json")
     return data.get(service, {"service": service, "runbook": None})
 
 
+@tool("get_recent_deploys")
 def get_recent_deploys(service: str) -> dict[str, Any]:
     """Get recent deploys."""
     data = _load("deploys.json")
     return {"service": service, "deploys": data.get(service, [])}
 
 
+@tool("post_status_update")
 def post_status_update(message: str, severity: str) -> dict[str, Any]:
     """Post a status update."""
     return {"posted": True, "message": message, "severity": severity}

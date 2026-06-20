@@ -6,6 +6,8 @@ import os
 import subprocess
 from typing import Any
 
+from overmind import tool
+
 from ..truncate import truncate
 from .base import ToolContext, ToolResult
 
@@ -45,6 +47,7 @@ class BashTool:
     description = DESCRIPTION
     parameters = PARAMS
 
+    @tool("bash")
     def execute(self, params: dict[str, Any], ctx: ToolContext) -> ToolResult:
         command = params.get("command", "")
         timeout = params.get("timeout", DEFAULT_TIMEOUT)

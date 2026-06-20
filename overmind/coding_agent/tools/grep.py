@@ -6,6 +6,8 @@ import os
 import subprocess
 from typing import Any
 
+from overmind import tool
+
 from .base import ToolContext, ToolResult
 
 MAX_MATCHES = 100
@@ -45,6 +47,7 @@ class GrepTool:
     description = DESCRIPTION
     parameters = PARAMS
 
+    @tool("grep")
     def execute(self, params: dict[str, Any], ctx: ToolContext) -> ToolResult:
         pattern = params.get("pattern", "")
         search_path = params.get("path", ctx.cwd)

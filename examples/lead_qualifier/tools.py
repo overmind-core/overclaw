@@ -12,10 +12,12 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from overmind import tool
 
 _DATA_DIR = Path(__file__).parent / "data"
 
 
+@tool("lookup_company_size")
 def lookup_company_size(domain: str) -> dict[str, Any]:
     """Look up company size from internal CRM data."""
     path = _DATA_DIR / "companies.csv"
@@ -37,6 +39,7 @@ def lookup_company_size(domain: str) -> dict[str, Any]:
     }
 
 
+@tool("exa_search_company")
 def exa_search_company(company: str) -> dict[str, Any]:
     """Search the web for a company."""
     api_key = os.environ.get("EXA_API_KEY")

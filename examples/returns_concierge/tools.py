@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from overmind import tool
+
 _DATA_DIR = Path(__file__).parent / "data"
 
 
@@ -22,12 +24,14 @@ def _load(name: str) -> Any:
         return json.load(f)
 
 
+@tool("lookup_order")
 def lookup_order(order_id: str) -> dict[str, Any]:
     """Look up an order."""
     data = _load("orders.json")
     return data.get(order_id, {"order_id": order_id, "found": False})
 
 
+@tool("check_return_window")
 def check_return_window(order_id: str) -> dict[str, Any]:
     """Check the return window."""
     data = _load("orders.json")
@@ -51,6 +55,7 @@ def check_return_window(order_id: str) -> dict[str, Any]:
     }
 
 
+@tool("inspect_condition_photos")
 def inspect_condition_photos(photos_url: str | None) -> dict[str, Any]:
     """Inspect condition photos."""
     if not photos_url:
@@ -59,12 +64,14 @@ def inspect_condition_photos(photos_url: str | None) -> dict[str, Any]:
     return data.get(photos_url, {"has_photos": True, "condition": "good"})
 
 
+@tool("get_customer_ltv")
 def get_customer_ltv(customer_id: str) -> dict[str, Any]:
     """Get customer LTV."""
     data = _load("customers.json")
     return data.get(customer_id, {"customer_id": customer_id, "ltv_usd": 0, "tier": "standard", "abuse_flags": []})
 
 
+@tool("issue_refund_or_replacement")
 def issue_refund_or_replacement(order_id: str, kind: str, amount: float) -> dict[str, Any]:
     """Issue a refund or replacement."""
     return {"ok": True, "order_id": order_id, "kind": kind, "amount": amount}

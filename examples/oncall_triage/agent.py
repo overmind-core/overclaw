@@ -22,10 +22,13 @@ from typing import Any
 from anthropic import Anthropic
 from dotenv import load_dotenv
 from openai import OpenAI
+from overmind import entry_point, init, workflow
 from prompts import INVESTIGATOR_PROMPT, RESPONDER_PROMPT, ROUTER_PROMPT
 from tools import TOOL_FNS, TOOL_SCHEMAS
 
 load_dotenv()
+
+init(service_name="oncall-triage")
 
 _ROUTER_MODEL = os.environ.get("ONCALL_ROUTER_MODEL", "gpt-4o")
 _INVESTIGATOR_MODEL = os.environ.get("ONCALL_INVESTIGATOR_MODEL", "gpt-4o")
@@ -69,6 +72,7 @@ def _extract_json(text: str) -> dict[str, Any]:
     }
 
 
+@workflow("router")
 def _route(alert: dict[str, Any]) -> str:
     client = _openai()
     resp = client.chat.completions.create(
@@ -82,6 +86,7 @@ def _route(alert: dict[str, Any]) -> str:
     return resp.choices[0].message.content or ""
 
 
+@workflow("investigator")
 def _investigate(brief: str, alert: dict[str, Any]) -> str:
     client = _openai()
     user_msg = f"Router brief:\n{brief}\n\nOriginal alert payload:\n{json.dumps(alert, indent=2)}\n\nInvestigate."
@@ -118,6 +123,7 @@ def _investigate(brief: str, alert: dict[str, Any]) -> str:
     return "Investigation truncated at max rounds."
 
 
+@workflow("responder")
 def _respond(findings: str, alert: dict[str, Any]) -> dict[str, Any]:
     client = _anthropic()
     resp = client.messages.create(
@@ -139,6 +145,7 @@ def _respond(findings: str, alert: dict[str, Any]) -> dict[str, Any]:
     return _extract_json("\n".join(text_parts))
 
 
+@entry_point("On-Call Triage")
 def run(input_data: dict[str, Any]) -> dict[str, Any]:
     alert = input_data.get("alert", input_data)
     brief = _route(alert)

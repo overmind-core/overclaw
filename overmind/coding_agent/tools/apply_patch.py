@@ -15,6 +15,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from overmind import tool
+
 from .base import ToolContext, ToolResult
 
 DESCRIPTION = (
@@ -287,6 +289,7 @@ class ApplyPatchTool:
     description = DESCRIPTION
     parameters = PARAMS
 
+    @tool("apply_patch")
     def execute(self, params: dict[str, Any], ctx: ToolContext) -> ToolResult:
         text = params.get("patchText", "")
         hunks = parse_patch(text)

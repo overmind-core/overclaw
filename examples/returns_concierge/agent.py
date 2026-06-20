@@ -23,10 +23,13 @@ from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from overmind import entry_point, init
 from prompts import SYSTEM_PROMPT
 from tools import TOOL_FNS, TOOL_SCHEMAS
 
 load_dotenv()
+
+init(service_name="returns-concierge")
 
 _MODEL = os.environ.get("RETURNS_MODEL", "gpt-4o")
 _MAX_TOOL_ROUNDS = 8
@@ -64,6 +67,7 @@ def _extract_json(text: str) -> dict[str, Any]:
     }
 
 
+@entry_point("Returns Concierge")
 def run(input_data: dict[str, Any]) -> dict[str, Any]:
     user_msg = f"Return request:\n{json.dumps(input_data, indent=2)}\n\nMake a decision and reply to the customer."
 

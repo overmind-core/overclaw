@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from overmind import tool
 
 _DATA_DIR = Path(__file__).parent / "data"
 
@@ -25,6 +26,7 @@ def _load(name: str) -> Any:
         return json.load(f)
 
 
+@tool("web_search")
 def web_search(query: str, num_results: int = 20) -> dict[str, Any]:
     """Search the web."""
     api_key = os.environ.get("EXA_API_KEY")
@@ -60,6 +62,7 @@ def web_search(query: str, num_results: int = 20) -> dict[str, Any]:
         return {"results": [], "error": str(e)}
 
 
+@tool("fetch_url")
 def fetch_url(url: str) -> dict[str, Any]:
     """Fetch a URL."""
     stub = _load("stub_pages.json")
@@ -73,6 +76,7 @@ def fetch_url(url: str) -> dict[str, Any]:
         return {"url": url, "error": str(e)}
 
 
+@tool("keyword_metrics_lookup")
 def keyword_metrics_lookup(keyword: str) -> dict[str, Any]:
     """Look up keyword metrics."""
     data = _load("keyword_metrics.json")

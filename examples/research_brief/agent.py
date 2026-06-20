@@ -23,10 +23,13 @@ from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from overmind import entry_point, init, workflow
 from prompts import EDITOR_PROMPT, OUTLINER_PROMPT, RESEARCHER_PROMPT
 from tools import TOOL_FNS, TOOL_SCHEMAS
 
 load_dotenv()
+
+init(service_name="research-brief")
 
 _RESEARCHER_MODEL = os.environ.get("RESEARCH_BRIEF_RESEARCHER_MODEL", "gpt-4o")
 _OUTLINER_MODEL = os.environ.get("RESEARCH_BRIEF_OUTLINER_MODEL", "gpt-4o")
@@ -68,6 +71,7 @@ def _extract_json(text: str) -> dict[str, Any]:
     }
 
 
+@workflow("researcher")
 def _research(topic: str, audience: str, keyword: str) -> str:
     client = _client()
     user_msg = f"Topic: {topic}\nTarget audience: {audience}\nPrimary keyword: {keyword}\n\nDo the research."
@@ -104,6 +108,7 @@ def _research(topic: str, audience: str, keyword: str) -> str:
     return "Research truncated at max rounds."
 
 
+@workflow("outliner")
 def _outline(notes: str, topic: str, audience: str) -> str:
     client = _client()
     resp = client.chat.completions.create(
@@ -120,6 +125,7 @@ def _outline(notes: str, topic: str, audience: str) -> str:
     return resp.choices[0].message.content or ""
 
 
+@workflow("editor")
 def _edit(notes: str, outline: str, topic: str, audience: str, keyword: str) -> dict[str, Any]:
     client = _client()
     resp = client.chat.completions.create(
@@ -140,6 +146,7 @@ def _edit(notes: str, outline: str, topic: str, audience: str, keyword: str) -> 
     return _extract_json(resp.choices[0].message.content or "")
 
 
+@entry_point("Research Brief Generator")
 def run(input_data: dict[str, Any]) -> dict[str, Any]:
     topic = input_data.get("topic", "")
     audience = input_data.get("target_audience", "general readers")

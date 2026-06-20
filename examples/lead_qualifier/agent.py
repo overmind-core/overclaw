@@ -18,10 +18,13 @@ from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from overmind import entry_point, init
 from prompts import SYSTEM_PROMPT
 from tools import TOOL_FNS, TOOL_SCHEMAS
 
 load_dotenv()
+
+init(service_name="lead-qualifier")
 
 _MODEL = os.environ.get("LEAD_QUALIFIER_MODEL", "gpt-4o")
 _MAX_TOOL_ROUNDS = 6
@@ -58,6 +61,7 @@ def _extract_json(text: str) -> dict[str, Any]:
     }
 
 
+@entry_point("Lead Qualifier")
 def run(input_data: dict[str, Any]) -> dict[str, Any]:
     company = input_data.get("company_name", "")
     inquiry = input_data.get("inquiry_text", "")

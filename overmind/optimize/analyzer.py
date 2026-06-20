@@ -1196,6 +1196,7 @@ def _get_entry_file(
 # ---------------------------------------------------------------------------
 
 
+@observe_safe(span_name="diagnosis", type=SpanType.FUNCTION)
 def _run_diagnosis(
     *args: Any,
     ctx: DiagnosisContext | None = None,
@@ -1424,6 +1425,7 @@ def reset_last_diagnosis_error() -> None:
     _LAST_DIAGNOSIS_ERROR = None
 
 
+@observe_safe(span_name="single_shot_codegen", type=SpanType.FUNCTION)
 def _run_codegen(
     agent_code: str,
     diagnosis: dict,
@@ -1951,6 +1953,7 @@ def generate_candidates(
 
     use_bundle = bundle is not None and bundle.is_multi_file()
 
+    @observe_safe(span_name="single_pass_fallback", type=SpanType.FUNCTION)
     def _gen_single_pass() -> dict:
         agent_tokens = len(agent_code) // 3
         sp_max_tokens = max(4000, min(16000, int(agent_tokens * 2.0)))

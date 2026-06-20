@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from overmind import tool
+
 _DATA_DIR = Path(__file__).parent / "data"
 
 
@@ -21,6 +23,7 @@ def _load(name: str) -> Any:
         return json.load(f)
 
 
+@tool("lookup_vendor")
 def lookup_vendor(vendor_name: str) -> dict[str, Any]:
     """Look up vendor."""
     data = _load("vendors.json")
@@ -31,12 +34,14 @@ def lookup_vendor(vendor_name: str) -> dict[str, Any]:
     return {"vendor_id": None, "name": vendor_name, "approved": False}
 
 
+@tool("fetch_purchase_order")
 def fetch_purchase_order(po_number: str) -> dict[str, Any]:
     """Fetch a purchase order."""
     data = _load("pos.json")
     return data.get(po_number, {"po_number": po_number, "found": False})
 
 
+@tool("gl_code_classifier")
 def gl_code_classifier(line_description: str) -> dict[str, Any]:
     """Classify a line item to a GL code."""
     desc = (line_description or "").lower()
@@ -56,6 +61,7 @@ def gl_code_classifier(line_description: str) -> dict[str, Any]:
     return {"gl_code": "6900", "gl_name": "Other Expenses", "confidence": 0.4}
 
 
+@tool("fraud_signals")
 def fraud_signals(invoice: dict[str, Any]) -> dict[str, Any]:
     """Run fraud signals on an invoice."""
     history = _load("invoice_history.json")

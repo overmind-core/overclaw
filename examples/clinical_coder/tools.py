@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from overmind import tool
+
 _DATA_DIR = Path(__file__).parent / "data"
 
 
@@ -21,6 +23,7 @@ def _load(name: str) -> dict[str, Any]:
         return json.load(f)
 
 
+@tool("search_icd10")
 def search_icd10(query: str) -> dict[str, Any]:
     """Search ICD-10 diagnosis codes."""
     data = _load("icd10.json")
@@ -33,6 +36,7 @@ def search_icd10(query: str) -> dict[str, Any]:
     return {"results": hits[:5]}
 
 
+@tool("search_cpt")
 def search_cpt(query: str) -> dict[str, Any]:
     """Search CPT procedure codes."""
     data = _load("cpt.json")
@@ -45,6 +49,7 @@ def search_cpt(query: str) -> dict[str, Any]:
     return {"results": hits[:5]}
 
 
+@tool("check_payer_policy")
 def check_payer_policy(payer: str, cpt_code: str) -> dict[str, Any]:
     """Check payer policy for a CPT code."""
     data = _load("payer_policies.json")
@@ -59,6 +64,7 @@ def check_payer_policy(payer: str, cpt_code: str) -> dict[str, Any]:
     }
 
 
+@tool("lookup_member_eligibility")
 def lookup_member_eligibility(member_id: str) -> dict[str, Any]:
     """Look up member eligibility."""
     data = _load("members.json")

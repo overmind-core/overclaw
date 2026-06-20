@@ -15,7 +15,7 @@ from rich.console import Console
 from rich.rule import Rule
 from rich.table import Table
 
-from overmind import SpanType, attrs, set_tag
+from overmind import SpanType, attrs, function, set_tag
 from overmind.optimize.data import (
     _format_input_schema,
     _format_output_schema,
@@ -85,6 +85,11 @@ def validate_seed_data(
 # ---------------------------------------------------------------------------
 
 
+@function("seed_coverage_analyzer")
+def seed_coverage_analyzer(model: str, prompt: str) -> str | None:
+    return _llm_call(model, prompt, temperature=0.3, max_tokens=4000)
+
+
 @observe_safe(span_name="overmind.setup.analyze_seed_coverage", type=SpanType.FUNCTION)
 def analyze_seed_coverage(
     cases: list[dict],
@@ -123,7 +128,7 @@ def analyze_seed_coverage(
 
     with make_spinner_progress(console, transient=True) as progress:
         progress.add_task("  Analyzing dataset coverage…")
-        raw = _llm_call(model, prompt, temperature=0.3, max_tokens=4000)
+        raw = seed_coverage_analyzer(model, prompt)
     if not raw:
         logger.warning("Coverage analysis LLM call returned nothing")
         return _fallback_analysis(cases, eval_spec)

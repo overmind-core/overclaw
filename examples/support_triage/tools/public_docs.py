@@ -4,8 +4,10 @@ import os
 from typing import Any
 
 import httpx
+from overmind import tool
 
 
+@tool("search_public_docs")
 def search_public_docs(query: str) -> dict[str, Any]:
     """Search public docs on the web."""
     api_key = os.environ.get("EXA_API_KEY")

@@ -6,6 +6,8 @@ import difflib
 import os
 from typing import Any
 
+from overmind import tool
+
 from .base import ToolContext, ToolResult
 
 DESCRIPTION = (
@@ -37,6 +39,7 @@ class WriteTool:
     description = DESCRIPTION
     parameters = PARAMS
 
+    @tool("write")
     def execute(self, params: dict[str, Any], ctx: ToolContext) -> ToolResult:
         raw = params.get("filePath", "")
         fp = raw if os.path.isabs(raw) else os.path.join(ctx.cwd, raw)

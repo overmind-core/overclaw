@@ -22,10 +22,13 @@ from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from overmind import entry_point, init
 from prompts import SYSTEM_PROMPT
 from tools import TOOL_FNS, TOOL_SCHEMAS
 
 load_dotenv()
+
+init(service_name="ap-invoice")
 
 _MODEL = os.environ.get("AP_INVOICE_MODEL", "gpt-4o")
 _MAX_TOOL_ROUNDS = 8
@@ -63,6 +66,7 @@ def _extract_json(text: str) -> dict[str, Any]:
     }
 
 
+@entry_point("AP Invoice Processor")
 def run(input_data: dict[str, Any]) -> dict[str, Any]:
     invoice = input_data.get("invoice", input_data)
     user_msg = f"Process this invoice:\n{json.dumps(invoice, indent=2)}\n\nDecide approve / hold / reject."

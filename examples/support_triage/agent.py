@@ -17,10 +17,13 @@ from typing import Any
 
 from anthropic import Anthropic
 from dotenv import load_dotenv
+from overmind import entry_point, init
 from prompts import SYSTEM_PROMPT
 from tools import TOOL_FNS, TOOL_SCHEMAS
 
 load_dotenv()
+
+init(service_name="support-triage")
 
 _MODEL = os.environ.get("SUPPORT_TRIAGE_MODEL", "claude-sonnet-4-6")
 _MAX_TOOL_ROUNDS = 8
@@ -58,6 +61,7 @@ def _extract_json(text: str) -> dict[str, Any]:
     }
 
 
+@entry_point("Support Triage")
 def run(input_data: dict[str, Any]) -> dict[str, Any]:
     customer_id = input_data.get("customer_id", "")
     subject = input_data.get("subject", "")

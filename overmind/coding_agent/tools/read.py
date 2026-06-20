@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from overmind import tool
+
 from .base import ToolContext, ToolResult
 
 DEFAULT_LIMIT = 2000
@@ -91,6 +93,7 @@ class ReadTool:
     description = DESCRIPTION
     parameters = PARAMS
 
+    @tool("read")
     def execute(self, params: dict[str, Any], ctx: ToolContext) -> ToolResult:
         raw = params.get("filePath", "")
         fp = raw if os.path.isabs(raw) else os.path.join(ctx.cwd, raw)

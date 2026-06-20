@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from overmind import tool
+
 _KB_DIR = Path(__file__).resolve().parent.parent / "kb"
 
 
@@ -16,6 +18,7 @@ def _load_kb() -> list[dict[str, Any]]:
     return docs
 
 
+@tool("search_kb")
 def search_kb(query: str) -> dict[str, Any]:
     """Search the knowledge base."""
     q = query.lower()
