@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 # Directory created by ``overmind init``; its presence marks the project root.
 OVERMIND_DIR_NAME = ".overmind"
 
@@ -10,7 +12,7 @@ OVERMIND_DIR_NAME = ".overmind"
 # Used by both the tracing exporter (``overmind.tracing``) and the
 # control-plane client (``overmind.client``).  ``OVERMIND_API_KEY`` is the
 # only credential needed; the backend URL is always this constant.
-DEFAULT_BASE_URL = "https://api.overmindlab.ai"
+DEFAULT_BASE_URL = os.getenv("OVERMIND_API_URL", "https://api.overmindlab.ai")
 
 
 def overmind_rel(*segments: str) -> str:
