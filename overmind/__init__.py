@@ -8,7 +8,7 @@ Overmind: automatic observability for LLM applications.
 
 __version__ = "0.1.48"
 
-from opentelemetry.overmind.prompt import PromptString
+# from opentelemetry.overmind.prompt import PromptString
 
 from .tracing import (
     SpanType,
@@ -26,7 +26,7 @@ from .tracing import (
 )
 
 __all__ = [
-    "PromptString",
+    # "PromptString",
     "SpanType",
     "capture_exception",
     "entry_point",
