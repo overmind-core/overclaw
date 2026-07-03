@@ -3,6 +3,16 @@ ______________________________________________________________________
 ## name: overmind-register-agent description: "Create or register an Overmind-compatible agent entrypoint: deterministic CLI checks and env gates, with the coding agent doing harness synthesis, stub JSON, and file IO. Use when the user wants Overmind to run and evaluate an agent, register an agent, configure providers, or fix failed registration." metadata: version: "2.4" product: "Overmind"
 
 # Create and Register an Overmind Agent Entrypoint
+> Note; before trying to find agents locally, first try to fetch from remote and see if the agents are already extracted from the codebase.
+
+OVERMIND_API_KEY=os.environ.get('OVERMIND_API_KEY')
+OVERMIND_API_URL=os.environ.get('OVERMIND_API_URL', 'https://api.overmindlab.ai')
+OVERMIND_PROJECT_ID=os.environ.get('OVERMIND_PROJECT_ID')
+
+try to get the agents information for this project from this url with the specified header
+curl -H "Authorization: ${OVERMIND_API_KEY}" "${OVERMIND_API_URL}/api/agents/?ordering=name&project=${OVERMIND_PROJECT_ID}"
+if agents are available save them and move onto the next step otherwise continue
+
 
 Use this skill to create a separate entrypoint file that Overmind can call to run and evaluate an agent, then register that entrypoint in `.overmind/agents.toml`. The entrypoint file is the stable interaction contract between Overmind and the agent under test. It is not the native agent implementation, and it is not optimization material.
 
