@@ -38,7 +38,7 @@ from opentelemetry import trace
 from opentelemetry.context import attach, detach, get_value, set_value
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.semconv_ai import SpanAttributes
 from opentelemetry.trace import Status, StatusCode
@@ -46,6 +46,7 @@ from rich.console import Console
 
 from overmind import attrs
 from overmind.core.constants import DEFAULT_BASE_URL
+from overmind.genai_usage import canonical_usage_updates
 from overmind.utils.io import read_api_key_masked
 
 logger = logging.getLogger(__name__)
@@ -324,8 +325,47 @@ def _span_processor_on_start(span: trace.Span, parent_context: trace.Context | N
         span.set_attribute(SpanAttributes.TRACELOOP_WORKFLOW_NAME, str(value))
     if agent_name := get_value(attrs.AGENT_NAME):
         span.set_attribute(attrs.AGENT_NAME, str(agent_name))
+    if agent_id := get_value(attrs.AGENT_ID):
+        span.set_attribute(attrs.AGENT_ID, str(agent_id))
+    if project_id := get_value(attrs.PROJECT_ID):
+        span.set_attribute(attrs.PROJECT_ID, str(project_id))
     if conversation_id := get_value(_CTX_KEY_CONVERSATION_ID):
         span.set_attribute("conversation.id", str(conversation_id))
+
+
+class _GenAiUsageSpanProcessor(SpanProcessor):
+    """Mirror OTel ``gen_ai.*`` usage onto canonical ``genai.*`` keys at span end.
+
+    Registered before the exporting processor so spans produced by third-party
+    auto-instrumentors (OpenAI / Anthropic / Google / …) — which only carry the
+    OTel-semconv token keys — still land the canonical ``genai.prompt_tokens`` /
+    ``genai.completion_tokens`` / ``genai.total_tokens`` / ``genai.cost`` that
+    the Overmind server rolls up.  Values are never zero-filled (see
+    :func:`overmind.genai_usage.canonical_usage_updates`).
+
+    ``on_end`` receives a :class:`ReadableSpan` whose public ``set_attribute``
+    is gone, so we mutate its private attribute map in place.
+
+    ponytail: reaches into ``span._attributes`` (OTel SDK internal); pinned by
+    the ``opentelemetry-sdk>=1.35`` floor in ``pyproject.toml``.  Upgrade path:
+    swap for a ``SpanExporter`` wrapper if OTel ever seals the attribute map.
+    """
+
+    def on_start(self, span: trace.Span, parent_context: trace.Context | None = None) -> None:
+        return
+
+    def on_end(self, span) -> None:
+        updates = canonical_usage_updates(span.attributes or {})
+        if not updates:
+            return
+        target = getattr(span, "_attributes", None)
+        if target is None:
+            return
+        for key, value in updates.items():
+            try:
+                target[key] = value
+            except Exception:
+                logger.debug("genai enrichment could not set %s", key, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -364,6 +404,25 @@ def _attach_remote_parent_if_present() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _seed_identity_context(
+    agent_id: str | None,
+    agent_name: str | None,
+    project_id: str | None,
+) -> None:
+    """Attach identity values to the OTel context so every span carries them.
+
+    The on-start processor copies these onto each span, which is what lets
+    spans emitted by third-party auto-instrumentors (not just our own
+    decorators) still resolve to the right Agent / Project server-side.
+    """
+    if agent_id:
+        set_agent_id(agent_id)
+    if agent_name:
+        set_agent_name(agent_name)
+    if project_id:
+        set_project_id(project_id)
+
+
 def init(
     overmind_api_key: str | None = None,
     *,
@@ -371,13 +430,21 @@ def init(
     environment: str | None = None,
     providers: list[str] | None = None,
     overmind_base_url: str | None = None,
+    agent_id: str | None = None,
+    agent_name: str | None = None,
+    project_id: str | None = None,
 ):
     """
     Initialize the Overmind SDK for automatic monitoring.
 
     Example:
         import overmind
-        overmind.init(service_name="my-backend", environment="production", providers=["openai", "anthropic", "google", "agno"])
+        overmind.init(
+            agent_id="6f1c…",            # or agent_name="Lead Qualifier"
+            service_name="my-backend",
+            environment="production",
+            providers=["openai", "anthropic", "google", "agno"],
+        )
 
     Args:
         overmind_api_key: Your Overmind API key. If not provided, uses OVERMIND_API_KEY env var.
@@ -387,13 +454,26 @@ def init(
                      OVERMIND_ENVIRONMENT env var or "development".
         providers: List of providers to trace. Supported values: "openai", "anthropic", "google", "agno".
         overmind_base_url: Base URL for traces. If not provided, uses the Overmind Cloud endpoint.
+        agent_id: The Agent's server UUID. Stamped as ``overmind.agent.id`` on the resource and
+                  every span; resolved by a direct primary-key lookup (drift-proof). Defaults to
+                  the ``OVERMIND_AGENT_ID`` env var. Prefer this over ``agent_name`` when known.
+        agent_name: Human-readable agent name. Stamped as ``overmind.agent.name`` on every span;
+                    the server slugifies it for a stable identity, so keep it constant across runs.
+                    Defaults to the ``OVERMIND_AGENT_NAME`` env var.
+        project_id: The Project's UUID (``overmind.project.id``). Usually inferred from the API
+                    token; only needed for session auth. Defaults to ``OVERMIND_PROJECT_ID``.
     """
     global _initialized, _tracer
+
+    agent_id = agent_id or os.environ.get("OVERMIND_AGENT_ID")
+    agent_name = agent_name or os.environ.get("OVERMIND_AGENT_NAME")
+    project_id = project_id or os.environ.get("OVERMIND_PROJECT_ID")
 
     if _initialized:
         # user can call init again with different providers, so we should not skip
         # there is no such thing as remove initialization
         logger.debug(f"Overmind SDK already initialized, reinitializing with providers: {providers}")
+        _seed_identity_context(agent_id, agent_name, project_id)
         enable_tracing(providers)
         return
 
@@ -413,6 +493,7 @@ def init(
             "TracerProvider configured by the optimize runner wrapper.",
         )
         _tracer = trace.get_tracer("overmind", _SDK_VERSION)
+        _seed_identity_context(agent_id, agent_name, project_id)
         enable_tracing(providers)
         _attach_remote_parent_if_present()
         _initialized = True
@@ -429,15 +510,30 @@ def init(
     # Configure OpenTelemetry Provider with rich resource attributes
     from overmind import __version__ as _SDK_VERSION
 
-    resource = Resource.create({
+    resource_attributes = {
         "service.name": service_name or os.environ.get("OVERMIND_SERVICE_NAME") or "overmind-telemetry",
-        "service.version": os.environ.get("SERVICE_VERSION", "unknown"),
+        "service.version": os.environ.get("SERVICE_VERSION", _SDK_VERSION),
         "deployment.environment": environment,
-        "overmind.sdk.name": "overmind-python",
-        "overmind.sdk.version": _SDK_VERSION,
-    })
+        attrs.SDK_NAME: "overmind-python",
+        attrs.SDK_VERSION: _SDK_VERSION,
+    }
+    # Identity on the resource: the server resolves the Agent from
+    # ``overmind.agent.id`` on the resource attributes first (direct PK), and
+    # pins the Project from ``overmind.project.id``. We also seed the OTel
+    # context below so per-span consumers (auto-instrumentors) carry them too.
+    if agent_id:
+        resource_attributes[attrs.AGENT_ID] = agent_id
+    if agent_name:
+        resource_attributes[attrs.AGENT_NAME] = agent_name
+    if project_id:
+        resource_attributes[attrs.PROJECT_ID] = project_id
+
+    resource = Resource.create(resource_attributes)
 
     provider = TracerProvider(resource=resource)
+    # Enrichment must run before the exporting processor so its on-end mutation
+    # is visible when the batch processor later exports the span.
+    provider.add_span_processor(_GenAiUsageSpanProcessor())
 
     # Configure OTLP Exporter
     headers = {"X-Api-Key": overmind_api_key}
@@ -462,6 +558,7 @@ def init(
 
     # Store tracer for custom spans
     _tracer = trace.get_tracer("overmind", _SDK_VERSION)
+    _seed_identity_context(agent_id, agent_name, project_id)
     enable_tracing(providers)
 
     # Distributed tracing: if the process was spawned by the overmind
@@ -616,8 +713,35 @@ def set_agent_name(agent_name: str) -> None:
     ``overmind.agent.name`` by the on-start processor, which is what
     lets the Overmind backend route the trace to the right
     :class:`Agent` record without per-call tagging.
+
+    Slug stability: the server derives an Agent's stable identity by
+    slugifying this name (``"Lead Qualifier"`` → ``lead-qualifier``).
+    Keep the name constant across runs — changing it spawns a new Agent.
+    Prefer :func:`set_agent_id` (or ``init(agent_id=...)``) when you know
+    the Agent's UUID; that is a drift-proof direct primary-key lookup.
     """
     attach(set_value(attrs.AGENT_NAME, agent_name))
+
+
+def set_agent_id(agent_id: str) -> None:
+    """Bind the current OTel context to *agent_id* (the Agent's server UUID).
+
+    Every span created downstream is stamped with ``overmind.agent.id`` by
+    the on-start processor.  The server resolves this as a direct
+    primary-key lookup, so it is immune to the slug drift that renaming an
+    agent would otherwise cause.
+    """
+    attach(set_value(attrs.AGENT_ID, agent_id))
+
+
+def set_project_id(project_id: str) -> None:
+    """Bind the current OTel context to *project_id* (the Project's UUID).
+
+    Stamped onto every downstream span as ``overmind.project.id``.  API
+    tokens already pin the project server-side; this is only needed for
+    session-authenticated ingest or to disambiguate multi-project setups.
+    """
+    attach(set_value(attrs.PROJECT_ID, project_id))
 
 
 def set_conversation_id(conversation_id: str) -> None:
@@ -640,6 +764,7 @@ class SpanType(str, Enum):
     WORKFLOW = "workflow"
     TOOL = "tool_call"
     LLM = "llm_call"
+    RETRIEVAL = "retrieval"
 
 
 # Type names whose instances should never be serialised into span
@@ -754,6 +879,27 @@ def _capture_output(otel_span, result: Any) -> None:
         logger.debug("observe(): output capture failed", exc_info=True)
 
 
+def _stamp_tool_metadata(otel_span, tool_name: str, func: Callable, args: tuple, kwargs: dict) -> None:
+    """Stamp the canonical ``tool.name`` / ``tool.arg_keys`` for a tool span.
+
+    These are the keys the Overmind server reads to classify a span as a
+    tool call and surface which arguments it received (keys only — values
+    are captured separately by :func:`_capture_inputs`).
+    """
+    try:
+        otel_span.set_attribute(attrs.TOOL_NAME, tool_name)
+        sig = inspect.signature(func)
+        param_names = list(sig.parameters.keys())
+        is_method = bool(param_names) and param_names[0] in ("self", "cls")
+        start_idx = 1 if is_method else 0
+        arg_keys = [param_names[i] if i < len(param_names) else f"arg_{i}" for i in range(start_idx, len(args))]
+        arg_keys += list(kwargs.keys())
+        if arg_keys:
+            otel_span.set_attribute(attrs.TOOL_ARG_KEYS, arg_keys)
+    except Exception:
+        logger.debug("tool(): metadata capture failed for %s", tool_name, exc_info=True)
+
+
 def observe(
     span_name: str | None = None,
     type: SpanType = SpanType.FUNCTION,
@@ -781,11 +927,15 @@ def observe(
                 tracer = get_tracer()
                 with tracer.start_as_current_span(name) as otel_span:
                     _stamp_span_metadata(otel_span, type)
+                    if type == SpanType.TOOL:
+                        _stamp_tool_metadata(otel_span, name, func, args, kwargs)
                     _capture_inputs(otel_span, func, args, kwargs)
                     start = time.monotonic()
                     try:
                         result = await func(*args, **kwargs)
                     except BaseException as exc:
+                        if type == SpanType.TOOL:
+                            otel_span.set_attribute(attrs.TOOL_ERROR, exc.__class__.__name__)
                         _finalize_span(otel_span, exc, start)
                         raise
                     _capture_output(otel_span, result)
@@ -799,11 +949,15 @@ def observe(
             tracer = get_tracer()
             with tracer.start_as_current_span(name) as otel_span:
                 _stamp_span_metadata(otel_span, type)
+                if type == SpanType.TOOL:
+                    _stamp_tool_metadata(otel_span, name, func, args, kwargs)
                 _capture_inputs(otel_span, func, args, kwargs)
                 start = time.monotonic()
                 try:
                     result = func(*args, **kwargs)
                 except BaseException as exc:
+                    if type == SpanType.TOOL:
+                        otel_span.set_attribute(attrs.TOOL_ERROR, exc.__class__.__name__)
                     _finalize_span(otel_span, exc, start)
                     raise
                 _capture_output(otel_span, result)
@@ -928,8 +1082,24 @@ def workflow(name: str | None = None):
 
 
 def tool(name: str | None = None):
-    """Decorator that traces a tool span."""
+    """Decorator that traces a tool span.
+
+    Beyond the generic ``observe`` capture, tool spans also stamp the
+    canonical ``tool.name`` / ``tool.arg_keys`` (and ``tool.error`` on
+    failure) so the server classifies and attributes them correctly.
+    """
     return observe(span_name=name, type=SpanType.TOOL)
+
+
+def retrieval(name: str | None = None):
+    """Decorator that traces a retrieval / RAG step span.
+
+    Emits ``overmind.span.type = "retrieval"`` so the backend can render
+    retrieval steps distinctly from LLM and tool calls.  Stamp
+    ``overmind.retrieval.query_chars`` / ``overmind.retrieval.result_count``
+    inside the function via :func:`set_tag` for finer signal.
+    """
+    return observe(span_name=name, type=SpanType.RETRIEVAL)
 
 
 # ---------------------------------------------------------------------------
@@ -1088,12 +1258,15 @@ __all__ = [
     "init",
     "observe",
     "observe_safe",
+    "retrieval",
     "serialize",
     "serialize_dataclass",
+    "set_agent_id",
     "set_agent_name",
     "set_conversation_id",
     "set_iteration_analytics",
     "set_progress",
+    "set_project_id",
     "set_status",
     "set_tag",
     "set_user",

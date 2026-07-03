@@ -1,11 +1,13 @@
 """Regression guards for ``overmind.attrs`` constant values.
 
-These tests pin the wire-format namespaces so an accidental rename
-("gen_ai.*" → "genai.*" or similar) does not silently break trace
-ingestion.  The bug this guards against was a "genai.*" emission
-mismatched with the "gen_ai.*" lookup in :mod:`overmind.optimize.trace_reader`
-that made the optimizer read empty model names and zero token counts
-from every LLM span.
+These tests pin the wire-format namespaces so an accidental rename does not
+silently break trace ingestion.
+
+The CANONICAL token/cost namespace the Overmind server rolls up is ``genai.*``
+(see ``overbae/api/overmind_attrs.py`` + ``otlp.py::_build_span_usage``).  The
+SDK emits those keys AND, alongside them, the OTel GenAI semconv ``gen_ai.*``
+keys (defined here as ``OTEL_*``) so OTel-native consumers and the optimizer's
+:mod:`overmind.optimize.trace_reader` keep resolving model + tokens.
 """
 
 from __future__ import annotations
@@ -14,49 +16,60 @@ from overmind import attrs
 
 
 class TestLLMNamespace:
-    """All LLM_* constants must live in the OTel GenAI semconv namespace."""
+    """Canonical LLM_* constants must live in the server's ``genai.*`` namespace."""
 
-    def test_llm_model_uses_gen_ai_namespace(self) -> None:
-        assert attrs.LLM_MODEL == "gen_ai.request.model"
+    def test_llm_model_uses_genai_namespace(self) -> None:
+        assert attrs.LLM_MODEL == "genai.model"
 
-    def test_llm_provider_uses_gen_ai_namespace(self) -> None:
-        assert attrs.LLM_PROVIDER == "gen_ai.system"
+    def test_llm_provider_uses_genai_namespace(self) -> None:
+        assert attrs.LLM_PROVIDER == "genai.provider"
 
-    def test_token_usage_uses_semconv_names(self) -> None:
-        # The semconv uses input_tokens / output_tokens (not prompt / completion).
-        assert attrs.LLM_USAGE_PROMPT_TOKENS == "gen_ai.usage.input_tokens"
-        assert attrs.LLM_USAGE_COMPLETION_TOKENS == "gen_ai.usage.output_tokens"
-        assert attrs.LLM_USAGE_TOTAL_TOKENS == "gen_ai.usage.total_tokens"
+    def test_token_usage_uses_canonical_names(self) -> None:
+        # The server rolls up prompt/completion (not the semconv input/output).
+        assert attrs.LLM_PROMPT_TOKENS == "genai.prompt_tokens"
+        assert attrs.LLM_COMPLETION_TOKENS == "genai.completion_tokens"
+        assert attrs.LLM_TOTAL_TOKENS == "genai.total_tokens"
 
-    def test_all_llm_constants_start_with_gen_ai(self) -> None:
+    def test_cost_key_is_canonical(self) -> None:
+        assert attrs.LLM_COST == "genai.cost"
+
+    def test_all_llm_constants_start_with_genai(self) -> None:
         offenders = [
             (name, value)
             for name, value in vars(attrs).items()
-            if name.startswith("LLM_") and isinstance(value, str) and not value.startswith("gen_ai.")
+            if name.startswith("LLM_") and isinstance(value, str) and not value.startswith("genai.")
         ]
         assert offenders == [], (
-            f"Found LLM_* constants outside the gen_ai.* namespace: {offenders}. "
-            "The optimizer trace_reader and backend ingest only recognize gen_ai.*."
+            f"Found LLM_* constants outside the genai.* namespace: {offenders}. "
+            "The backend ingest rolls up genai.* keys; OTel semconv keys live under OTEL_*."
         )
+
+    def test_otel_semconv_aliases_stay_in_gen_ai_namespace(self) -> None:
+        # The dual-emitted OTel semconv keys the trace_reader depends on.
+        assert attrs.OTEL_LLM_REQUEST_MODEL == "gen_ai.request.model"
+        assert attrs.OTEL_LLM_SYSTEM == "gen_ai.system"
+        assert attrs.OTEL_LLM_USAGE_PROMPT_TOKENS == "gen_ai.usage.prompt_tokens"
+        assert attrs.OTEL_LLM_USAGE_COMPLETION_TOKENS == "gen_ai.usage.completion_tokens"
+        assert attrs.OTEL_LLM_USAGE_TOTAL_TOKENS == "gen_ai.usage.total_tokens"
 
 
 class TestReaderEmitterAlignment:
-    """The trace_reader's lookup keys must match what utils/llm.py emits."""
+    """The trace_reader's ``gen_ai.*`` lookups must match the dual-emitted OTEL_* keys."""
 
     def test_reader_lookups_match_emitted_constants(self) -> None:
-        # These are the literal keys read by overmind/optimize/trace_reader.py.
-        # If we ever rename the emitted constants again, this test fails fast.
+        # trace_reader falls back to prompt_tokens/completion_tokens (see
+        # overmind/optimize/trace_reader.py); the SDK emits those forms.
         reader_keys = {
             "gen_ai.request.model",
-            "gen_ai.usage.input_tokens",
-            "gen_ai.usage.output_tokens",
+            "gen_ai.usage.prompt_tokens",
+            "gen_ai.usage.completion_tokens",
             "gen_ai.usage.total_tokens",
         }
         emitted = {
-            attrs.LLM_MODEL,
-            attrs.LLM_USAGE_PROMPT_TOKENS,
-            attrs.LLM_USAGE_COMPLETION_TOKENS,
-            attrs.LLM_USAGE_TOTAL_TOKENS,
+            attrs.OTEL_LLM_REQUEST_MODEL,
+            attrs.OTEL_LLM_USAGE_PROMPT_TOKENS,
+            attrs.OTEL_LLM_USAGE_COMPLETION_TOKENS,
+            attrs.OTEL_LLM_USAGE_TOTAL_TOKENS,
         }
         assert reader_keys == emitted
 
@@ -76,8 +89,12 @@ class TestNoDeadConstants:
     reason about.  This test fails fast if any return.
     """
 
+    # NOTE: ``PROJECT_ID``, ``LLM_PROMPT_TOKENS``/``LLM_COMPLETION_TOKENS``/
+    # ``LLM_TOTAL_TOKENS``/``LLM_COST`` and ``TOOL_NAME``/``TOOL_ARG_KEYS``/
+    # ``TOOL_ERROR`` were re-introduced in the full-tracing-richness work and
+    # now HAVE emitters (resource/identity stamping, ``utils/llm.py``, the
+    # ``@tool`` decorator), so they are intentionally NOT in this set.
     REMOVED_CONSTANTS = {
-        "PROJECT_ID",
         "ITERATION_ID",
         "EXPERIMENT_ID",
         "EXPERIMENT_NAME",
@@ -100,13 +117,6 @@ class TestNoDeadConstants:
         "LLM_MESSAGES_COUNT",
         "LLM_TOOLS_PROVIDED",
         "LLM_TOOL_CALLS",
-        "LLM_PROMPT_TOKENS",
-        "LLM_COMPLETION_TOKENS",
-        "LLM_TOTAL_TOKENS",
-        "LLM_COST",
-        "TOOL_NAME",
-        "TOOL_ARG_KEYS",
-        "TOOL_ERROR",
         "INPUT_DATA",
         "OUTPUT_DATA",
         "SCORE",

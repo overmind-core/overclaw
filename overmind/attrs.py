@@ -49,8 +49,15 @@ DURATION_SECONDS = "overmind.duration.seconds"  # walltime of the wrapped span
 
 # ---------------------------------------------------------------------------
 # Top-level resource / context tags (link spans to server-side entities).
+#
+# These are the identity keys the Overmind server uses to attach a span to a
+# concrete row.  ``overmind.agent.id`` is a direct primary-key lookup (server
+# resolves it from the resource attributes OR any span attribute); when it is
+# absent the server falls back to slugifying ``overmind.agent.name``.  Prefer
+# stamping ``overmind.agent.id`` when you have it — it is drift-proof.
 # ---------------------------------------------------------------------------
 AGENT_ID = "overmind.agent.id"
+PROJECT_ID = "overmind.project.id"
 JOB_ID = "overmind.job.id"
 
 # ---------------------------------------------------------------------------
@@ -366,26 +373,86 @@ CODING_AGENT_LOOP_STEPS = "overmind.coding_agent.loop_steps"
 CODING_AGENT_EXIT_REASON = "overmind.coding_agent.exit_reason"
 
 # ---------------------------------------------------------------------------
-# LLM call metadata (overmind/utils/llm.py)
+# LLM call metadata — CANONICAL ``genai.*`` contract
 #
-# Aligned with the OpenTelemetry GenAI semantic conventions so the keys
-# the SDK emits match what trace consumers (the optimizer's trace_reader,
-# backend ingest, third-party auto-instrumentors like
-# ``opentelemetry-instrumentation-openai``) expect.  Token counts use
-# ``input_tokens`` / ``output_tokens`` per the semconv (NOT
-# ``prompt_tokens`` / ``completion_tokens``).
+# These are the keys the Overmind server actually reads (see
+# ``overbae/api/overmind_attrs.py`` + ``overbae/api/otlp.py::_build_span_usage``).
+# The server rolls token usage + cost up onto the Agent from these keys, so the
+# SDK MUST emit them.  Token counts use ``prompt_tokens`` / ``completion_tokens``
+# (NOT the OTel semconv ``input_tokens`` / ``output_tokens``).
+#
+# The SDK ALSO emits the OTel semconv ``gen_ai.*`` keys below (see
+# ``OTEL_*``) so third-party consumers and the optimizer's ``trace_reader``
+# keep working, and the on-end enrichment processor mirrors any ``gen_ai.*``
+# usage produced by auto-instrumentors into these canonical keys.
 # ---------------------------------------------------------------------------
-LLM_MODEL = "gen_ai.request.model"
-LLM_PROVIDER = "gen_ai.system"
-LLM_ERROR = "gen_ai.error.type"
-LLM_ELAPSED_SECONDS = "gen_ai.elapsed_seconds"
-LLM_REQUEST_MESSAGE_COUNT = "gen_ai.request.message_count"
-LLM_REQUEST_MESSAGE_CHARS = "gen_ai.request.message_chars"
-LLM_REQUEST_TOOL_COUNT = "gen_ai.request.tool_count"
-LLM_REQUEST_KWARGS = "gen_ai.request.kwargs"
-LLM_USAGE_PROMPT_TOKENS = "gen_ai.usage.input_tokens"
-LLM_USAGE_COMPLETION_TOKENS = "gen_ai.usage.output_tokens"
-LLM_USAGE_TOTAL_TOKENS = "gen_ai.usage.total_tokens"
+LLM_MODEL = "genai.model"
+LLM_RESPONSE_MODEL = "genai.response.model"
+LLM_PROVIDER = "genai.provider"
+LLM_ERROR = "genai.error"
+LLM_ELAPSED_SECONDS = "genai.elapsed_seconds"
+LLM_REQUEST_MESSAGE_COUNT = "genai.request.message_count"
+LLM_REQUEST_MESSAGE_CHARS = "genai.request.message_chars"
+LLM_REQUEST_TOOL_COUNT = "genai.request.tool_count"
+LLM_REQUEST_KWARGS = "genai.request.kwargs"
+# Request parameters (server does not roll these up yet — see contract doc).
+LLM_REQUEST_TEMPERATURE = "genai.request.temperature"
+LLM_REQUEST_MAX_TOKENS = "genai.request.max_tokens"
+LLM_REQUEST_TOP_P = "genai.request.top_p"
+# Response shape / streaming telemetry.
+LLM_RESPONSE_MESSAGE_CHARS = "genai.response.message_chars"
+LLM_RESPONSE_FINISH_REASON = "genai.response.finish_reason"
+LLM_STREAMING = "genai.streaming"
+LLM_TTFT_SECONDS = "genai.time_to_first_token_seconds"
+# Token usage — canonical (rolled up by the server).
+LLM_PROMPT_TOKENS = "genai.prompt_tokens"
+LLM_COMPLETION_TOKENS = "genai.completion_tokens"
+LLM_TOTAL_TOKENS = "genai.total_tokens"
+LLM_CACHE_READ_TOKENS = "genai.cache_read_tokens"
+# Cost in USD.  Taken from the provider (``usage.cost`` / hidden params) when
+# present, else computed from model pricing.  Rolled up by the server.
+LLM_COST = "genai.cost"
+# ``genai.usage.*`` aliases the server also accepts for tokens.  We emit the
+# short ``genai.prompt_tokens`` form above; these exist so the mirror helper
+# and contract stay explicit about both accepted shapes.
+LLM_USAGE_PROMPT_TOKENS = "genai.usage.prompt_tokens"
+LLM_USAGE_COMPLETION_TOKENS = "genai.usage.completion_tokens"
+LLM_USAGE_TOTAL_TOKENS = "genai.usage.total_tokens"
+
+# ---------------------------------------------------------------------------
+# OpenTelemetry GenAI semantic-convention keys.
+#
+# Emitted ALONGSIDE the canonical ``genai.*`` keys above so OTel-native
+# consumers and the optimizer's ``trace_reader`` (which parses local JSONL
+# traces) keep resolving model + tokens.  Never read these on the server —
+# read the canonical ``genai.*`` keys instead.
+# ---------------------------------------------------------------------------
+OTEL_LLM_REQUEST_MODEL = "gen_ai.request.model"
+OTEL_LLM_RESPONSE_MODEL = "gen_ai.response.model"
+OTEL_LLM_SYSTEM = "gen_ai.system"
+OTEL_LLM_USAGE_PROMPT_TOKENS = "gen_ai.usage.prompt_tokens"
+OTEL_LLM_USAGE_COMPLETION_TOKENS = "gen_ai.usage.completion_tokens"
+OTEL_LLM_USAGE_TOTAL_TOKENS = "gen_ai.usage.total_tokens"
+
+# ---------------------------------------------------------------------------
+# Tool-call metadata (server reads these to classify + attribute tool spans).
+# ---------------------------------------------------------------------------
+TOOL_NAME = "tool.name"
+TOOL_ARG_KEYS = "tool.arg_keys"
+TOOL_ERROR = "tool.error"
+
+# ---------------------------------------------------------------------------
+# Retrieval / RAG step metadata (namespaced under ``overmind.retrieval.*``;
+# server does not roll these up yet — see contract doc).
+# ---------------------------------------------------------------------------
+RETRIEVAL_QUERY_CHARS = "overmind.retrieval.query_chars"
+RETRIEVAL_RESULT_COUNT = "overmind.retrieval.result_count"
+
+# ---------------------------------------------------------------------------
+# Resource-level enrichment (set once on the OTel Resource in ``init``).
+# ---------------------------------------------------------------------------
+SDK_NAME = "overmind.sdk.name"
+SDK_VERSION = "overmind.sdk.version"
 
 # ---------------------------------------------------------------------------
 # Span-level classification / error summary
