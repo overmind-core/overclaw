@@ -107,3 +107,26 @@ def run(input_data: dict[str, Any]) -> dict[str, Any]:
         "suggested_response": "Our team is looking into your ticket and will follow up shortly.",
         "tags": ["max-rounds"],
     }
+
+
+if __name__ == "__main__":
+    # Trace this run to Overmind. Prefer ``agent_id`` (the Agent's UUID from the
+    # console) — it's a drift-proof direct lookup. ``agent_name`` also works and
+    # is slugified server-side, so keep it stable across runs.
+    import overmind
+
+    overmind.init(
+        agent_id=os.environ.get("OVERMIND_AGENT_ID"),  # e.g. "6f1c…"; omit to fall back to name
+        agent_name="Support Triage",
+        service_name="support-triage",
+        environment=os.environ.get("ENVIRONMENT", "development"),
+        providers=["anthropic"],  # auto-instrument the Anthropic SDK
+    )
+
+    result = run({
+        "customer_id": "cust_123",
+        "subject": "Refund never arrived",
+        "body": "I returned my order two weeks ago and still have not been refunded.",
+    })
+    print(json.dumps(result, indent=2))
+    overmind.force_flush_traces()
