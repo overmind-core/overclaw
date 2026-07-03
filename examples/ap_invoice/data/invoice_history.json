@@ -1,7 +1,0 @@
-{
-  "AWS": ["INV-A-1001", "INV-A-1002", "INV-A-1003"],
-  "GitHub": ["INV-G-501", "INV-G-502"],
-  "Slack Technologies": ["INV-S-301"],
-  "Wilson & Sterling LLP": ["INV-W-77", "INV-W-78"],
-  "Acme Office Supplies": ["INV-AO-22"]
-}

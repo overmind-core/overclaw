@@ -1,6 +1,0 @@
-{
-  "id": "KB-005",
-  "title": "Exporting your data",
-  "body": "Customers can export their data in CSV or JSON from Settings -> Data. Exports include all records the user has access to. For GDPR / deletion requests, route to privacy@example.com - support cannot action these directly.",
-  "tags": ["export", "data", "gdpr", "privacy"]
-}

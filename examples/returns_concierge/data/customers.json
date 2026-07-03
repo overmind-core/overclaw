@@ -1,9 +1,0 @@
-{
-  "C-1": {"customer_id": "C-1", "ltv_usd": 1820, "tier": "gold", "abuse_flags": []},
-  "C-2": {"customer_id": "C-2", "ltv_usd": 320, "tier": "standard", "abuse_flags": []},
-  "C-3": {"customer_id": "C-3", "ltv_usd": 95, "tier": "standard", "abuse_flags": []},
-  "C-4": {"customer_id": "C-4", "ltv_usd": 540, "tier": "standard", "abuse_flags": []},
-  "C-5": {"customer_id": "C-5", "ltv_usd": 80, "tier": "standard", "abuse_flags": ["serial_returner"]},
-  "C-6": {"customer_id": "C-6", "ltv_usd": 4200, "tier": "platinum", "abuse_flags": []},
-  "C-7": {"customer_id": "C-7", "ltv_usd": 60, "tier": "standard", "abuse_flags": []}
-}

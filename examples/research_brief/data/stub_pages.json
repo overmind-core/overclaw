@@ -1,6 +1,0 @@
-{
-  "https://blog.example.com/prod-rag": "Production RAG: chunking strategy matters more than people think. Use semantic chunkers when documents are heterogeneous. Always add a reranker. Evaluate retrieval and generation separately.",
-  "https://blog.example.com/rag-vs-ft": "RAG is better when knowledge is fresh or large. Fine-tuning is better when you need new behaviour, format, or domain language. They compose - both are not exclusive.",
-  "https://blog.example.com/agent-frameworks": "LangGraph is graph-based, good for branching workflows. CrewAI focuses on role-play. AutoGen is research-oriented. None are silver bullets - vendor lock-in is real.",
-  "https://blog.example.com/llm-judge": "LLM-as-judge has positional bias and verbosity bias. Mitigate by swapping order, calibrating with human ratings, and using rubric prompts."
-}

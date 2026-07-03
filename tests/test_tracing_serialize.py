@@ -1,9 +1,7 @@
 """Tests for :func:`overmind.tracing._normalize_for_json` and
 :func:`overmind.tracing._coerce_to_otel_attribute`.
 
-The two helpers are the only serialisation surface left after Phase 4.6 of
-the cleanup plan collapsed five overlapping serializers down to one
-normaliser + one OTel-attribute coercer.  These tests exercise:
+These tests exercise:
 
 * dataclasses, including nested dataclasses inside dicts / lists
 * pydantic-style ``model_dump`` providers
@@ -19,7 +17,6 @@ import dataclasses
 import json
 from pathlib import PurePath
 
-from overmind import tracing
 from overmind.tracing import _coerce_to_otel_attribute, _json_dumps, _normalize_for_json
 
 
@@ -158,21 +155,3 @@ class TestCoerceToOtelAttribute:
     def test_dataclass_becomes_json_string(self):
         out = _coerce_to_otel_attribute(_Point(1, 2))
         assert json.loads(out) == {"x": 1, "y": 2}
-
-
-class TestLegacyAliases:
-    """Old symbols still resolve so any in-flight callers keep working."""
-
-    def test_serialize_alias(self):
-        # Old name was a function returning a string.
-        assert tracing.serialize({"x": 1}) == '{"x": 1}'
-
-    def test_serialize_dataclass_alias(self):
-        assert tracing.serialize_dataclass(_Point(1, 2)) == {"x": 1, "y": 2}
-
-    def test_coerce_attribute_value_alias(self):
-        assert tracing._coerce_attribute_value(None) == ""
-        assert tracing._coerce_attribute_value([1, 2]) == "[1, 2]"
-
-    def test_prepare_for_otel_alias(self):
-        assert tracing._prepare_for_otel({1, 2}) == _normalize_for_json({1, 2})

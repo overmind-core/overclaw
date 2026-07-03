@@ -1,6 +1,0 @@
-{
-  "PO-2024-0451": {"po_number": "PO-2024-0451", "found": true, "vendor": "AWS", "amount": 12450.00, "status": "open"},
-  "PO-2024-0452": {"po_number": "PO-2024-0452", "found": true, "vendor": "GitHub", "amount": 4800.00, "status": "open"},
-  "PO-2024-0453": {"po_number": "PO-2024-0453", "found": true, "vendor": "Slack Technologies", "amount": 1200.00, "status": "open"},
-  "PO-2024-0460": {"po_number": "PO-2024-0460", "found": true, "vendor": "Wilson & Sterling LLP", "amount": 18000.00, "status": "open"}
-}

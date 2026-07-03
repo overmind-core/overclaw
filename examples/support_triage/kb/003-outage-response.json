@@ -1,6 +1,0 @@
-{
-  "id": "KB-003",
-  "title": "Outage and platform-status response",
-  "body": "If multiple users report the same symptom, check status.example.com. During an active incident, acknowledge the ticket, link to the public incident page, and mark it as P0. Do not speculate on root cause until the incident team publishes an update.",
-  "tags": ["outage", "incident", "p0", "status"]
-}

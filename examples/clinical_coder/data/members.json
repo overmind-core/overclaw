@@ -1,9 +1,0 @@
-{
-  "M-1001": {"member_id": "M-1001", "active": true, "plan": "PPO", "deductible_met": true},
-  "M-1002": {"member_id": "M-1002", "active": true, "plan": "HMO", "deductible_met": false},
-  "M-1003": {"member_id": "M-1003", "active": true, "plan": "PPO", "deductible_met": false},
-  "M-1004": {"member_id": "M-1004", "active": false, "plan": "PPO", "deductible_met": false},
-  "M-1005": {"member_id": "M-1005", "active": true, "plan": "Medicare", "deductible_met": true},
-  "M-1006": {"member_id": "M-1006", "active": true, "plan": "PPO", "deductible_met": true},
-  "M-1007": {"member_id": "M-1007", "active": true, "plan": "HMO", "deductible_met": false}
-}

@@ -1,6 +1,0 @@
-{
-  "id": "KB-004",
-  "title": "API rate limits",
-  "body": "Default API limits are 60 requests/minute for the free tier, 600 for pro, 6000 for enterprise. 429 responses carry a Retry-After header. Enterprise customers can request a temporary bump by contacting their CSM.",
-  "tags": ["api", "rate-limit", "429"]
-}

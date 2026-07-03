@@ -1,8 +1,0 @@
-[
-  {"id": "c-001", "name": "Jane Doe", "tier": "enterprise", "mrr_usd": 8000, "signup_days_ago": 420},
-  {"id": "c-002", "name": "Bob Smith", "tier": "free", "mrr_usd": 0, "signup_days_ago": 12},
-  {"id": "c-003", "name": "Carol Wu", "tier": "pro", "mrr_usd": 99, "signup_days_ago": 180},
-  {"id": "c-004", "name": "Dan Rivera", "tier": "enterprise", "mrr_usd": 14000, "signup_days_ago": 720},
-  {"id": "c-005", "name": "Evelyn Park", "tier": "free", "mrr_usd": 0, "signup_days_ago": 3},
-  {"id": "c-006", "name": "Frank Kim", "tier": "pro", "mrr_usd": 49, "signup_days_ago": 50}
-]
