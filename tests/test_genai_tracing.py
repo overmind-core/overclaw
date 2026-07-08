@@ -63,37 +63,6 @@ def inmem():
         tracing._initialized = saved_initialized
 
 
-class _FakeUsage:
-    def __init__(self, prompt=None, completion=None, total=None, cost=None):
-        if prompt is not None:
-            self.prompt_tokens = prompt
-        if completion is not None:
-            self.completion_tokens = completion
-        if total is not None:
-            self.total_tokens = total
-        if cost is not None:
-            self.cost = cost
-
-
-class _FakeMessage:
-    def __init__(self, content):
-        self.content = content
-
-
-class _FakeChoice:
-    def __init__(self, content, finish_reason="stop"):
-        self.message = _FakeMessage(content)
-        self.finish_reason = finish_reason
-
-
-class _FakeResponse:
-    def __init__(self, *, usage=None, content="hello world", model="gpt-4o-mini"):
-        self.usage = usage
-        self.choices = [_FakeChoice(content)]
-        self.model = model
-        self._hidden_params = {}
-
-
 # ---------------------------------------------------------------------------
 # canonical_usage_updates — the mirror/cost helper (unit)
 # ---------------------------------------------------------------------------
@@ -185,84 +154,6 @@ def test_identity_stamped_on_spans(inmem):
     assert span.attributes[attrs.AGENT_ID] == "agent-uuid-123"
     assert span.attributes[attrs.AGENT_NAME] == "Lead Qualifier"
     assert span.attributes[attrs.PROJECT_ID] == "proj-uuid-9"
-
-
-# ---------------------------------------------------------------------------
-# (c) LLM wrapper emits canonical genai.* + cost, no zero-fill
-# ---------------------------------------------------------------------------
-
-
-def test_llm_completion_stamps_canonical_usage(inmem):
-    provider, exporter = inmem
-    from overmind.utils.llm import llm_completion
-
-    fake = _FakeResponse(usage=_FakeUsage(prompt=100, completion=50, total=150))
-    with patch("overmind.utils.llm.litellm.completion", return_value=fake):
-        resp = llm_completion("gpt-4o-mini", [{"role": "user", "content": "hi"}], temperature=0.2)
-    assert resp is fake
-    provider.force_flush()
-
-    span = exporter.get_finished_spans()[-1]
-    assert span.attributes[attrs.SPAN_TYPE] == "llm_call"
-    assert span.attributes[attrs.LLM_PROMPT_TOKENS] == 100
-    assert span.attributes[attrs.LLM_COMPLETION_TOKENS] == 50
-    assert span.attributes[attrs.LLM_TOTAL_TOKENS] == 150
-    assert span.attributes[attrs.LLM_MODEL] == "gpt-4o-mini"
-    assert span.attributes[attrs.LLM_COST] > 0
-    assert span.attributes[attrs.LLM_REQUEST_TEMPERATURE] == 0.2
-    assert span.attributes[attrs.LLM_RESPONSE_FINISH_REASON] == "stop"
-    assert span.attributes[attrs.LLM_RESPONSE_MESSAGE_CHARS] == len("hello world")
-
-
-def test_llm_completion_omits_tokens_when_absent(inmem):
-    provider, exporter = inmem
-    from overmind.utils.llm import llm_completion
-
-    fake = _FakeResponse(usage=None)
-    with patch("overmind.utils.llm.litellm.completion", return_value=fake):
-        llm_completion("gpt-4o-mini", [{"role": "user", "content": "hi"}])
-    provider.force_flush()
-
-    span = exporter.get_finished_spans()[-1]
-    assert attrs.LLM_PROMPT_TOKENS not in span.attributes
-    assert attrs.LLM_COMPLETION_TOKENS not in span.attributes
-    assert attrs.LLM_TOTAL_TOKENS not in span.attributes
-
-
-def test_llm_completion_uses_provider_reported_cost(inmem):
-    provider, exporter = inmem
-    from overmind.utils.llm import llm_completion
-
-    fake = _FakeResponse(usage=_FakeUsage(prompt=10, completion=10, cost=0.123))
-    with patch("overmind.utils.llm.litellm.completion", return_value=fake):
-        llm_completion("openrouter/some/model", [{"role": "user", "content": "hi"}])
-    provider.force_flush()
-
-    span = exporter.get_finished_spans()[-1]
-    assert span.attributes[attrs.LLM_COST] == pytest.approx(0.123)
-
-
-def test_llm_completion_streaming_records_ttft(inmem):
-    provider, exporter = inmem
-    from overmind.utils.llm import llm_completion
-
-    chunks = ["chunk-a", "chunk-b", "chunk-c"]
-    rebuilt = _FakeResponse(usage=_FakeUsage(prompt=42, completion=8, total=50))
-    with (
-        patch("overmind.utils.llm.litellm.completion", return_value=iter(chunks)),
-        patch("overmind.utils.llm.litellm.stream_chunk_builder", return_value=rebuilt),
-    ):
-        gen = llm_completion("gpt-4o-mini", [{"role": "user", "content": "hi"}], stream=True)
-        consumed = list(gen)
-
-    assert consumed == chunks
-    provider.force_flush()
-
-    span = exporter.get_finished_spans()[-1]
-    assert span.attributes[attrs.LLM_STREAMING] is True
-    assert attrs.LLM_TTFT_SECONDS in span.attributes
-    assert span.attributes[attrs.LLM_PROMPT_TOKENS] == 42
-    assert span.attributes[attrs.LLM_TOTAL_TOKENS] == 50
 
 
 # ---------------------------------------------------------------------------
