@@ -85,11 +85,7 @@ def _first_str(attributes: Mapping[str, Any], keys: tuple[str, ...]) -> str | No
     return None
 
 
-def compute_cost(
-    model: str | None,
-    prompt_tokens: int | None,
-    completion_tokens: int | None,
-) -> float | None:
+def compute_cost(model: str | None, prompt_tokens: int | None, completion_tokens: int | None) -> float | None:
     """Best-effort USD cost from model pricing, or ``None`` if not derivable.
 
     Uses ``litellm.cost_per_token`` which knows pricing for the major

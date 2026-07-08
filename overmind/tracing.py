@@ -1,21 +1,5 @@
-"""Overmind SDK tracing primitives.
-
-This module is the public surface of the Overmind tracer:
-
-* :func:`init` wires an OTLP exporter to the user's Overmind project,
-  enables any vendor auto-instrumentations they ask for, and attaches
-  a remote parent span when the process is spawned by the optimizer
-  (so subprocess traces stitch into one tree).
-* :func:`observe` / :func:`start_span` — decorator + context manager
-  for hand-rolled spans inside an agent.  Both stamp the canonical
-  ``overmind.span.type`` and ``overmind.status`` attributes so the
-  Overmind backend can render them without parsing OTel internals.
-* :func:`set_tag`, :func:`set_user`, :func:`capture_exception` —
-  Sentry-style helpers that operate on the current span.
-
-Attribute keys are defined in :mod:`overmind.attrs`; never hardcode
-``overmind.*`` strings here.
-"""
+"""Overmind SDK tracing: init(), span decorators/context managers, and
+Sentry-style helpers. Attribute keys live in :mod:`overmind.attrs`."""
 
 from __future__ import annotations
 
@@ -25,7 +9,6 @@ import inspect
 import json
 import logging
 import os
-import sys
 import time
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager
@@ -42,12 +25,9 @@ from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.semconv_ai import SpanAttributes
 from opentelemetry.trace import Status, StatusCode
-from rich.console import Console
 
 from overmind import attrs
-from overmind.core.constants import DEFAULT_BASE_URL
 from overmind.genai_usage import canonical_usage_updates
-from overmind.utils.io import read_api_key_masked
 
 logger = logging.getLogger(__name__)
 
@@ -55,19 +35,11 @@ F = TypeVar("F", bound=Callable)
 
 _strict_mode = os.environ.get("OVERMIND_STRICT_MODE", "false").lower() == "true"
 
-# Global state to track initialization
 _initialized = False
 _tracer: trace.Tracer | None = None
 _providers: set[str] = set()
-console = Console()
 
-# ---------------------------------------------------------------------------
-# utility functions
-# ---------------------------------------------------------------------------
-
-# ``DEFAULT_BASE_URL`` is re-exported above from ``overmind.core.constants`` so
-# external imports (``from overmind.tracing import DEFAULT_BASE_URL``) continue
-# to resolve. Edit the canonical value in ``overmind/core/constants.py``.
+DEFAULT_BASE_URL = os.getenv("OVERMIND_API_URL", "https://api.overmindlab.ai")
 
 
 def get_api_settings(
@@ -75,63 +47,20 @@ def get_api_settings(
     base_url: str | None = None,
 ) -> tuple[str, str]:
     overmind_api_key = overmind_api_key or os.getenv("OVERMIND_API_KEY")
-    base_url = base_url or DEFAULT_BASE_URL
-
-    # Avoid prompting for key if running as library or during tests
-    # Detect (roughly) if running under pytest or other test envs
-    _in_test = "PYTEST_CURRENT_TEST" in os.environ or any("pytest" in arg for arg in sys.argv)
-    # Also don't prompt if running as a non-interactive script
-    _interactive = sys.stdin.isatty() and sys.stdout.isatty()
-
     if not overmind_api_key:
-        if _in_test or not _interactive:
-            # If testing, never read or prompt for the key, just fail immediately
-            raise RuntimeError("Missing OVERMIND_API_KEY. Set the environment variable to use Overmind services.")
-
-        console.print(
-            "\n[bold red]Missing OVERMIND_API_KEY.[/bold red]"
-            "\n[dim]To access Overmind services, you need an API key.[/dim]"
-            "\n[green]Visit[/green] [underline]https://console.overmindlab.ai/projects[/underline] [green]to create your API key.[/green]"
+        raise RuntimeError(
+            "Missing OVERMIND_API_KEY. Set the environment variable to use Overmind services. "
+            "Create a key at https://console.overmindlab.ai/projects"
         )
-        console.print("\nPlease paste your API key here: [bold]ovr_Xxx[/bold]")
-        overmind_api_key = read_api_key_masked("OVERMIND_API_KEY")
-
-        if not overmind_api_key:
-            console.print("\n[bold red]No API key provided. Unable to continue. Exiting.[/bold red]\n")
-            sys.exit(1)
-        os.environ["OVERMIND_API_KEY"] = overmind_api_key
-        console.print("\n[bold green]API key set successfully for this session.[/bold green]\n")
-
-    return overmind_api_key, base_url.rstrip("/")
+    return overmind_api_key, (base_url or DEFAULT_BASE_URL).rstrip("/")
 
 
-# Recursion guard for :func:`_normalize_for_json`.  Pathological inputs
-# (``MagicMock``, cyclic ``__dict__`` references, Pydantic v1 models whose
-# ``model_dump`` returns more models, …) used to cause unbounded recursion
-# and 27 GB RSS spikes before we hit ``RecursionError``.  10 levels is
-# more than any real LLM input we capture in tracing.
+# Guards against cyclic / mock-heavy inputs that recurse forever.
 _MAX_NORMALIZE_DEPTH = 10
 
 
 def _normalize_for_json(obj: Any, *, _depth: int = 0) -> Any:
-    """Recursively convert *obj* into a value :func:`json.dumps` can handle.
-
-    Produces a tree of plain Python primitives (``str``/``int``/``float``/
-    ``bool``/``None``), ``list`` and ``dict``.  Unknown objects fall back to
-    a stringified placeholder so serialisation never crashes the caller.
-
-    Handles, in order:
-
-    * recursion-depth guard — past 10 levels we stringify the rest of the tree
-    * primitives (passthrough)
-    * dataclass instances → dict of normalised fields
-    * pydantic-style ``model_dump()`` providers (only if it returns a real dict)
-    * UI types listed in :data:`_SKIP_INPUT_TYPES` → ``"<TypeName>"`` tag
-    * ``Mapping`` / ``Sequence`` (incl. ``set`` / ``tuple``) → list/dict of normalised members
-    * ``bytes`` → hex string
-    * ``PurePath`` → string
-    * everything else → ``str(obj)``
-    """
+    """Recursively convert *obj* into JSON-serialisable primitives; never raises."""
     if _depth > _MAX_NORMALIZE_DEPTH:
         return f"<truncated:{type(obj).__name__}>"
     if isinstance(obj, (str, int, float, bool, type(None))):
@@ -148,9 +77,7 @@ def _normalize_for_json(obj: Any, *, _depth: int = 0) -> Any:
         return obj.hex()
     if isinstance(obj, PurePath):
         return str(obj)
-    # Pydantic-style ``model_dump`` is the last resort because some test
-    # doubles (``MagicMock``) expose a callable ``model_dump`` that returns
-    # another mock — recurse there without a guard and you melt the heap.
+    # model_dump last: MagicMock exposes a callable one that returns more mocks.
     dumper = getattr(obj, "model_dump", None)
     if callable(dumper):
         try:
@@ -177,20 +104,13 @@ def _json_dumps(obj: Any) -> str:
         return repr(obj)
 
 
-# Legacy aliases retained for any in-process callers that may still hold a
-# reference; new code should use :func:`_normalize_for_json` /
-# :func:`_json_dumps` directly.
+# Legacy aliases for external callers.
 serialize_dataclass = _normalize_for_json
 serialize = _json_dumps
 
 
 def _default_serializer(obj):
-    """JSON ``default=`` hook used when an external caller hands us
-    a ``json.dumps`` call directly (currently nothing internal does).
-
-    Retained as a thin shim over :func:`_normalize_for_json` so external
-    code that imports it doesn't break.
-    """
+    """Legacy ``json.dumps(default=...)`` hook for external callers."""
     normalized = _normalize_for_json(obj)
     if isinstance(normalized, (dict, list, str, int, float, bool, type(None))):
         return normalized
@@ -203,23 +123,8 @@ def _default_serializer(obj):
 
 
 def _enable_provider(name: str, module: str, instrumentor_factory) -> None:
-    """Instrument *module* with the OTel instrumentor returned by *instrumentor_factory*.
-
-    Idempotent: a second call for the same *name* is a no-op.  When the
-    upstream module isn't installed we either raise (strict mode) or log a
-    warning so the rest of the SDK keeps working.
-
-    Parameters
-    ----------
-    name:
-        Stable identifier stored in :data:`_providers` for the idempotency check.
-    module:
-        Module name to probe with :func:`importlib.util.find_spec`.
-    instrumentor_factory:
-        Zero-arg callable that returns an OTel instrumentor instance.  We import
-        the instrumentor lazily *inside* this callable so providers that aren't
-        being enabled don't pay the import cost.
-    """
+    """Instrument *module* if installed. Idempotent; missing module raises
+    only in strict mode. Factories import lazily to avoid upfront cost."""
     if name in _providers:
         logger.debug(f"{name} already enabled")
         return
@@ -286,8 +191,7 @@ _PROVIDER_ENABLERS = {
 
 
 def enable_tracing(providers: list[str] | None = None) -> None:
-    if providers == []:
-        # If no providers are provided, enable all supported providers.
+    if providers == []:  # empty list means "all"
         providers = list(_PROVIDER_ENABLERS.keys())
     logger.info(f"Enabling tracing for providers: {providers}")
 
@@ -301,26 +205,14 @@ def enable_tracing(providers: list[str] | None = None) -> None:
         enabler()
 
 
-# Context-propagation keys.  We use the canonical ``overmind.*``
-# attribute string as the context key for resources that show up on
-# every span (currently just the agent name, which lives in
-# :data:`overmind.attrs.AGENT_NAME`) so the on-start processor can
-# stamp the same key without re-mapping.  Workflow + conversation
-# labels don't have a 1:1 span-attribute counterpart, so they use
-# their own dotted symbolic names.
+# OTel context keys (canonical attribute strings double as keys).
 _CTX_KEY_WORKFLOW_NAME = attrs.WORKFLOW_NAME
 _CTX_KEY_CONVERSATION_ID = attrs.CONVERSATION_ID
 
 
 def _span_processor_on_start(span: trace.Span, parent_context: trace.Context | None = None):
-    """Stamp every new span with the ambient agent / workflow context.
-
-    These keys are written into the OTel context by :func:`set_agent_name` /
-    :func:`set_workflow_name` (or, for the CLI, by ``cli.main`` directly)
-    so every child span automatically carries the resource identifiers
-    the Overmind backend needs to attach the span to an :class:`Agent`
-    row — no per-span :func:`set_tag` calls required.
-    """
+    """Stamp every new span with the ambient agent / workflow context
+    written by the ``set_*`` helpers."""
     if value := get_value(_CTX_KEY_WORKFLOW_NAME):
         span.set_attribute(SpanAttributes.TRACELOOP_WORKFLOW_NAME, str(value))
     if agent_name := get_value(attrs.AGENT_NAME):
@@ -334,21 +226,14 @@ def _span_processor_on_start(span: trace.Span, parent_context: trace.Context | N
 
 
 class _GenAiUsageSpanProcessor(SpanProcessor):
-    """Mirror OTel ``gen_ai.*`` usage onto canonical ``genai.*`` keys at span end.
+    """Mirror OTel ``gen_ai.*`` usage onto canonical ``genai.*`` keys at span
+    end, so auto-instrumented spans carry the tokens/cost keys the server reads.
 
-    Registered before the exporting processor so spans produced by third-party
-    auto-instrumentors (OpenAI / Anthropic / Google / …) — which only carry the
-    OTel-semconv token keys — still land the canonical ``genai.prompt_tokens`` /
-    ``genai.completion_tokens`` / ``genai.total_tokens`` / ``genai.cost`` that
-    the Overmind server rolls up.  Values are never zero-filled (see
-    :func:`overmind.genai_usage.canonical_usage_updates`).
-
-    ``on_end`` receives a :class:`ReadableSpan` whose public ``set_attribute``
-    is gone, so we mutate its private attribute map in place.
-
-    ponytail: reaches into ``span._attributes`` (OTel SDK internal); pinned by
-    the ``opentelemetry-sdk>=1.35`` floor in ``pyproject.toml``.  Upgrade path:
-    swap for a ``SpanExporter`` wrapper if OTel ever seals the attribute map.
+    ponytail: mutates ``span._attributes`` (ReadableSpan has no set_attribute).
+    Since opentelemetry-sdk 1.43 the ended span's ``BoundedAttributes`` rejects
+    item assignment, so we write into its backing ``._dict`` when present and
+    fall back to direct assignment for older SDKs. Upgrade path if this seals
+    too: a SpanExporter wrapper.
     """
 
     def on_start(self, span: trace.Span, parent_context: trace.Context | None = None) -> None:
@@ -361,9 +246,13 @@ class _GenAiUsageSpanProcessor(SpanProcessor):
         target = getattr(span, "_attributes", None)
         if target is None:
             return
+        # BoundedAttributes (1.43+) is read-only once the span ends; its plain
+        # ``_dict`` backing store still accepts writes and is what ``attributes``
+        # proxies. Older SDKs accept assignment on the object itself.
+        sink = getattr(target, "_dict", target)
         for key, value in updates.items():
             try:
-                target[key] = value
+                sink[key] = value
             except Exception:
                 logger.debug("genai enrichment could not set %s", key, exc_info=True)
 
@@ -374,16 +263,8 @@ class _GenAiUsageSpanProcessor(SpanProcessor):
 
 
 def _attach_remote_parent_if_present() -> None:
-    """Attach a remote parent span from the ``TRACEPARENT`` environment variable.
-
-    The overmind optimizer injects ``TRACEPARENT`` (W3C Trace Context format)
-    into every agent subprocess before spawning it.  Calling this function
-    immediately after the TracerProvider is registered makes every OTel span
-    started in the subprocess a child of the optimizer's current span, so all
-    per-case evaluation runs appear under a single unified parent trace.
-
-    Safe to call when ``TRACEPARENT`` is absent — no-op in that case.
-    """
+    """Attach the W3C ``TRACEPARENT`` env var (injected by the optimizer into
+    agent subprocesses) as the ambient parent context. No-op when absent."""
     raw = os.environ.get("TRACEPARENT") or os.environ.get("OTEL_TRACEPARENT")
     if not raw:
         return
@@ -409,12 +290,8 @@ def _seed_identity_context(
     agent_name: str | None,
     project_id: str | None,
 ) -> None:
-    """Attach identity values to the OTel context so every span carries them.
-
-    The on-start processor copies these onto each span, which is what lets
-    spans emitted by third-party auto-instrumentors (not just our own
-    decorators) still resolve to the right Agent / Project server-side.
-    """
+    """Attach identity values to the OTel context; the on-start processor
+    copies them onto every span (including auto-instrumented ones)."""
     if agent_id:
         set_agent_id(agent_id)
     if agent_name:
@@ -434,34 +311,17 @@ def init(
     agent_name: str | None = None,
     project_id: str | None = None,
 ):
-    """
-    Initialize the Overmind SDK for automatic monitoring.
-
-    Example:
-        import overmind
-        overmind.init(
-            agent_id="6f1c…",            # or agent_name="Lead Qualifier"
-            service_name="my-backend",
-            environment="production",
-            providers=["openai", "anthropic", "google", "agno"],
-        )
+    """Initialize the Overmind SDK for automatic monitoring.
 
     Args:
-        overmind_api_key: Your Overmind API key. If not provided, uses OVERMIND_API_KEY env var.
-        service_name: Name of your service (appears in traces). Defaults to OVERMIND_SERVICE_NAME
-                      env var or "unknown-service".
-        environment: Environment name (e.g., "production", "staging"). Defaults to
-                     OVERMIND_ENVIRONMENT env var or "development".
-        providers: List of providers to trace. Supported values: "openai", "anthropic", "google", "agno".
-        overmind_base_url: Base URL for traces. If not provided, uses the Overmind Cloud endpoint.
-        agent_id: The Agent's server UUID. Stamped as ``overmind.agent.id`` on the resource and
-                  every span; resolved by a direct primary-key lookup (drift-proof). Defaults to
-                  the ``OVERMIND_AGENT_ID`` env var. Prefer this over ``agent_name`` when known.
-        agent_name: Human-readable agent name. Stamped as ``overmind.agent.name`` on every span;
-                    the server slugifies it for a stable identity, so keep it constant across runs.
-                    Defaults to the ``OVERMIND_AGENT_NAME`` env var.
-        project_id: The Project's UUID (``overmind.project.id``). Usually inferred from the API
-                    token; only needed for session auth. Defaults to ``OVERMIND_PROJECT_ID``.
+        overmind_api_key: API key; defaults to OVERMIND_API_KEY env var.
+        service_name: Service name in traces; defaults to OVERMIND_SERVICE_NAME.
+        environment: e.g. "production"; defaults to OVERMIND_ENVIRONMENT or "development".
+        providers: Providers to trace: "openai", "anthropic", "google", "agno".
+        overmind_base_url: Trace endpoint base URL; defaults to Overmind Cloud.
+        agent_id: Agent UUID (preferred over agent_name); defaults to OVERMIND_AGENT_ID.
+        agent_name: Human-readable agent name; defaults to OVERMIND_AGENT_NAME.
+        project_id: Project UUID, only needed for session auth; defaults to OVERMIND_PROJECT_ID.
     """
     global _initialized, _tracer
 
@@ -470,29 +330,24 @@ def init(
     project_id = project_id or os.environ.get("OVERMIND_PROJECT_ID")
 
     if _initialized:
-        # user can call init again with different providers, so we should not skip
-        # there is no such thing as remove initialization
+        # Re-init only refreshes identity + providers; exporters stay as-is.
         logger.debug(f"Overmind SDK already initialized, reinitializing with providers: {providers}")
         _seed_identity_context(agent_id, agent_name, project_id)
         enable_tracing(providers)
         return
 
-    # When running inside the optimize-step subprocess, the runner wrapper
-    # configures a local JSONL TracerProvider via ``OVERMIND_TRACE_FILE`` and
-    # deliberately strips ``OVERMIND_API_KEY`` from the env so spans land in a
-    # file instead of the cloud backend. Any ``overmind.init()`` calls that
-    # were instrumented into the agent entrypoint should reuse that already-
-    # configured provider rather than crashing on the missing API key or
-    # silently replacing the wrapper's exporter.
+    # Optimize-step subprocess: the runner wrapper set up a file-exporter
+    # provider (OVERMIND_TRACE_FILE) and stripped the API key — reuse it
+    # instead of crashing or replacing the exporter.
     if os.environ.get("OVERMIND_TRACE_FILE") and not (overmind_api_key or os.environ.get("OVERMIND_API_KEY")):
-        from overmind import __version__ as _SDK_VERSION
+        from overmind import __version__ as sdk_version
 
         logger.debug(
             "Overmind SDK init() skipped: OVERMIND_TRACE_FILE is set and no "
             "OVERMIND_API_KEY available; reusing the local file-exporter "
             "TracerProvider configured by the optimize runner wrapper.",
         )
-        _tracer = trace.get_tracer("overmind", _SDK_VERSION)
+        _tracer = trace.get_tracer("overmind", sdk_version)
         _seed_identity_context(agent_id, agent_name, project_id)
         enable_tracing(providers)
         _attach_remote_parent_if_present()
@@ -507,20 +362,16 @@ def init(
 
     endpoint = f"{overmind_base_url}/api/v1/traces"
 
-    # Configure OpenTelemetry Provider with rich resource attributes
-    from overmind import __version__ as _SDK_VERSION
+    from overmind import __version__ as sdk_version
 
     resource_attributes = {
         "service.name": service_name or os.environ.get("OVERMIND_SERVICE_NAME") or "overmind-telemetry",
-        "service.version": os.environ.get("SERVICE_VERSION", _SDK_VERSION),
+        "service.version": os.environ.get("SERVICE_VERSION", sdk_version),
         "deployment.environment": environment,
         attrs.SDK_NAME: "overmind-python",
-        attrs.SDK_VERSION: _SDK_VERSION,
+        attrs.SDK_VERSION: sdk_version,
     }
-    # Identity on the resource: the server resolves the Agent from
-    # ``overmind.agent.id`` on the resource attributes first (direct PK), and
-    # pins the Project from ``overmind.project.id``. We also seed the OTel
-    # context below so per-span consumers (auto-instrumentors) carry them too.
+    # Identity on the resource lets the server resolve Agent/Project directly.
     if agent_id:
         resource_attributes[attrs.AGENT_ID] = agent_id
     if agent_name:
@@ -531,18 +382,12 @@ def init(
     resource = Resource.create(resource_attributes)
 
     provider = TracerProvider(resource=resource)
-    # Enrichment must run before the exporting processor so its on-end mutation
-    # is visible when the batch processor later exports the span.
+    # Must run before the exporting processor so its on-end mutation is exported.
     provider.add_span_processor(_GenAiUsageSpanProcessor())
 
-    # Configure OTLP Exporter
-    headers = {"X-Api-Key": overmind_api_key}
+    otlp_exporter = OTLPSpanExporter(endpoint=endpoint, headers={"X-Api-Key": overmind_api_key})
 
-    otlp_exporter = OTLPSpanExporter(endpoint=endpoint, headers=headers)
-
-    # Tighten the batch flush cadence so closed child spans show up in the
-    # backend within ~2s instead of the OTel default 5s.  Long-running
-    # workflow spans rely on this to stream progress while still open.
+    # Flush every ~2s (OTel default 5s) so progress streams while spans are open.
     schedule_delay_millis = int(os.environ.get("OVERMIND_SPAN_FLUSH_INTERVAL_MS", "2000"))
     max_export_batch_size = int(os.environ.get("OVERMIND_SPAN_MAX_EXPORT_BATCH_SIZE", "256"))
     span_processor = BatchSpanProcessor(
@@ -553,19 +398,11 @@ def init(
     provider.add_span_processor(span_processor)
     span_processor.on_start = _span_processor_on_start
 
-    # Set global Trace Provider
     trace.set_tracer_provider(provider)
 
-    # Store tracer for custom spans
-    _tracer = trace.get_tracer("overmind", _SDK_VERSION)
+    _tracer = trace.get_tracer("overmind", sdk_version)
     _seed_identity_context(agent_id, agent_name, project_id)
     enable_tracing(providers)
-
-    # Distributed tracing: if the process was spawned by the overmind
-    # optimizer (or any other orchestrator) with a W3C TRACEPARENT env var,
-    # attach it as the ambient OTel context so every span created in this
-    # process becomes a child of the parent optimizer span — forming a single
-    # unified trace across subprocess boundaries.
     _attach_remote_parent_if_present()
 
     _initialized = True
@@ -573,21 +410,7 @@ def init(
 
 
 def get_tracer() -> trace.Tracer:
-    """
-    Get the Overmind tracer for creating custom spans.
-
-    Example:
-        tracer = overmind.get_tracer()
-        with tracer.start_as_current_span("my-operation") as span:
-            span.set_attribute("user.id", user_id)
-            # ... your code ...
-
-    Returns:
-        OpenTelemetry Tracer instance.
-
-    Raises:
-        RuntimeError: If SDK not initialized.
-    """
+    """Return the Overmind tracer; raises RuntimeError if not initialized."""
     if not _initialized or _tracer is None:
         raise RuntimeError("Overmind SDK not initialized. Call overmind.init() first.")
     return _tracer
@@ -599,23 +422,7 @@ def get_tracer() -> trace.Tracer:
 
 
 def set_user(user_id: str, email: str | None = None, username: str | None = None) -> None:
-    """
-    Associate current trace with a user (like Sentry's set_user).
-
-    Call this in your request handler to tag traces with user info.
-
-    Example:
-        @app.middleware("http")
-        async def add_user_context(request: Request, call_next):
-            if request.state.user:
-                overmind.set_user(user_id=request.state.user.id)
-            return await call_next(request)
-
-    Args:
-        user_id: Unique user identifier.
-        email: Optional user email.
-        username: Optional username.
-    """
+    """Associate the current trace with a user (like Sentry's ``set_user``)."""
     span = trace.get_current_span()
     if span.is_recording():
         span.set_attribute("user.id", user_id)
@@ -626,15 +433,7 @@ def set_user(user_id: str, email: str | None = None, username: str | None = None
 
 
 def _coerce_to_otel_attribute(value: Any) -> Any:
-    """Project *value* onto an OTel-compatible attribute value.
-
-    OTel attribute values must be primitives or sequences of strings.
-    Anything richer (dicts, mixed-type lists, dataclasses, pydantic
-    models …) is serialised to a JSON string so the receiving end can
-    round-trip it with ``json.loads`` instead of getting a Python
-    ``repr`` blob.  ``None`` becomes the empty string for consistency
-    with the OTel SDK's own rejection of ``None`` values.
-    """
+    """Coerce *value* to an OTel-legal attribute; rich values become JSON."""
     if value is None:
         return ""
     if isinstance(value, (bool, str, int, float)):
@@ -644,8 +443,7 @@ def _coerce_to_otel_attribute(value: Any) -> Any:
     return _json_dumps(value)
 
 
-# Legacy alias retained for any in-process callers that may still hold a
-# reference; new code should use :func:`_coerce_to_otel_attribute` directly.
+# Legacy alias.
 _coerce_attribute_value = _coerce_to_otel_attribute
 
 
@@ -655,20 +453,7 @@ def _safe_set_attribute(otel_span, key: str, value: Any) -> None:
 
 
 def set_tag(key: str, value) -> None:
-    """Add a custom tag to the current span.
-
-    Accepts ``str`` / ``int`` / ``float`` / ``bool`` / ``list[str]``
-    natively; richer values (dict, mixed-type list, dataclass, pydantic
-    model, …) are JSON-encoded so the OTLP ingest can round-trip them
-    with ``json.loads``.
-
-    Example::
-
-        overmind.set_tag("feature.flag", "new-checkout-flow")
-        overmind.set_tag("iteration", 3)
-        overmind.set_tag("score", 85.2)
-        overmind.set_tag("overmind.setup.scope", {"optimizable_paths": [...]})
-    """
+    """Add a custom tag to the current span; rich values are JSON-encoded."""
     span = trace.get_current_span()
     if not span.is_recording():
         logger.debug("set_tag(%s=…) ignored: current span has ended %s", key, span)
@@ -677,19 +462,7 @@ def set_tag(key: str, value) -> None:
 
 
 def capture_exception(exception: Exception) -> None:
-    """
-    Record an exception on the current span.
-
-    Example:
-        try:
-            risky_operation()
-        except Exception as e:
-            overmind.capture_exception(e)
-            raise
-
-    Args:
-        exception: The exception to record.
-    """
+    """Record an exception on the current span and mark it as errored."""
     span = trace.get_current_span()
     if span.is_recording():
         span.record_exception(exception)
@@ -697,60 +470,28 @@ def capture_exception(exception: Exception) -> None:
 
 
 def set_workflow_name(workflow_name: str) -> None:
-    """Attach a Traceloop-compatible workflow label to every subsequent span.
-
-    Stored in the OTel context so child spans pick it up automatically;
-    the on-start processor copies it onto each span as
-    ``SpanAttributes.TRACELOOP_WORKFLOW_NAME``.
-    """
-    attach(set_value(_CTX_KEY_WORKFLOW_NAME, workflow_name))
+    """Attach a Traceloop-compatible workflow label to every subsequent span."""
+    attach(set_value(attrs.WORKFLOW_NAME, workflow_name))
 
 
 def set_agent_name(agent_name: str) -> None:
-    """Bind the current OTel context to *agent_name*.
-
-    Once attached, every span created downstream is stamped with
-    ``overmind.agent.name`` by the on-start processor, which is what
-    lets the Overmind backend route the trace to the right
-    :class:`Agent` record without per-call tagging.
-
-    Slug stability: the server derives an Agent's stable identity by
-    slugifying this name (``"Lead Qualifier"`` → ``lead-qualifier``).
-    Keep the name constant across runs — changing it spawns a new Agent.
-    Prefer :func:`set_agent_id` (or ``init(agent_id=...)``) when you know
-    the Agent's UUID; that is a drift-proof direct primary-key lookup.
-    """
+    """Stamp ``overmind.agent.name`` on every span created downstream."""
     attach(set_value(attrs.AGENT_NAME, agent_name))
 
 
 def set_agent_id(agent_id: str) -> None:
-    """Bind the current OTel context to *agent_id* (the Agent's server UUID).
-
-    Every span created downstream is stamped with ``overmind.agent.id`` by
-    the on-start processor.  The server resolves this as a direct
-    primary-key lookup, so it is immune to the slug drift that renaming an
-    agent would otherwise cause.
-    """
+    """Stamp ``overmind.agent.id`` (server UUID) on every downstream span."""
     attach(set_value(attrs.AGENT_ID, agent_id))
 
 
 def set_project_id(project_id: str) -> None:
-    """Bind the current OTel context to *project_id* (the Project's UUID).
-
-    Stamped onto every downstream span as ``overmind.project.id``.  API
-    tokens already pin the project server-side; this is only needed for
-    session-authenticated ingest or to disambiguate multi-project setups.
-    """
+    """Stamp ``overmind.project.id`` on every downstream span."""
     attach(set_value(attrs.PROJECT_ID, project_id))
 
 
 def set_conversation_id(conversation_id: str) -> None:
-    """Tag downstream spans with a stable ``conversation.id``.
-
-    Useful for chat agents where multiple traces belong to the same
-    user-visible session; the backend can group them in the UI.
-    """
-    attach(set_value(_CTX_KEY_CONVERSATION_ID, conversation_id))
+    """Tag downstream spans with a stable ``conversation.id`` for session grouping."""
+    attach(set_value(attrs.CONVERSATION_ID, conversation_id))
 
 
 # ---------------------------------------------------------------------------
@@ -767,9 +508,8 @@ class SpanType(str, Enum):
     RETRIEVAL = "retrieval"
 
 
-# Type names whose instances should never be serialised into span
-# attributes (UI helpers, internal OTel handles, …).  Matching by name
-# avoids importing rich / opentelemetry just for an isinstance check.
+# Type names never serialised into span attributes; matched by name to
+# avoid importing rich / opentelemetry for an isinstance check.
 _SKIP_INPUT_TYPES = frozenset({
     "Console",
     "Progress",
@@ -786,21 +526,8 @@ def _should_skip_value(value: Any) -> bool:
     return type(value).__name__ in _SKIP_INPUT_TYPES
 
 
-# Legacy alias retained for callers that haven't migrated yet.  The
-# behaviour is now identical to :func:`_normalize_for_json` since both
-# share the same skip-list, model-dump, dataclass, and path-coercion logic.
+# Legacy alias.
 _prepare_for_otel = _normalize_for_json
-
-
-def _stamp_span_metadata(otel_span, span_type: SpanType) -> None:
-    """Stamp the canonical Overmind metadata onto a freshly-opened span.
-
-    Currently just :data:`overmind.attrs.SPAN_TYPE`, but centralised so
-    future additions (sdk version, command, …) land in one place.
-    OTel already records the span name on the proto, so we don't
-    duplicate it as an attribute.
-    """
-    otel_span.set_attribute(attrs.SPAN_TYPE, span_type.value)
 
 
 def _finalize_span(
@@ -808,13 +535,7 @@ def _finalize_span(
     exc: BaseException | None,
     start_monotonic: float,
 ) -> None:
-    """Stamp lifecycle status + duration as the span closes.
-
-    Called from both the decorator and the context-manager paths so
-    the OTLP ingest sees the same shape regardless of which surface
-    the caller used.  *exc* is ``None`` on success; otherwise the
-    exception being propagated.
-    """
+    """Stamp lifecycle status + duration as the span closes (*exc* is None on success)."""
     duration = max(0.0, time.monotonic() - start_monotonic)
     otel_span.set_attribute(attrs.DURATION_SECONDS, duration)
 
@@ -842,13 +563,8 @@ def _capture_inputs(
     args: tuple,
     kwargs: dict,
 ) -> None:
-    """Serialise *args* / *kwargs* and attach them as ``inputs``.
-
-    Skips the leading ``self`` / ``cls`` of bound methods and any
-    argument whose type name is in :data:`_SKIP_INPUT_TYPES`.  Errors
-    in serialisation never propagate — capture is best-effort
-    instrumentation, not part of the wrapped call.
-    """
+    """Attach *args* / *kwargs* as ``inputs`` (best-effort; skips self/cls
+    and :data:`_SKIP_INPUT_TYPES`)."""
     try:
         sig = inspect.signature(func)
         param_names = list(sig.parameters.keys())
@@ -880,12 +596,7 @@ def _capture_output(otel_span, result: Any) -> None:
 
 
 def _stamp_tool_metadata(otel_span, tool_name: str, func: Callable, args: tuple, kwargs: dict) -> None:
-    """Stamp the canonical ``tool.name`` / ``tool.arg_keys`` for a tool span.
-
-    These are the keys the Overmind server reads to classify a span as a
-    tool call and surface which arguments it received (keys only — values
-    are captured separately by :func:`_capture_inputs`).
-    """
+    """Stamp ``tool.name`` / ``tool.arg_keys`` (keys only) on a tool span."""
     try:
         otel_span.set_attribute(attrs.TOOL_NAME, tool_name)
         sig = inspect.signature(func)
@@ -903,19 +614,11 @@ def _stamp_tool_metadata(otel_span, tool_name: str, func: Callable, args: tuple,
 def observe(
     span_name: str | None = None,
     type: SpanType = SpanType.FUNCTION,
+    agent_id: str | None = None,
+    project_id: str | None = None,
 ) -> Callable[[Callable], Callable]:
-    """Decorator that traces a function with OpenTelemetry.
-
-    Wraps the call in a span named *span_name* (defaults to the
-    function name), captures positional / keyword arguments as
-    ``inputs`` and the return value as ``outputs``, and stamps the
-    canonical :data:`overmind.attrs.SPAN_TYPE`,
-    :data:`overmind.attrs.STATUS`, and
-    :data:`overmind.attrs.DURATION_SECONDS` attributes on exit.
-
-    Supports both sync and async functions — the wrapper picks the
-    right runtime via :func:`inspect.iscoroutinefunction`.
-    """
+    """Decorator (sync or async) that traces a function: captures ``inputs`` /
+    ``outputs`` and stamps canonical span type / status / duration."""
 
     def decorator(func: Callable) -> Callable:
         name = span_name or func.__name__
@@ -926,7 +629,11 @@ def observe(
             async def async_wrapper(*args, **kwargs):
                 tracer = get_tracer()
                 with tracer.start_as_current_span(name) as otel_span:
-                    _stamp_span_metadata(otel_span, type)
+                    otel_span.set_attribute(attrs.SPAN_TYPE, type.value)
+                    if project_id:
+                        otel_span.set_attribute(attrs.PROJECT_ID, project_id)
+                    if agent_id:
+                        otel_span.set_attribute(attrs.AGENT_ID, agent_id)
                     if type == SpanType.TOOL:
                         _stamp_tool_metadata(otel_span, name, func, args, kwargs)
                     _capture_inputs(otel_span, func, args, kwargs)
@@ -948,7 +655,11 @@ def observe(
         def sync_wrapper(*args, **kwargs):
             tracer = get_tracer()
             with tracer.start_as_current_span(name) as otel_span:
-                _stamp_span_metadata(otel_span, type)
+                otel_span.set_attribute(attrs.SPAN_TYPE, type.value)
+                if project_id:
+                    otel_span.set_attribute(attrs.PROJECT_ID, project_id)
+                if agent_id:
+                    otel_span.set_attribute(attrs.AGENT_ID, agent_id)
                 if type == SpanType.TOOL:
                     _stamp_tool_metadata(otel_span, name, func, args, kwargs)
                 _capture_inputs(otel_span, func, args, kwargs)
@@ -975,24 +686,11 @@ def start_span(
     span_type: SpanType = SpanType.FUNCTION,
     attributes: dict[str, Any] | None = None,
 ):
-    """Context manager that opens a child span under the current trace.
-
-    The companion to :func:`observe` for loops / conditional blocks
-    where a decorator isn't practical.  Stamps the same canonical
-    metadata (``overmind.span.type`` / ``overmind.status`` /
-    ``overmind.duration.seconds``) on the span as ``observe`` does on
-    decorated functions.
-
-    Example::
-
-        for i in range(iterations):
-            with start_span("iteration", attributes={"iteration": i}):
-                # ... iteration work ...
-                set_tag("decision", "keep")
-    """
+    """Context-manager companion to :func:`observe`; stamps the same
+    canonical span metadata."""
     tracer = get_tracer()
     with tracer.start_as_current_span(name) as otel_span:
-        _stamp_span_metadata(otel_span, span_type)
+        otel_span.set_attribute(attrs.SPAN_TYPE, span_type.value)
         if attributes:
             for key, value in attributes.items():
                 _safe_set_attribute(otel_span, key, value)
@@ -1018,18 +716,8 @@ def start_child_span(
     span_type: SpanType = SpanType.FUNCTION,
     attributes: Mapping[str, Any] | None = None,
 ):
-    """Open a span as an explicit child of the current OTel span.
-
-    ``overmind.start_span`` already creates spans in the active context,
-    but we re-attach the current span explicitly so the parent/child
-    tree stays stable across nested wrappers and mixed instrumentation
-    stacks (Traceloop, OTel auto-instrumentations, our own decorators).
-
-    *attributes* are applied on the new span at start time so they are
-    visible to any downstream span processor (the BatchSpanProcessor
-    only flushes finished spans, but on-start tags are still useful for
-    in-process processors).
-    """
+    """Open a span as an explicit child of the current OTel span; re-attaching
+    the parent keeps the tree stable across mixed instrumentation stacks."""
     current = trace.get_current_span()
     token = None
     try:
@@ -1066,84 +754,56 @@ def conversation(conversation_id: str):
     return decorator
 
 
-def function(name: str | None = None):
+def function(name: str | None = None, **kwargs):
     """Decorator that traces a function span."""
-    return observe(span_name=name, type=SpanType.FUNCTION)
+    return observe(span_name=name, type=SpanType.FUNCTION, **kwargs)
 
 
-def entry_point(name: str | None = None):
+def entry_point(name: str | None = None, **kwargs):
     """Decorator that traces an entry point span."""
-    return observe(span_name=name, type=SpanType.ENTRY_POINT)
+    return observe(span_name=name, type=SpanType.ENTRY_POINT, **kwargs)
 
 
-def workflow(name: str | None = None):
+def workflow(name: str | None = None, **kwargs):
     """Decorator that traces a workflow span."""
-    return observe(span_name=name, type=SpanType.WORKFLOW)
+    return observe(span_name=name, type=SpanType.WORKFLOW, **kwargs)
 
 
-def tool(name: str | None = None):
-    """Decorator that traces a tool span.
-
-    Beyond the generic ``observe`` capture, tool spans also stamp the
-    canonical ``tool.name`` / ``tool.arg_keys`` (and ``tool.error`` on
-    failure) so the server classifies and attributes them correctly.
-    """
-    return observe(span_name=name, type=SpanType.TOOL)
+def tool(name: str | None = None, **kwargs):
+    """Decorator that traces a tool span (adds ``tool.name`` / ``tool.arg_keys``)."""
+    return observe(span_name=name, type=SpanType.TOOL, **kwargs)
 
 
-def retrieval(name: str | None = None):
-    """Decorator that traces a retrieval / RAG step span.
-
-    Emits ``overmind.span.type = "retrieval"`` so the backend can render
-    retrieval steps distinctly from LLM and tool calls.  Stamp
-    ``overmind.retrieval.query_chars`` / ``overmind.retrieval.result_count``
-    inside the function via :func:`set_tag` for finer signal.
-    """
-    return observe(span_name=name, type=SpanType.RETRIEVAL)
+def retrieval(name: str | None = None, **kwargs):
+    """Decorator that traces a retrieval / RAG step span."""
+    return observe(span_name=name, type=SpanType.RETRIEVAL, **kwargs)
 
 
 # ---------------------------------------------------------------------------
-# Safe tracing helpers
-#
-# The overmind SDK ships @observe which serialises a function's positional
-# arguments and return value into ``inputs`` / ``outputs`` span attributes.
-# That's useful for general observability but unsafe inside Overmind itself,
-# where most traced functions touch the user's agent source, prompts,
-# datasets, or credentials.
-#
-# observe_safe      — drop-in for @observe that opens a child span WITHOUT
-#                     capturing inputs or outputs.  Use set_tag inside the
-#                     function for specific scalar / categorical metadata.
-# start_child_span  — explicit context-manager variant for loops, conditional
-#                     blocks, or sub-stages within a workflow.
-# set_progress / set_status / set_iteration_analytics
-#                   — stamp the right overmind.* attributes on the current
-#                     span using canonical keys from overmind.attrs so the
-#                     OTLP ingest pipeline can parse them reliably.
-# force_flush_traces — best-effort flush so terminal events reach the
-#                     backend before the CLI exits.
+# Safe tracing helpers (no input/output capture — for code that touches
+# prompts, datasets, or credentials)
 # ---------------------------------------------------------------------------
 
 
 def observe_safe(
     span_name: str | None = None,
     type: SpanType = SpanType.FUNCTION,
+    project_id: str | None = None,
+    agent_id: str | None = None,
 ) -> Callable[[F], F]:
-    """Decorator that opens a span without capturing arguments / return.
-
-    Unlike :func:`overmind.observe`, the wrapped function's inputs and
-    outputs are **not** serialised as span attributes — appropriate for
-    Overmind-internal code paths that handle prompts, source, datasets,
-    or credentials.  Use :func:`set_tag` inside the function for the
-    specific scalar / categorical metadata you want to surface.
-    """
+    """Like :func:`observe` but never captures arguments or return values;
+    use :func:`set_tag` inside the function for specific metadata."""
 
     def decorator(func: F) -> F:
         name = span_name or func.__name__
 
         @wraps(func)
         def wrapper(*args, **kwargs):
-            with start_child_span(name, span_type=type):
+            with start_child_span(name, span_type=type) as otel_span:
+                if project_id:
+                    otel_span.set_attribute(attrs.PROJECT_ID, project_id)
+                if agent_id:
+                    otel_span.set_attribute(attrs.AGENT_ID, agent_id)
                 return func(*args, **kwargs)
 
         return wrapper  # type: ignore[return-value]
@@ -1157,13 +817,8 @@ def observe_safe(
 
 
 def force_flush_traces(timeout_millis: int = 1000) -> None:
-    """Best-effort exporter flush for near real-time trace visibility.
-
-    Called on terminal events (run finish, ``KeyboardInterrupt``, fatal
-    exception) so the platform sees the final ``overmind.status`` tag
-    before the CLI exits.  No-op when the active provider doesn't
-    expose ``force_flush`` (e.g. the OTel API default ``ProxyTracerProvider``).
-    """
+    """Best-effort exporter flush before exit; no-op if the provider
+    lacks ``force_flush``."""
     provider = trace.get_tracer_provider()
     if hasattr(provider, "force_flush"):
         provider.force_flush(timeout_millis=timeout_millis)
@@ -1175,12 +830,8 @@ def set_progress(
     current: int | None = None,
     total: int | None = None,
 ) -> None:
-    """Mark the current span with a human-readable progress milestone.
-
-    *phase* is a short label (``"baseline_complete"``,
-    ``"iteration"``, ``"holdout"`` …).  *current* and *total*, when
-    provided, drive a uniform progress bar in the UI.
-    """
+    """Mark the current span with a progress milestone; *current* / *total*
+    drive the UI progress bar."""
     set_tag(attrs.PROGRESS_PHASE, phase)
     if current is not None:
         set_tag(attrs.PROGRESS_CURRENT, current)
@@ -1194,14 +845,8 @@ def set_status(
     error_type: str | None = None,
     error_message: str | None = None,
 ) -> None:
-    """Stamp the current span with an explicit lifecycle status.
-
-    *status* must be one of ``"running"`` / ``"success"`` /
-    ``"failed"`` / ``"cancelled"``.  When *status* is ``"failed"`` the
-    caller should also pass *error_type* and a scrubbed
-    *error_message* so the UI can surface a useful summary without
-    cracking open the underlying exception payload.
-    """
+    """Stamp an explicit lifecycle status: "running" / "success" / "failed"
+    / "cancelled". Pass error details when failed."""
     set_tag(attrs.STATUS, status)
     if error_type:
         set_tag(attrs.ERROR_TYPE, error_type)
@@ -1218,13 +863,8 @@ def set_iteration_analytics(
     reason: str | None = None,
     dimension_scores: Mapping[str, float] | None = None,
 ) -> None:
-    """Stamp the current span with optimizer iteration analytics.
-
-    All keys are emitted under the ``overmind.optimize.*`` namespace
-    so the OTLP ingest path can fold them into the corresponding
-    :class:`JobIteration` row regardless of which child span finalises
-    the iteration.
-    """
+    """Stamp optimizer iteration analytics (``overmind.optimize.*``) on the
+    current span."""
     set_tag(attrs.OPTIMIZE_ITERATION, iteration)
     set_tag(attrs.OPTIMIZE_ITERATION_DECISION, decision)
     if score is not None:

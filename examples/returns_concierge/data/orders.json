@@ -1,9 +1,0 @@
-{
-  "O-9001": {"order_id": "O-9001", "found": true, "customer_id": "C-1", "item": "Wool sweater", "amount": 89.00, "delivered_at": "2026-04-25T00:00:00Z", "final_sale": false},
-  "O-9002": {"order_id": "O-9002", "found": true, "customer_id": "C-2", "item": "Bluetooth headphones", "amount": 199.00, "delivered_at": "2026-04-20T00:00:00Z", "final_sale": false},
-  "O-9003": {"order_id": "O-9003", "found": true, "customer_id": "C-3", "item": "Clearance T-shirt", "amount": 14.00, "delivered_at": "2026-04-18T00:00:00Z", "final_sale": true},
-  "O-9004": {"order_id": "O-9004", "found": true, "customer_id": "C-4", "item": "Coffee maker", "amount": 129.00, "delivered_at": "2026-02-10T00:00:00Z", "final_sale": false},
-  "O-9005": {"order_id": "O-9005", "found": true, "customer_id": "C-5", "item": "Yoga mat", "amount": 39.00, "delivered_at": "2026-04-22T00:00:00Z", "final_sale": false},
-  "O-9006": {"order_id": "O-9006", "found": true, "customer_id": "C-6", "item": "Leather jacket", "amount": 449.00, "delivered_at": "2026-04-15T00:00:00Z", "final_sale": false},
-  "O-9007": {"order_id": "O-9007", "found": true, "customer_id": "C-7", "item": "Phone case", "amount": 25.00, "delivered_at": "2026-04-29T00:00:00Z", "final_sale": false}
-}

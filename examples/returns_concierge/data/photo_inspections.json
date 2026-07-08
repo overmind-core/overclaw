@@ -1,5 +1,0 @@
-{
-  "https://photos.example.com/9002-a": {"has_photos": true, "condition": "damaged", "notes": "visible crack on earcup"},
-  "https://photos.example.com/9006-a": {"has_photos": true, "condition": "good", "notes": "no visible damage, tags attached"},
-  "https://photos.example.com/9001-a": {"has_photos": true, "condition": "worn", "notes": "pilling on sleeves, no tags"}
-}

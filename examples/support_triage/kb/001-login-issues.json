@@ -1,6 +1,0 @@
-{
-  "id": "KB-001",
-  "title": "Troubleshooting login issues",
-  "body": "If a customer cannot log in, first check whether their email is verified. Users can resend the verification email from the login screen. If SSO is enabled for their organization, password reset is disabled - they must use their IdP. Common causes: cached session, wrong tenant, expired password.",
-  "tags": ["login", "auth", "sso", "password"]
-}

@@ -1,9 +1,0 @@
-{
-  "V-100": {"vendor_id": "V-100", "name": "AWS", "approved": true, "category": "cloud", "tax_id": "91-1646860"},
-  "V-101": {"vendor_id": "V-101", "name": "GitHub", "approved": true, "category": "saas", "tax_id": "20-8460950"},
-  "V-102": {"vendor_id": "V-102", "name": "Slack Technologies", "approved": true, "category": "saas", "tax_id": "27-2904412"},
-  "V-103": {"vendor_id": "V-103", "name": "Wilson & Sterling LLP", "approved": true, "category": "legal", "tax_id": "13-3456789"},
-  "V-104": {"vendor_id": "V-104", "name": "WeWork", "approved": true, "category": "facilities", "tax_id": "47-2200000"},
-  "V-105": {"vendor_id": "V-105", "name": "Acme Office Supplies", "approved": true, "category": "office", "tax_id": "55-1234567"},
-  "V-106": {"vendor_id": "V-106", "name": "GhostVendor LLC", "approved": false, "category": "unknown", "tax_id": null}
-}

@@ -20,10 +20,12 @@ pytestmark = pytest.mark.skipif(
     reason="Integration test: requires OVERMIND_API_KEY and OPENAI_API_KEY",
 )
 
-from openai import OpenAI
-from opentelemetry import trace as otel_trace
+openai = pytest.importorskip("openai")
+OpenAI = openai.OpenAI
 
-from overmind.tracing import init
+from opentelemetry import trace as otel_trace  # noqa: E402
+
+from overmind.tracing import init  # noqa: E402
 
 project_id = "e5445c2d-0e4b-4cb1-8a0c-26c18d0ba19f"
 

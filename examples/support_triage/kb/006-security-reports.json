@@ -1,6 +1,0 @@
-{
-  "id": "KB-006",
-  "title": "Security and vulnerability reports",
-  "body": "Anything that sounds like a vulnerability report (SQL injection, XSS, leaked tokens, account takeover) must be routed immediately to security@example.com and treated as P0. Do NOT ask the reporter for a proof of concept in the ticket thread.",
-  "tags": ["security", "vulnerability", "p0"]
-}
