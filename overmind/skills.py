@@ -58,15 +58,17 @@ def sync_skills(
 
 
 def sync_skill(skill: Skill, ide: str):
-    """Copy a skill file into the destination directory for Cursor IDE."""
+    """Copy a skill's SKILL.md into the destination directory."""
+    src = os.path.join(current_dir, "skills", skill.slug, "SKILL.md")
     dest_dir = get_destination_dir(ide)
-    dest_path = os.path.join(dest_dir, os.path.basename(skill.slug))
+    dest_path = os.path.join(dest_dir, skill.slug, "SKILL.md")
 
     if os.path.exists(dest_path):
         logging.info(f"{dest_path} already exists, skipping copy.")
         return
-    shutil.copy2(skill.slug, dest_path)
-    logging.info(f"Copied {skill.slug} to {dest_path}")
+    os.makedirs(dest_dir, exist_ok=True)
+    shutil.copy2(src, dest_path)
+    logging.info(f"Copied {src} to {dest_path}")
 
 
 def get_destination_dir(ide: str):

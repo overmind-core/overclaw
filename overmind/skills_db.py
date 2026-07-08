@@ -20,16 +20,9 @@ skills = [
     ),
     Skill(
         name="Overmind Telemetry",
-        slug="overmind-telemetry",
+        slug="overmind-agent-telemetry",
         description="Configure Overmind telemetry for your AI project",
         version="1.0",
         provider="overmind-core",
-    ),
-    Skill(
-        name="Ponytail",
-        slug="ponytail",
-        description="Review the optimization report and make changes to the policy, eval spec, or dataset if needed.",
-        version="1.0",
-        provider="DietrichGebert",
     ),
 ]
