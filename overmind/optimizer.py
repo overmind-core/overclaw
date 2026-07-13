@@ -10,9 +10,9 @@ clone path is server-side only and is never used here, so the same binary
 optimizes any repo.
 
 Usage:
-    curl -s https://static.overmindlab.ai/cli.py | OVERMIND_API_KEY=<api-key> \\
+    pip install "overmind>=0.1.54" && OVERMIND_API_KEY=<api-key> \\
     OVERMIND_API_URL=http://localhost:8000 \\
-    python - optimizer
+    overmind optimize
 
 Logging: INFO by default (startup, registration, every command + its outcome,
 periodic idle heartbeat). Set ``OPTIMIZER_LOG_LEVEL=DEBUG`` to see the full
@@ -41,9 +41,11 @@ import logging
 import multiprocessing
 import os
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import groupby
@@ -60,6 +62,7 @@ API_KEY = os.getenv("OVERMIND_API_KEY", "")
 WORK_DIR = os.getenv("OVERMIND_CWD", "") or None
 IDLE_INTERVAL = float(os.getenv("OPTIMIZER_POLL_INTERVAL", "5"))
 HEARTBEAT_INTERVAL = float(os.getenv("OPTIMIZER_HEARTBEAT_INTERVAL", "60"))
+HEARTBEAT_PING_INTERVAL = float(os.getenv("OPTIMIZER_HEARTBEAT_PING_INTERVAL", "3"))
 BUSY_INTERVAL = 0.5  # poll fast while there is work to drain
 MAX_BACKOFF = 30.0  # cap the exponential backoff on transport errors
 OUTPUT_TAIL = 8000  # chars of stdout/stderr to report back
@@ -88,12 +91,18 @@ def configure_logging(level_name: str | None = None) -> None:
 
 
 class OptimizerAPI:
-    """Thin HTTP transport for the three CLI endpoints (raw ``requests``)."""
+    """Thin HTTP transport for the three CLI endpoints (raw ``requests``).
+
+    ``requests.Session`` is not thread-safe for concurrent use, so all HTTP
+    calls are serialised through ``_lock`` — necessary once the background
+    heartbeat thread is started alongside the main poll loop.
+    """
 
     def __init__(self, base_url: str, api_key: str):
         self.base_url = base_url
         self.session = requests.Session()
         self.session.headers.update({"X-Api-Key": api_key, "Content-Type": "application/json"})
+        self._lock = threading.Lock()
         # NB: never log api_key — only confirm whether one was supplied.
         logger.debug(
             "OptimizerAPI ready: base_url=%s api_key=%s",
@@ -104,6 +113,7 @@ class OptimizerAPI:
     def register(self) -> str:
         uname = os.uname()
         memory = psutil.virtual_memory()
+        runtime = _runtime_metadata()
         payload = {
             "hostname": socket.gethostname(),
             "cli_version": "optimizer/0.1",
@@ -124,22 +134,36 @@ class OptimizerAPI:
                 "containerized": os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv"),
                 "architecture": getattr(uname, "machine", None),
                 "release": getattr(uname, "release", None),
-                "python.version": sys.version,
+                **runtime,
             },
         }
+        logger.info(
+            "register runtime: python=%s executable=%s uv.exists=%s uv.version=%s",
+            runtime.get("python.version_info"),
+            runtime.get("python.executable"),
+            runtime.get("uv.exists"),
+            runtime.get("uv.version"),
+        )
         logger.debug("POST %s/api/cli/sessions/ payload=%s", self.base_url, payload)
-        resp = self.session.post(f"{self.base_url}/api/cli/sessions/", json=payload, timeout=30)
+        with self._lock:
+            resp = self.session.post(f"{self.base_url}/api/cli/sessions/", json=payload, timeout=30)
         resp.raise_for_status()
         session_id = resp.json()["id"]
         logger.debug("register -> session_id=%s", session_id)
         return session_id
 
-    def poll(self, session_id: str) -> list[dict]:
-        logger.debug("POST .../sessions/%s/poll/ (heartbeat + lease)", session_id)
-        resp = self.session.post(f"{self.base_url}/api/cli/sessions/{session_id}/poll/", json={}, timeout=30)
+    def poll(self, session_id: str, *, lease: bool = True) -> list[dict]:
+        logger.debug("POST .../sessions/%s/poll/ (heartbeat lease=%s)", session_id, lease)
+        with self._lock:
+            resp = self.session.post(
+                f"{self.base_url}/api/cli/sessions/{session_id}/poll/",
+                json={"lease": lease},
+                timeout=30,
+            )
         resp.raise_for_status()
         commands = resp.json().get("commands", [])
-        logger.debug("poll leased %d command(s): %s", len(commands), [c.get("id") for c in commands])
+        if lease:
+            logger.debug("poll leased %d command(s): %s", len(commands), [c.get("id") for c in commands])
         return commands
 
     def submit_result(self, command_id: str, *, success: bool, result: dict, error: str) -> None:
@@ -149,14 +173,49 @@ class OptimizerAPI:
             success,
             result.get("trace_id"),
         )
-        resp = self.session.post(
-            f"{self.base_url}/api/cli/commands/{command_id}/result/",
-            json={"success": success, "result": result, "error": error},
-            timeout=60,
-        )
+        with self._lock:
+            resp = self.session.post(
+                f"{self.base_url}/api/cli/commands/{command_id}/result/",
+                json={"success": success, "result": result, "error": error},
+                timeout=60,
+            )
         resp.raise_for_status()
         logger.debug("result accepted for command=%s", command_id)
 
+
+def _tool_version(executable: str) -> str | None:
+    """Best-effort ``--version`` for a resolved binary; never raises."""
+    try:
+        proc = subprocess.run(
+            [executable, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return (proc.stdout or proc.stderr or "").strip() or None
+
+
+def _runtime_metadata() -> dict:
+    """Local interpreter + package-manager facts for the smoke-test codegen agent.
+
+    The server stores these on the session and should prefer ``uv`` only when
+    ``uv.exists`` is true (and fall back to ``python.executable`` otherwise).
+    """
+    uv_path = shutil.which("uv")
+    python_on_path = shutil.which("python3") or shutil.which("python")
+    return {
+        "python.version": sys.version,
+        "python.version_info": (
+            f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        ),
+        "python.executable": sys.executable,
+        "python.path": python_on_path,
+        "uv.exists": uv_path is not None,
+        "uv.path": uv_path,
+        "uv.version": _tool_version(uv_path) if uv_path else None,
+    }
 
 def _new_traceparent() -> tuple[str, str]:
     """Return ``(traceparent_header, trace_id)`` so the child's trace id is knowable.
@@ -346,6 +405,36 @@ def poll_once(api: OptimizerAPI, session_id: str, cwd: str | None = None) -> int
     return total
 
 
+def _start_heartbeat_thread(
+    api: OptimizerAPI,
+    session_id: str,
+    *,
+    heartbeat_ping_interval: float = HEARTBEAT_PING_INTERVAL,
+) -> threading.Thread:
+    """Spawn a daemon thread that pings the server every ``heartbeat_ping_interval`` seconds.
+
+    The main loop blocks while running commands (subprocess.run), so without this
+    the server marks the client stale after ``EXECUTIONER_STALE_AFTER`` (8s).
+    Using ``lease=False`` avoids double-claiming pending commands.
+    """
+
+    def _loop():
+        while True:
+            time.sleep(heartbeat_ping_interval)
+            try:
+                api.poll(session_id, lease=False)
+                logger.debug("heartbeat ping sent")
+            except requests.RequestException as exc:
+                logger.warning("heartbeat ping failed: %s", exc)
+            except Exception:
+                logger.exception("unexpected error in heartbeat thread")
+
+    thread = threading.Thread(target=_loop, daemon=True, name="optimizer-heartbeat")
+    thread.start()
+    logger.debug("heartbeat thread started (interval=%.1fs)", heartbeat_ping_interval)
+    return thread
+
+
 def _register_with_retry(api: OptimizerAPI, idle_interval: float = IDLE_INTERVAL) -> str:
     """Register, retrying with backoff so the daemon survives a backend that is
     not up yet (or restarting). Logs each attempt so a stuck startup is visible.
@@ -397,6 +486,8 @@ def run_optimizer(
     api = OptimizerAPI(api_url, api_key)
     session_id = _register_with_retry(api, idle_interval)
     logger.info("registered: session=%s", session_id)
+
+    _start_heartbeat_thread(api, session_id, heartbeat_ping_interval=HEARTBEAT_PING_INTERVAL)
 
     backoff = idle_interval
     last_heartbeat = time.monotonic()
