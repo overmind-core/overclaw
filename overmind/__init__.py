@@ -10,6 +10,7 @@ __version__ = "0.1.53"
 
 from opentelemetry.overmind.prompt import PromptString
 
+from .client import Client, ModelDeleted, OvermindInferenceError
 from .tracing import (
     SpanType,
     capture_exception,
@@ -34,6 +35,9 @@ from .tracing import (
 )
 
 __all__ = [
+    "Client",
+    "ModelDeleted",
+    "OvermindInferenceError",
     "PromptString",
     "SpanType",
     "capture_exception",
