@@ -146,11 +146,15 @@ def _parse_chat_completion(data: dict) -> ChatCompletion:
         for i, c in enumerate(data.get("choices", []))
     ]
     raw_usage = data.get("usage") or {}
-    usage = Usage(
-        prompt_tokens=raw_usage.get("prompt_tokens", 0),
-        completion_tokens=raw_usage.get("completion_tokens", 0),
-        total_tokens=raw_usage.get("total_tokens", 0),
-    ) if raw_usage else None
+    usage = (
+        Usage(
+            prompt_tokens=raw_usage.get("prompt_tokens", 0),
+            completion_tokens=raw_usage.get("completion_tokens", 0),
+            total_tokens=raw_usage.get("total_tokens", 0),
+        )
+        if raw_usage
+        else None
+    )
     return ChatCompletion(
         id=data.get("id", ""),
         object=data.get("object", "chat.completion"),
@@ -188,7 +192,7 @@ def _iter_sse_chunks(response: requests.Response) -> Iterator[ChatCompletionChun
         line: str = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
         if not line.startswith("data:"):
             continue
-        payload = line[len("data:"):].strip()
+        payload = line[len("data:") :].strip()
         if payload == "[DONE]":
             break
         try:
@@ -394,9 +398,7 @@ class Client:
     ) -> None:
         resolved_key = api_key or os.environ.get("OVERMIND_API_KEY")
         if not resolved_key:
-            raise ValueError(
-                "Missing API key. Pass api_key= or set the OVERMIND_API_KEY environment variable."
-            )
+            raise ValueError("Missing API key. Pass api_key= or set the OVERMIND_API_KEY environment variable.")
         resolved_url = (base_url or os.environ.get("OVERMIND_API_URL") or DEFAULT_BASE_URL).rstrip("/")
 
         self._base_url = resolved_url
