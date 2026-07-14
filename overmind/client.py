@@ -113,7 +113,7 @@ class Model:
     created: int
     owned_by: str
     base_model: str = ""
-    type: str = ""
+    finetuned: bool = False
     status: str = ""
 
 
@@ -280,7 +280,7 @@ def _parse_model(m: dict) -> Model:
         created=m.get("created", 0),
         owned_by=m.get("owned_by", "overmind"),
         base_model=m.get("base_model", ""),
-        type=m.get("type", ""),
+        finetuned=bool(m.get("finetuned", False)),
         status=m.get("status", ""),
     )
 
