@@ -45,8 +45,6 @@ import socket
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from itertools import groupby
 
 import psutil
 import requests
@@ -170,73 +168,71 @@ def _new_traceparent() -> tuple[str, str]:
     return f"00-{trace_id}-{span_id}-01", trace_id
 
 
-def _git_apply(diff_text: str, cwd: str | None, *, reverse: bool = False) -> subprocess.CompletedProcess:
+def _git_apply(diff_text: str, cwd: str | None, *, three_way: bool = False) -> subprocess.CompletedProcess:
     args = ["git", "apply", "--whitespace=nowarn"]
-    if reverse:
-        args.append("-R")
-    args.append("-")  # read the patch from stdin
+    if three_way:
+        args.append("--3way")
+    args.append("-")  # read the patch from stdin — no temp file needed
     if diff_text and not diff_text.endswith("\n"):
         diff_text += "\n"
     return subprocess.run(args, input=diff_text, cwd=cwd, text=True, capture_output=True)
 
 
-def _current_branch(cwd: str | None) -> str:
-    proc = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
+def _capture_base(cwd: str | None) -> str:
+    """Return the current HEAD sha — the stable base every candidate resets to.
+
+    Must be called before any patch is ever applied, so later resets always
+    return to the true base rather than a previously-patched tree.
+    """
+    proc = subprocess.run(["git", "rev-parse", "HEAD"], cwd=cwd, capture_output=True, text=True, check=True)
     return proc.stdout.strip()
 
 
-def _setup_iteration_branch(iteration_id: str, patch: str, cwd: str | None) -> None:
-    """Checkout a branch named after the iteration and apply the patch as a commit.
+def _reset_to_base(cwd: str | None, base: str) -> None:
+    """Discard whatever the previous command applied and return to a clean ``base``."""
+    subprocess.run(["git", "reset", "--hard", base], cwd=cwd, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "clean", "-fd"], cwd=cwd, check=True, capture_output=True, text=True)
 
-    If the branch already exists (daemon restart / retry), switch to it and skip
-    the apply step — the commit is already there.
+
+def _select_patch(cmd: dict) -> str:
+    """Pick this command's own diff: new-style ``code_path`` wins whenever the
+    key exists — even ``""`` (the baseline candidate) — since that still tells
+    us the backend is patch-aware. Only fall back to the legacy, shared
+    ``iteration_patch`` when ``code_path`` is entirely absent (old backend).
+
+    Despite the name, ``code_path`` (like ``iteration_patch``) is unified-diff
+    *text*, not a filesystem path.
     """
-    proc = subprocess.run(
-        ["git", "checkout", "-b", iteration_id],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        # Branch already exists; just switch to it.
-        subprocess.run(["git", "checkout", iteration_id], cwd=cwd, check=True)
-        logger.debug("iteration %s: reusing existing branch", iteration_id)
+    if "code_path" in cmd:
+        return cmd.get("code_path") or ""
+    return cmd.get("iteration_patch") or ""
+
+
+def _apply_candidate_patch(patch: str, cwd: str | None) -> None:
+    """Apply one command's own diff to an already-reset tree.
+
+    Falls back to ``--3way`` for fuzzier application; raises with git's stderr
+    if both fail so the caller reports the command as failed rather than
+    running it unpatched (that's the bug this replaces).
+    """
+    proc = _git_apply(patch, cwd)
+    if proc.returncode == 0:
         return
-
-    if not patch:
-        logger.debug("iteration %s: no patch — baseline branch ready", iteration_id)
+    err = proc.stderr.strip()
+    if _git_apply(patch, cwd, three_way=True).returncode == 0:
         return
-
-    apply_proc = _git_apply(patch, cwd)
-    if apply_proc.returncode != 0:
-        err = apply_proc.stderr.strip()
-        raise RuntimeError(f"git apply failed for iteration {iteration_id}: {err}")
-
-    subprocess.run(["git", "add", "-A"], cwd=cwd, check=True)
-    subprocess.run(
-        ["git", "commit", "-m", f"apply patch for iteration {iteration_id}"],
-        cwd=cwd,
-        check=True,
-    )
-    logger.info("iteration %s: patch applied and committed", iteration_id)
+    raise RuntimeError(f"git apply failed: {err}")
 
 
 def run_command(cmd: dict, cwd: str | None = None) -> tuple[bool, dict, str]:
     """Run one server command and capture its output.
 
-    The patch has already been committed to the iteration branch by
-    ``_setup_iteration_branch`` before this is called. We only verify we are
-    on the right branch (sanity check), then run the shell command.
+    The caller (``poll_once``) has already reset the tree to ``base`` and
+    applied this command's own candidate patch (if any) before this is called.
     """
     cmd_id = cmd.get("id", "?")
     cwd = cwd if cwd is not None else WORK_DIR
     command = cmd.get("command") or ""
-    iteration_id = cmd.get("iteration_id", "")
     timeout = int(cmd.get("timeout") or 600)
     traceparent, trace_id = _new_traceparent()
     env = {**os.environ, "TRACEPARENT": traceparent}
@@ -244,14 +240,6 @@ def run_command(cmd: dict, cwd: str | None = None) -> tuple[bool, dict, str]:
     if not command:
         logger.error("command %s has empty command text; reporting failure", cmd_id)
         return False, {"trace_id": trace_id}, "empty command"
-
-    # Sanity check: the branch must match the iteration we set up.
-    if iteration_id:
-        branch = _current_branch(cwd)
-        if branch != iteration_id:
-            msg = f"branch mismatch: on '{branch}' but expected '{iteration_id}'"
-            logger.error("command %s: %s", cmd_id, msg)
-            return False, {"trace_id": trace_id}, msg
 
     logger.info(
         "running command %s (datapoint #%s, trace=%s)",
@@ -302,48 +290,52 @@ def run_command(cmd: dict, cwd: str | None = None) -> tuple[bool, dict, str]:
         return False, {"trace_id": trace_id}, str(exc)[:OUTPUT_TAIL]
 
 
-def poll_once(api: OptimizerAPI, session_id: str, cwd: str | None = None) -> int:
-    """Run all leased commands this tick, grouped by iteration, in parallel.
+def poll_once(api: OptimizerAPI, session_id: str, cwd: str | None = None, base: str | None = None) -> int:
+    """Run every leased command this tick, serially, each against its own patch.
 
-    For each iteration batch: checkout the iteration branch with the patch
-    applied as a single commit, then run all commands for that iteration
-    concurrently (up to 8 at a time).
+    All commands share one working tree, so they cannot be patched concurrently
+    (see spec: Option A). Each command gets an independent, self-describing
+    turn: reset to ``base`` → apply its own diff, if any → run → report. This is
+    what makes candidate N run against candidate N's diff instead of candidate
+    0's (the bug this replaces).
     """
     cwd = cwd if cwd is not None else WORK_DIR
     commands = api.poll(session_id)
     if not commands:
         return 0
+    if base is None:
+        base = _capture_base(cwd)
 
-    # Group by iteration_id preserving server order (commands arrive ordered by created_at).
-    sorted_cmds = sorted(commands, key=lambda c: c.get("iteration_id", ""))
-    total = 0
-    for iteration_id, batch_iter in groupby(sorted_cmds, key=lambda c: c.get("iteration_id", "")):
-        batch = list(batch_iter)
-        patch = batch[0].get("iteration_patch", "")
+    for cmd in commands:
+        cmd_id = cmd.get("id", "?")
+        try:
+            _reset_to_base(cwd, base)
+        except subprocess.CalledProcessError as exc:
+            err = (exc.stderr or str(exc)).strip()
+            logger.error("command %s: reset to base failed: %s", cmd_id, err)
+            api.submit_result(cmd["id"], success=False, result={}, error=f"git reset failed: {err}")
+            continue
 
-        if iteration_id:
+        patch = _select_patch(cmd)
+        if patch:
             try:
-                _setup_iteration_branch(iteration_id, patch, cwd)
-            except Exception as exc:
-                logger.error("iteration %s: branch setup failed: %s", iteration_id, exc)
-                for cmd in batch:
-                    api.submit_result(cmd["id"], success=False, result={}, error=f"branch setup failed: {exc}")
-                total += len(batch)
+                _apply_candidate_patch(patch, cwd)
+                logger.debug("command %s: candidate patch applied", cmd_id)
+            except RuntimeError as exc:
+                logger.error("command %s: %s", cmd_id, exc)
+                api.submit_result(cmd["id"], success=False, result={}, error=str(exc))
                 continue
+        else:
+            logger.debug("command %s: baseline candidate — no patch", cmd_id)
 
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            future_to_cmd = {pool.submit(run_command, cmd, cwd): cmd for cmd in batch}
-            for future in as_completed(future_to_cmd):
-                cmd = future_to_cmd[future]
-                try:
-                    success, result, error = future.result()
-                except Exception as exc:
-                    logger.exception("command %s raised unexpectedly", cmd.get("id"))
-                    success, result, error = False, {}, str(exc)
-                api.submit_result(cmd["id"], success=success, result=result, error=error)
+        try:
+            success, result, error = run_command(cmd, cwd)
+        except Exception as exc:
+            logger.exception("command %s raised unexpectedly", cmd_id)
+            success, result, error = False, {}, str(exc)
+        api.submit_result(cmd["id"], success=success, result=result, error=error)
 
-        total += len(batch)
-    return total
+    return len(commands)
 
 
 def _register_with_retry(api: OptimizerAPI, idle_interval: float = IDLE_INTERVAL) -> str:
@@ -398,11 +390,21 @@ def run_optimizer(
     session_id = _register_with_retry(api, idle_interval)
     logger.info("registered: session=%s", session_id)
 
+    # Captured once, before any command ever applies a patch, so every reset
+    # for the rest of this run returns to the true base — never a previously
+    # patched tree.
+    try:
+        base = _capture_base(cwd)
+    except subprocess.CalledProcessError as exc:
+        logger.error("%s is not a git repo (or has no commits): %s", cwd or os.getcwd(), exc.stderr)
+        raise SystemExit(2) from exc
+    logger.info("base ref: %s", base)
+
     backoff = idle_interval
     last_heartbeat = time.monotonic()
     while True:
         try:
-            ran = poll_once(api, session_id, cwd)
+            ran = poll_once(api, session_id, cwd, base)
             now = time.monotonic()
             if ran:
                 logger.info("ran %d command(s) this tick", ran)

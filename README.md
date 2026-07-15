@@ -48,7 +48,7 @@ export OVERMIND_API_KEY=<your-api-key>
 overmind optimize
 ```
 
-This registers the current machine with the backend and loops forever: it leases queued commands from the experiment you configured in the Console, checks out the iteration's git branch (applying its candidate diff as a commit), runs the shell command against your repo, and reports the result back. Stop it any time with Ctrl-C; re-running is safe and idempotent per iteration branch.
+This registers the current machine with the backend and loops forever: it leases queued commands from the experiment you configured in the Console, and for each one resets your repo to a clean base commit, applies that command's own candidate diff (baseline candidates run unpatched), runs the shell command against your repo, and reports the result back. Every command is self-contained — a diff that fails to apply is reported as a failed command rather than silently running unpatched. Stop it any time with Ctrl-C.
 
 ### Options / environment variables
 

@@ -6,7 +6,7 @@ Overmind: automatic observability for LLM applications.
 
 """
 
-__version__ = "0.1.54"
+__version__ = "0.1.55"
 
 from opentelemetry.overmind.prompt import PromptString
 
