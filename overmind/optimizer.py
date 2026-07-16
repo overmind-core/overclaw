@@ -10,9 +10,9 @@ clone path is server-side only and is never used here, so the same binary
 optimizes any repo.
 
 Usage:
-    curl -s https://static.overmindlab.ai/cli.py | OVERMIND_API_KEY=<api-key> \\
+    pip install "overmind>=0.1.54" && OVERMIND_API_KEY=<api-key> \\
     OVERMIND_API_URL=http://localhost:8000 \\
-    python - optimizer
+    overmind optimize
 
 Logging: INFO by default (startup, registration, every command + its outcome,
 periodic idle heartbeat). Set ``OPTIMIZER_LOG_LEVEL=DEBUG`` to see the full
@@ -41,9 +41,11 @@ import logging
 import multiprocessing
 import os
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import groupby
@@ -60,6 +62,7 @@ API_KEY = os.getenv("OVERMIND_API_KEY", "")
 WORK_DIR = os.getenv("OVERMIND_CWD", "") or None
 IDLE_INTERVAL = float(os.getenv("OPTIMIZER_POLL_INTERVAL", "5"))
 HEARTBEAT_INTERVAL = float(os.getenv("OPTIMIZER_HEARTBEAT_INTERVAL", "60"))
+HEARTBEAT_PING_INTERVAL = float(os.getenv("OPTIMIZER_HEARTBEAT_PING_INTERVAL", "3"))
 BUSY_INTERVAL = 0.5  # poll fast while there is work to drain
 MAX_BACKOFF = 30.0  # cap the exponential backoff on transport errors
 OUTPUT_TAIL = 8000  # chars of stdout/stderr to report back
@@ -88,12 +91,18 @@ def configure_logging(level_name: str | None = None) -> None:
 
 
 class OptimizerAPI:
-    """Thin HTTP transport for the three CLI endpoints (raw ``requests``)."""
+    """Thin HTTP transport for the three CLI endpoints (raw ``requests``).
+
+    ``requests.Session`` is not thread-safe for concurrent use, so all HTTP
+    calls are serialised through ``_lock`` — necessary once the background
+    heartbeat thread is started alongside the main poll loop.
+    """
 
     def __init__(self, base_url: str, api_key: str):
         self.base_url = base_url
         self.session = requests.Session()
         self.session.headers.update({"X-Api-Key": api_key, "Content-Type": "application/json"})
+        self._lock = threading.Lock()
         # NB: never log api_key — only confirm whether one was supplied.
         logger.debug(
             "OptimizerAPI ready: base_url=%s api_key=%s",
@@ -104,6 +113,7 @@ class OptimizerAPI:
     def register(self) -> str:
         uname = os.uname()
         memory = psutil.virtual_memory()
+        runtime = _runtime_metadata()
         payload = {
             "hostname": socket.gethostname(),
             "cli_version": "optimizer/0.1",
@@ -124,22 +134,36 @@ class OptimizerAPI:
                 "containerized": os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv"),
                 "architecture": getattr(uname, "machine", None),
                 "release": getattr(uname, "release", None),
-                "python.version": sys.version,
+                **runtime,
             },
         }
+        logger.info(
+            "register runtime: python=%s executable=%s uv.exists=%s uv.version=%s",
+            runtime.get("python.version_info"),
+            runtime.get("python.executable"),
+            runtime.get("uv.exists"),
+            runtime.get("uv.version"),
+        )
         logger.debug("POST %s/api/cli/sessions/ payload=%s", self.base_url, payload)
-        resp = self.session.post(f"{self.base_url}/api/cli/sessions/", json=payload, timeout=30)
+        with self._lock:
+            resp = self.session.post(f"{self.base_url}/api/cli/sessions/", json=payload, timeout=30)
         resp.raise_for_status()
         session_id = resp.json()["id"]
         logger.debug("register -> session_id=%s", session_id)
         return session_id
 
-    def poll(self, session_id: str) -> list[dict]:
-        logger.debug("POST .../sessions/%s/poll/ (heartbeat + lease)", session_id)
-        resp = self.session.post(f"{self.base_url}/api/cli/sessions/{session_id}/poll/", json={}, timeout=30)
+    def poll(self, session_id: str, *, lease: bool = True) -> list[dict]:
+        logger.debug("POST .../sessions/%s/poll/ (heartbeat lease=%s)", session_id, lease)
+        with self._lock:
+            resp = self.session.post(
+                f"{self.base_url}/api/cli/sessions/{session_id}/poll/",
+                json={"lease": lease},
+                timeout=30,
+            )
         resp.raise_for_status()
         commands = resp.json().get("commands", [])
-        logger.debug("poll leased %d command(s): %s", len(commands), [c.get("id") for c in commands])
+        if lease:
+            logger.debug("poll leased %d command(s): %s", len(commands), [c.get("id") for c in commands])
         return commands
 
     def submit_result(self, command_id: str, *, success: bool, result: dict, error: str) -> None:
@@ -149,13 +173,47 @@ class OptimizerAPI:
             success,
             result.get("trace_id"),
         )
-        resp = self.session.post(
-            f"{self.base_url}/api/cli/commands/{command_id}/result/",
-            json={"success": success, "result": result, "error": error},
-            timeout=60,
-        )
+        with self._lock:
+            resp = self.session.post(
+                f"{self.base_url}/api/cli/commands/{command_id}/result/",
+                json={"success": success, "result": result, "error": error},
+                timeout=60,
+            )
         resp.raise_for_status()
         logger.debug("result accepted for command=%s", command_id)
+
+
+def _tool_version(executable: str) -> str | None:
+    """Best-effort ``--version`` for a resolved binary; never raises."""
+    try:
+        proc = subprocess.run(
+            [executable, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return (proc.stdout or proc.stderr or "").strip() or None
+
+
+def _runtime_metadata() -> dict:
+    """Local interpreter + package-manager facts for the smoke-test codegen agent.
+
+    The server stores these on the session and should prefer ``uv`` only when
+    ``uv.exists`` is true (and fall back to ``python.executable`` otherwise).
+    """
+    uv_path = shutil.which("uv")
+    python_on_path = shutil.which("python3") or shutil.which("python")
+    return {
+        "python.version": sys.version,
+        "python.version_info": (f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"),
+        "python.executable": sys.executable,
+        "python.path": python_on_path,
+        "uv.exists": uv_path is not None,
+        "uv.path": uv_path,
+        "uv.version": _tool_version(uv_path) if uv_path else None,
+    }
 
 
 def _new_traceparent() -> tuple[str, str]:
@@ -190,40 +248,33 @@ def _current_branch(cwd: str | None) -> str:
     return proc.stdout.strip()
 
 
-def _setup_iteration_branch(iteration_id: str, patch: str, cwd: str | None) -> None:
-    """Checkout a branch named after the iteration and apply the patch as a commit.
+def _setup_candidate_branch(base_ref: str, candidate_id: str, patch: str, cwd: str | None) -> None:
+    """Checkout a branch named after the candidate, branched from ``base_ref``, with the patch applied.
 
-    If the branch already exists (daemon restart / retry), switch to it and skip
-    the apply step — the commit is already there.
+    Always starts from ``base_ref`` (force-checkout) so each candidate is independent
+    of whatever branch was active before. On daemon restart the branch is force-reset
+    to base_ref and the patch is re-applied cleanly.
     """
-    proc = subprocess.run(
-        ["git", "checkout", "-b", iteration_id],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        # Branch already exists; just switch to it.
-        subprocess.run(["git", "checkout", iteration_id], cwd=cwd, check=True)
-        logger.debug("iteration %s: reusing existing branch", iteration_id)
-        return
+    subprocess.run(["git", "checkout", "-f", base_ref], cwd=cwd, check=True, capture_output=True)
+    subprocess.run(["git", "checkout", "-B", candidate_id], cwd=cwd, check=True, capture_output=True)
 
     if not patch:
-        logger.debug("iteration %s: no patch — baseline branch ready", iteration_id)
+        logger.debug("candidate %s: no patch — branch ready at %s", candidate_id, base_ref)
         return
 
     apply_proc = _git_apply(patch, cwd)
     if apply_proc.returncode != 0:
         err = apply_proc.stderr.strip()
-        raise RuntimeError(f"git apply failed for iteration {iteration_id}: {err}")
+        raise RuntimeError(f"git apply failed for candidate {candidate_id}: {err}")
 
-    subprocess.run(["git", "add", "-A"], cwd=cwd, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=cwd, check=True, capture_output=True)
     subprocess.run(
-        ["git", "commit", "-m", f"apply patch for iteration {iteration_id}"],
+        ["git", "commit", "-m", f"apply patch for candidate {candidate_id}"],
         cwd=cwd,
         check=True,
+        capture_output=True,
     )
-    logger.info("iteration %s: patch applied and committed", iteration_id)
+    logger.info("candidate %s: patch applied and committed (base=%s)", candidate_id, base_ref)
 
 
 def run_command(cmd: dict, cwd: str | None = None) -> tuple[bool, dict, str]:
@@ -236,7 +287,7 @@ def run_command(cmd: dict, cwd: str | None = None) -> tuple[bool, dict, str]:
     cmd_id = cmd.get("id", "?")
     cwd = cwd if cwd is not None else WORK_DIR
     command = cmd.get("command") or ""
-    iteration_id = cmd.get("iteration_id", "")
+    candidate_id = cmd.get("candidate_id", "")
     timeout = int(cmd.get("timeout") or 600)
     traceparent, trace_id = _new_traceparent()
     env = {**os.environ, "TRACEPARENT": traceparent}
@@ -245,18 +296,19 @@ def run_command(cmd: dict, cwd: str | None = None) -> tuple[bool, dict, str]:
         logger.error("command %s has empty command text; reporting failure", cmd_id)
         return False, {"trace_id": trace_id}, "empty command"
 
-    # Sanity check: the branch must match the iteration we set up.
-    if iteration_id:
+    # Sanity check: the branch must match the candidate we set up.
+    if candidate_id:
         branch = _current_branch(cwd)
-        if branch != iteration_id:
-            msg = f"branch mismatch: on '{branch}' but expected '{iteration_id}'"
+        if branch != candidate_id:
+            msg = f"branch mismatch: on '{branch}' but expected '{candidate_id}'"
             logger.error("command %s: %s", cmd_id, msg)
             return False, {"trace_id": trace_id}, msg
 
     logger.info(
-        "running command %s (datapoint #%s, trace=%s)",
+        "running command %s (datapoint #%s, candidate=%s, trace=%s)",
         cmd_id,
         cmd.get("datapoint_index", "?"),
+        candidate_id or "smoke",
         trace_id,
     )
     logger.debug(
@@ -302,34 +354,37 @@ def run_command(cmd: dict, cwd: str | None = None) -> tuple[bool, dict, str]:
         return False, {"trace_id": trace_id}, str(exc)[:OUTPUT_TAIL]
 
 
-def poll_once(api: OptimizerAPI, session_id: str, cwd: str | None = None) -> int:
-    """Run all leased commands this tick, grouped by iteration, in parallel.
+def poll_once(api: OptimizerAPI, session_id: str, cwd: str | None = None, base_ref: str | None = None) -> int:
+    """Run all leased commands this tick, grouped by candidate, in parallel within each candidate.
 
-    For each iteration batch: checkout the iteration branch with the patch
-    applied as a single commit, then run all commands for that iteration
-    concurrently (up to 8 at a time).
+    Candidates are processed sequentially (each needs a distinct git branch with its own patch
+    applied), while all commands for one candidate run concurrently (up to 8 at a time).
+    ``base_ref`` is the git ref (branch/commit) to branch every candidate from, so all
+    candidates start from the same clean base code regardless of prior checkouts.
     """
     cwd = cwd if cwd is not None else WORK_DIR
     commands = api.poll(session_id)
     if not commands:
         return 0
 
-    # Group by iteration_id preserving server order (commands arrive ordered by created_at).
-    sorted_cmds = sorted(commands, key=lambda c: c.get("iteration_id", ""))
+    # Group by candidate_id preserving server order (commands arrive ordered by created_at).
+    sorted_cmds = sorted(commands, key=lambda c: c.get("candidate_id", ""))
     total = 0
-    for iteration_id, batch_iter in groupby(sorted_cmds, key=lambda c: c.get("iteration_id", "")):
+    for candidate_id, batch_iter in groupby(sorted_cmds, key=lambda c: c.get("candidate_id", "")):
         batch = list(batch_iter)
-        patch = batch[0].get("iteration_patch", "")
+        patch = batch[0].get("candidate_patch", "")
 
-        if iteration_id:
+        if candidate_id and base_ref:
             try:
-                _setup_iteration_branch(iteration_id, patch, cwd)
+                _setup_candidate_branch(base_ref, candidate_id, patch, cwd)
             except Exception as exc:
-                logger.error("iteration %s: branch setup failed: %s", iteration_id, exc)
+                logger.error("candidate %s: branch setup failed: %s", candidate_id, exc)
                 for cmd in batch:
                     api.submit_result(cmd["id"], success=False, result={}, error=f"branch setup failed: {exc}")
                 total += len(batch)
                 continue
+        elif candidate_id and not base_ref:
+            logger.warning("candidate %s: no base_ref available, skipping branch setup", candidate_id)
 
         with ThreadPoolExecutor(max_workers=8) as pool:
             future_to_cmd = {pool.submit(run_command, cmd, cwd): cmd for cmd in batch}
@@ -344,6 +399,36 @@ def poll_once(api: OptimizerAPI, session_id: str, cwd: str | None = None) -> int
 
         total += len(batch)
     return total
+
+
+def _start_heartbeat_thread(
+    api: OptimizerAPI,
+    session_id: str,
+    *,
+    heartbeat_ping_interval: float = HEARTBEAT_PING_INTERVAL,
+) -> threading.Thread:
+    """Spawn a daemon thread that pings the server every ``heartbeat_ping_interval`` seconds.
+
+    The main loop blocks while running commands (subprocess.run), so without this
+    the server marks the client stale after ``EXECUTIONER_STALE_AFTER`` (8s).
+    Using ``lease=False`` avoids double-claiming pending commands.
+    """
+
+    def _loop():
+        while True:
+            time.sleep(heartbeat_ping_interval)
+            try:
+                api.poll(session_id, lease=False)
+                logger.debug("heartbeat ping sent")
+            except requests.RequestException as exc:
+                logger.warning("heartbeat ping failed: %s", exc)
+            except Exception:
+                logger.exception("unexpected error in heartbeat thread")
+
+    thread = threading.Thread(target=_loop, daemon=True, name="optimizer-heartbeat")
+    thread.start()
+    logger.debug("heartbeat thread started (interval=%.1fs)", heartbeat_ping_interval)
+    return thread
 
 
 def _register_with_retry(api: OptimizerAPI, idle_interval: float = IDLE_INTERVAL) -> str:
@@ -387,22 +472,29 @@ def run_optimizer(
         logger.error("OVERMIND_API_KEY is required")
         raise SystemExit(2)
 
+    # Capture the base branch before any candidate checkouts so every candidate
+    # can branch from the same clean starting point.
+    base_ref = _current_branch(cwd) or "main"
+
     logger.info(
-        "optimizer starting: api=%s host=%s idle=%.1fs heartbeat=%.0fs",
+        "optimizer starting: api=%s host=%s idle=%.1fs heartbeat=%.0fs base_ref=%s",
         api_url,
         socket.gethostname(),
         idle_interval,
         heartbeat_interval,
+        base_ref,
     )
     api = OptimizerAPI(api_url, api_key)
     session_id = _register_with_retry(api, idle_interval)
     logger.info("registered: session=%s", session_id)
 
+    _start_heartbeat_thread(api, session_id, heartbeat_ping_interval=HEARTBEAT_PING_INTERVAL)
+
     backoff = idle_interval
     last_heartbeat = time.monotonic()
     while True:
         try:
-            ran = poll_once(api, session_id, cwd)
+            ran = poll_once(api, session_id, cwd, base_ref=base_ref)
             now = time.monotonic()
             if ran:
                 logger.info("ran %d command(s) this tick", ran)
