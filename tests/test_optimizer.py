@@ -3,12 +3,13 @@
 Moved from the old ``selftest()`` in :mod:`overmind.optimizer` — asserts the
 traceparent shape and that a trivial command round-trips into the result dict
 (success + captured output + trace id), and that a failing command reports
-failure with stderr.  Does not exercise ``_setup_iteration_branch`` (needs a
-real git repo).
+failure with stderr.  Exercises ``_setup_candidate_branch`` with a real temp
+git repo.
 """
 
 from __future__ import annotations
 
+import subprocess
 import threading
 import time
 from types import SimpleNamespace
@@ -119,3 +120,90 @@ def test_heartbeat_thread_pings_while_main_is_blocked():
     assert pings.count(False) >= 1
     # The main loop has not called poll at all, so no lease=True pings.
     assert pings.count(True) == 0
+
+
+# ── _setup_candidate_branch: per-candidate patches from a shared base ─────────
+
+
+def _init_git_repo(path):
+    """Create a minimal git repo with one file committed on a 'main' branch."""
+    subprocess.run(["git", "init", "-b", "main", str(path)], check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=path, check=True, capture_output=True)
+    (path / "agent.py").write_text("PROMPT = 'v0'\n")
+    subprocess.run(["git", "add", "-A"], cwd=path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True)
+
+
+def _make_patch(old: str, new: str, filename: str = "agent.py") -> str:
+    """Build a minimal unified diff string replacing ``old`` with ``new`` in ``filename``."""
+    import difflib
+
+    return "".join(
+        difflib.unified_diff(
+            [old + "\n"],
+            [new + "\n"],
+            fromfile=f"a/{filename}",
+            tofile=f"b/{filename}",
+        )
+    )
+
+
+def test_setup_candidate_branch_distinct_patches_produce_distinct_contents(tmp_path):
+    """Two candidates with different patches each land on their own branch with distinct file contents."""
+    from overmind.optimizer import _setup_candidate_branch
+
+    _init_git_repo(tmp_path)
+    base_ref = "main"
+
+    patch_a = _make_patch("PROMPT = 'v0'", "PROMPT = 'candidate-a'")
+    patch_b = _make_patch("PROMPT = 'v0'", "PROMPT = 'candidate-b'")
+
+    _setup_candidate_branch(base_ref, "cand-a", patch_a, tmp_path)
+    content_a = (tmp_path / "agent.py").read_text()
+
+    _setup_candidate_branch(base_ref, "cand-b", patch_b, tmp_path)
+    content_b = (tmp_path / "agent.py").read_text()
+
+    assert "candidate-a" in content_a, content_a
+    assert "candidate-b" in content_b, content_b
+    assert content_a != content_b
+
+    # Both branches exist and each points to its own commit (not main's commit).
+    main_sha = subprocess.run(["git", "rev-parse", "main"], cwd=tmp_path, capture_output=True, text=True).stdout.strip()
+    sha_a = subprocess.run(["git", "rev-parse", "cand-a"], cwd=tmp_path, capture_output=True, text=True).stdout.strip()
+    sha_b = subprocess.run(["git", "rev-parse", "cand-b"], cwd=tmp_path, capture_output=True, text=True).stdout.strip()
+    assert sha_a != main_sha
+    assert sha_b != main_sha
+    assert sha_a != sha_b
+
+
+def test_setup_candidate_branch_cumulative_patch_applies_cleanly(tmp_path):
+    """A cumulative patch (base improvement + extra change) applies correctly from main."""
+    from overmind.optimizer import _setup_candidate_branch
+
+    _init_git_repo(tmp_path)
+    base_ref = "main"
+
+    # Simulate a cumulative diff: best-so-far change + new candidate change, all from main.
+    cumulative_patch = _make_patch("PROMPT = 'v0'", "PROMPT = 'v0 + best + extra'")
+
+    _setup_candidate_branch(base_ref, "cand-cumulative", cumulative_patch, tmp_path)
+    content = (tmp_path / "agent.py").read_text()
+
+    assert "v0 + best + extra" in content, content
+
+
+def test_setup_candidate_branch_idempotent_on_restart(tmp_path):
+    """Calling setup again for the same candidate (restart scenario) resets to a clean state."""
+    from overmind.optimizer import _setup_candidate_branch
+
+    _init_git_repo(tmp_path)
+    base_ref = "main"
+    patch = _make_patch("PROMPT = 'v0'", "PROMPT = 'restarted'")
+
+    _setup_candidate_branch(base_ref, "cand-r", patch, tmp_path)
+    # Call again — should force-reset without error.
+    _setup_candidate_branch(base_ref, "cand-r", patch, tmp_path)
+    content = (tmp_path / "agent.py").read_text()
+    assert "restarted" in content, content
