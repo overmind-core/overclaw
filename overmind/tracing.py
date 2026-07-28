@@ -240,6 +240,12 @@ class _GenAiUsageSpanProcessor(SpanProcessor):
         return
 
     def on_end(self, span) -> None:
+        try:
+            self.patch_on_end(span)
+        except Exception:
+            logger.debug("genai enrichment could not set attributes", exc_info=True)
+
+    def patch_on_end(self, span) -> None:
         updates = canonical_usage_updates(span.attributes or {})
         if not updates:
             return
