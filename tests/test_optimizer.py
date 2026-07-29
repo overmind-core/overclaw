@@ -1,4 +1,4 @@
-"""No-network sanity checks for the optimizer client's command-running path.
+"""No-network sanity checks for the optimiser client's command-running path.
 
 Moved from the old ``selftest()`` in :mod:`overmind.optimizer` — asserts the
 traceparent shape and that a trivial command round-trips into the result dict

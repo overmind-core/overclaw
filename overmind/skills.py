@@ -1,7 +1,7 @@
-"""Overmind CLI — optimize LLM agents and manage agent skills.
+"""Overmind CLI — optimise LLM agents and manage agent skills.
 
 Commands:
-    optimize                  Run the optimization loop on a registered agent.
+    optimise                  Run the optimisation loop on a registered agent.
     skills                    Manage Overmind agent skills.
 
 Use --help with any command or subcommand for details.

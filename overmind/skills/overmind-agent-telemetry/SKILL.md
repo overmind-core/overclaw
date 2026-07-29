@@ -15,7 +15,7 @@ or ride alongside a telemetry stack the project already has.
 ```
 - [ ] 1. Detect existing telemetry (OpenTelemetry, Traceloop, LangSmith, etc.)
 - [ ] 2. Install the SDK and set env vars
-- [ ] 3. Initialize — greenfield OR fan-out onto the existing provider
+- [ ] 3. Initialise — greenfield OR fan-out onto the existing provider
 - [ ] 4. Auto-instrument the LLM providers in use
 - [ ] 5. Add custom spans where useful
 - [ ] 6. Flush on shutdown and verify traces land in the Console
@@ -33,7 +33,7 @@ rg -n "set_tracer_provider|TracerProvider|opentelemetry|traceloop|Traceloop|lang
   installs the provider.
 - **A `TracerProvider` is already set** (OTel directly, Traceloop/OpenLLMetry,
   LangSmith's OTel bridge, etc.) → fan-out path (Step 3b). OpenTelemetry only
-  honors the **first** `set_tracer_provider()` call and ignores later ones with
+  honours the **first** `set_tracer_provider()` call and ignores later ones with
   a warning, so calling `overmind.init()` on top of an existing provider would
   silently attach nothing. Instead, add Overmind's exporter to the provider the
   project already owns.

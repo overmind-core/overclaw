@@ -20,7 +20,7 @@ drafts a first reply. Uses an internal KB, a customer lookup, and public docs.
 overmind agent register support-triage agent:run
 overmind agent validate support-triage --data data/seed.json
 overmind setup support-triage
-overmind optimize support-triage
+overmind optimise support-triage
 ```
 
 ## Trace it

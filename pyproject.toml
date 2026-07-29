@@ -31,7 +31,7 @@ dependencies = [
     "opentelemetry-overmind>=0.53.0",
     "litellm>=1.90.2",
 ]
-description = "Overmind — autonomous agent optimization through structured experimentation"
+description = "Overmind — autonomous agent optimisation through structured experimentation"
 keywords = ["overmind", "ai", "api", "client", "policy", "enforcement"]
 name = "overmind"
 readme = "README.md"

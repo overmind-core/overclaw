@@ -5,7 +5,7 @@
 Overmind is two things in one package:
 
 - **Tracing SDK** — drop-in observability for LLM agents. Decorate your code, get structured traces of every LLM call and tool invocation.
-- **Optimizer client** — a thin, agent- and codebase-agnostic executioner. The optimization loop (experiments → iterations → candidates → commands) is configured and driven **server-side** by the [Overmind Console](https://console.overmindlab.ai/). This repo just registers your machine, leases queued commands, runs them against your repo, and reports results back.
+- **Optimiser client** — a thin, agent- and codebase-agnostic executioner. The optimisation loop (experiments → iterations → candidates → commands) is configured and driven **server-side** by the [Overmind Console](https://console.overmindlab.ai/). This repo just registers your machine, leases queued commands, runs them against your repo, and reports results back.
 
 **Documentation:** [Overmind guide](https://docs.overmindlab.ai/guides/overmind_optimizer/)
 
@@ -39,13 +39,13 @@ def search(query: str) -> list[dict]:
 
 Available decorators/helpers: `entry_point`, `workflow`, `tool`, `function`, plus `start_span` (context manager), `set_tag`, `set_user`, and `capture_exception` for Sentry-style annotations on the current span.
 
-## Optimize
+## Optimise
 
-Set up and configure the experiment (agent, policy, dataset, iterations) in the [Console](https://console.overmindlab.ai/). Then, from the root of the repo you want optimized:
+Set up and configure the experiment (agent, policy, dataset, iterations) in the [Console](https://console.overmindlab.ai/). Then, from the root of the repo you want optimised:
 
 ```bash
 export OVERMIND_API_KEY=<your-api-key>
-overmind optimize
+overmind optimise
 ```
 
 This registers the current machine with the backend and loops forever: it leases queued commands from the experiment you configured in the Console, checks out the iteration's git branch (applying its candidate diff as a commit), runs the shell command against your repo, and reports the result back. Stop it any time with Ctrl-C; re-running is safe and idempotent per iteration branch.
@@ -78,12 +78,12 @@ overmind skills sync <skill-name>
 | `Overmind Register Agent`     | Create or register an Overmind agent entrypoint and bootstrap provider config.     |
 | `Overmind Generate Agent`     | Build an agent from scratch using natural language.                               |
 | `Overmind Telemetry`          | Configure Overmind tracing for your AI project.                                   |
-| `Ponytail`                    | Review an optimization report and adjust the policy, eval spec, or dataset.       |
+| `Ponytail`                    | Review an optimisation report and adjust the policy, eval spec, or dataset.       |
 
 ## CLI reference
 
 ```text
-overmind optimize [OPTIONS]         Register this machine and run the optimization loop
+overmind optimise [OPTIONS]         Register this machine and run the optimisation loop
 overmind skills list [--verbose]    List installed/available skills
 overmind skills sync <name>...      Sync one or more skills to the latest version
 ```
