@@ -11,7 +11,7 @@ Rules of the road:
   inline a raw string.
 - Token usage and cost use the **`genai.*`** keys (NOT the OTel semconv
   `gen_ai.*`). The SDK *also* emits the `gen_ai.*` semconv keys alongside them so
-  OTel-native consumers and the optimizer's `trace_reader` keep working, and the
+  OTel-native consumers and the optimiser's `trace_reader` keep working, and the
   on-end enrichment processor mirrors any `gen_ai.*` usage produced by
   third-party auto-instrumentors into these canonical keys.
 - **Never zero-fill.** A token count / cost we don't have is omitted, so the

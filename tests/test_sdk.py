@@ -114,10 +114,10 @@ def test_sdk_init_handles_missing_deps():
 
 
 def test_get_tracer_before_init():
-    """Test that get_tracer raises if SDK not initialized."""
+    """Test that get_tracer raises if SDK not initialised."""
     from overmind import tracing
 
-    with pytest.raises(RuntimeError, match="not initialized"):
+    with pytest.raises(RuntimeError, match="not initialised"):
         tracing.get_tracer()
 
 

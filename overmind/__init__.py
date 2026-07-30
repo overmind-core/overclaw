@@ -1,7 +1,7 @@
 """
 Overmind Python Client
 
-Overmind: autonomous agent optimization through structured experimentation.
+Overmind: autonomous agent optimisation through structured experimentation.
 Overmind: automatic observability for LLM applications.
 
 """

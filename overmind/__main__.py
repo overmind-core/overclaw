@@ -1,7 +1,7 @@
-"""Overmind CLI — optimize LLM agents and manage agent skills.
+"""Overmind CLI — optimise LLM agents and manage agent skills.
 
 Commands:
-    optimize                  Run the optimization loop on a registered agent.
+    optimise                  Run the optimisation loop on a registered agent.
     skills                    Manage Overmind agent skills.
 
 Use --help with any command or subcommand for details.
@@ -27,8 +27,8 @@ from overmind.skills import skills_app
 
 app = typer.Typer(
     name="overmind",
-    help="Overmind CLI optimize LLM agents and manage agent skills.",
-    epilog="Overmind https://overmindlab.ai is a tool for optimizing LLM agents and managing agent skills.",
+    help="Overmind CLI optimise LLM agents and manage agent skills.",
+    epilog="Overmind https://overmindlab.ai is a tool for optimising LLM agents and managing agent skills.",
     pretty_exceptions_enable=True,
     no_args_is_help=True,
 )
@@ -38,8 +38,10 @@ console = Console()
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
 
-@app.command(help="Register this machine as an optimizer and run the optimization loop.")
-def optimize(
+OPTIMISE_HELP = "Register this machine as an optimiser and run the optimisation loop."
+
+
+def optimise(
     api_key: Annotated[
         str,
         typer.Option(envvar="OVERMIND_API_KEY", help="Overmind API key", show_default=False),
@@ -59,7 +61,7 @@ def optimize(
     log_level: Annotated[str, typer.Option(envvar="OPTIMIZER_LOG_LEVEL", help="DEBUG/INFO/WARNING/ERROR")] = "INFO",
 ):
     """
-    Register with the Overmind backend and run the optimization loop: poll for
+    Register with the Overmind backend and run the optimisation loop: poll for
     queued commands (from the server-side experiment FSM), run them against
     the repo in ``cwd``, and report results back.
     """
@@ -72,6 +74,11 @@ def optimize(
         heartbeat_interval=heartbeat_interval,
     )
 
+
+app.command("optimise", help=OPTIMISE_HELP)(optimise)
+# ``optimize`` stays registered (hidden) so scripts written against the old
+# American spelling keep working.
+app.command("optimize", hidden=True, help=f"Deprecated alias for `optimise`. {OPTIMISE_HELP}")(optimise)
 
 app.add_typer(skills_app, name="skills")
 

@@ -134,7 +134,7 @@ SETUP_SCOPE = "overmind.setup.scope"
 SETUP_OPTIMIZABLE_ELEMENTS = "overmind.setup.optimizable_elements"
 
 # ---------------------------------------------------------------------------
-# `overmind optimize` (overmind/commands/optimize_cmd.py)
+# `overmind optimise` (overmind/commands/optimize_cmd.py)
 # ---------------------------------------------------------------------------
 OPTIMIZE_AGENT_NAME = "overmind.optimize.agent_name"
 OPTIMIZE_AGENT_PATH = "overmind.optimize.agent_path"
@@ -159,11 +159,11 @@ OPTIMIZE_MODEL_BACKTESTING = "overmind.optimize.model_backtesting"
 OPTIMIZE_BACKTEST_MODELS = "overmind.optimize.backtest_models"
 OPTIMIZE_EVAL_SPEC_PATH = "overmind.optimize.eval_spec_path"
 OPTIMIZE_DATA_PATH = "overmind.optimize.data_path"
-# Full eval_spec.json (JSON string) for OTLP ingest to refresh Agent eval fields during optimize.
+# Full eval_spec.json (JSON string) for OTLP ingest to refresh Agent eval fields during optimise.
 OPTIMIZE_EVAL_SPEC = "overmind.optimize.eval_spec"
 
-# Optimizer pipeline (overmind/optimize/optimizer.py) — runtime tags emitted
-# from the optimizer's spans during a run.
+# Optimiser pipeline (overmind/optimize/optimizer.py) — runtime tags emitted
+# from the optimiser's spans during a run.
 OPTIMIZE_PHASE = "overmind.optimize.phase"
 OPTIMIZE_DATASET_TOTAL = "overmind.optimize.dataset_total"
 OPTIMIZE_DATASET_TRAIN = "overmind.optimize.dataset_train"
@@ -189,7 +189,7 @@ OPTIMIZE_ITERATION_REASON = "overmind.optimize.iteration_reason"
 # stamps its phase here so OTLP can attribute every span back to its
 # step (init / baseline / diagnose / evaluate / accept / report).
 OPTIMIZE_STEP = "overmind.optimize.step"
-# Terminal state of the optimize run.  ``running`` while in flight,
+# Terminal state of the optimise run.  ``running`` while in flight,
 # flipped to ``completed`` / ``failed`` / ``cancelled`` by the step
 # that owns end-of-run.  OTLP uses this (alongside the legacy
 # ``is_optimize_root`` heuristic) to drive ``Job.status``.
@@ -209,7 +209,7 @@ OPTIMIZE_ITERATION_SUGGESTIONS = "overmind.optimize.iteration_suggestions"
 OPTIMIZE_ACCEPTED = "overmind.optimize.accepted"
 OPTIMIZE_FINAL_BEST_SCORE = "overmind.optimize.final_best_score"
 # Final report.md text produced by ``Optimizer._generate_report``.
-# Stamped on the optimize run span so OTLP can persist it on the
+# Stamped on the optimise run span so OTLP can persist it on the
 # corresponding ``Job.report_markdown`` row.
 OPTIMIZE_REPORT_MARKDOWN = "overmind.optimize.report_markdown"
 # Final best agent code text (``Job.best_agent_code``).
@@ -291,7 +291,7 @@ RUN_CASE_CONFIDENCE = "overmind.run.case.confidence"
 # ``optimizer.evaluate_worktree`` — invoked from the skill-driven
 # `overmind optimize-step evaluate` flow, scores a worktree's candidate
 # agent against the training set.  These tags let the UI surface
-# per-candidate / per-iteration scores even when the optimizer is being
+# per-candidate / per-iteration scores even when the optimiser is being
 # driven from a host coding agent rather than the legacy loop.
 OPTIMIZE_WORKTREE_RUN_NAME = "overmind.optimize.worktree.run_name"
 OPTIMIZE_WORKTREE_ENTRY_PATH = "overmind.optimize.worktree.entry_path"
@@ -302,7 +302,7 @@ OPTIMIZE_WORKTREE_PASS_RATE = "overmind.optimize.worktree.pass_rate"
 OPTIMIZE_WORKTREE_DURATION_SECONDS = "overmind.optimize.worktree.duration_seconds"
 
 # ---------------------------------------------------------------------------
-# Cross-run optimization state (overmind/optimize/run_state.py)
+# Cross-run optimisation state (overmind/optimize/run_state.py)
 # ---------------------------------------------------------------------------
 RUN_STATE_TOTAL_RUNS = "overmind.run_state.total_runs"
 RUN_STATE_REGRESSION_CASES = "overmind.run_state.regression_cases"
@@ -382,7 +382,7 @@ CODING_AGENT_EXIT_REASON = "overmind.coding_agent.exit_reason"
 # (NOT the OTel semconv ``input_tokens`` / ``output_tokens``).
 #
 # The SDK ALSO emits the OTel semconv ``gen_ai.*`` keys below (see
-# ``OTEL_*``) so third-party consumers and the optimizer's ``trace_reader``
+# ``OTEL_*``) so third-party consumers and the optimiser's ``trace_reader``
 # keep working, and the on-end enrichment processor mirrors any ``gen_ai.*``
 # usage produced by auto-instrumentors into these canonical keys.
 # ---------------------------------------------------------------------------
@@ -423,7 +423,7 @@ LLM_USAGE_TOTAL_TOKENS = "genai.usage.total_tokens"
 # OpenTelemetry GenAI semantic-convention keys.
 #
 # Emitted ALONGSIDE the canonical ``genai.*`` keys above so OTel-native
-# consumers and the optimizer's ``trace_reader`` (which parses local JSONL
+# consumers and the optimiser's ``trace_reader`` (which parses local JSONL
 # traces) keep resolving model + tokens.  Never read these on the server —
 # read the canonical ``genai.*`` keys instead.
 # ---------------------------------------------------------------------------

@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Overmind optimizer client a tiny, agent and codebase-agnostic command runner.
+"""Overmind optimiser client a tiny, agent and codebase-agnostic command runner.
 
-The optimizer FSM (experiment -> iterations -> candidates -> commands) now lives
+The optimiser FSM (experiment -> iterations -> candidates -> commands) now lives
 server-side. This file is the *client*: it registers with the
-backend, polls for queued optimizer commands, runs whatever shell the server
-hands it (from the repo root — you launch the optimizer there — optionally
+backend, polls for queued optimiser commands, runs whatever shell the server
+hands it (from the repo root — you launch the optimiser there — optionally
 applying a candidate git diff first), and reports the result back. The server's
 clone path is server-side only and is never used here, so the same binary
-optimizes any repo.
+optimises any repo.
 
 Usage:
     pip install "overmind>=0.1.54" && OVERMIND_API_KEY=<api-key> \\
     OVERMIND_API_URL=http://localhost:8000 \\
-    overmind optimize
+    overmind optimise
 
 Logging: INFO by default (startup, registration, every command + its outcome,
 periodic idle heartbeat). Set ``OPTIMIZER_LOG_LEVEL=DEBUG`` to see the full
@@ -56,7 +56,7 @@ import requests
 API_URL = os.getenv("OVERMIND_API_URL", "https://api.overmindlab.ai").rstrip("/")
 API_KEY = os.getenv("OVERMIND_API_KEY", "")
 # Local working dir for git + command runs. We ALWAYS run from the repo root: the
-# optimizer is launched there, so this defaults to the current directory. The
+# optimiser is launched there, so this defaults to the current directory. The
 # server-provided path (``cmd["cwd"]`` = its own clone_path) is server-side only
 # and must never be used to locate the repo on the client.
 WORK_DIR = os.getenv("OVERMIND_CWD", "") or None
@@ -477,7 +477,7 @@ def run_optimizer(
     base_ref = _current_branch(cwd) or "main"
 
     logger.info(
-        "optimizer starting: api=%s host=%s idle=%.1fs heartbeat=%.0fs base_ref=%s",
+        "optimiser starting: api=%s host=%s idle=%.1fs heartbeat=%.0fs base_ref=%s",
         api_url,
         socket.gethostname(),
         idle_interval,

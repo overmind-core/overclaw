@@ -269,7 +269,7 @@ class _GenAiUsageSpanProcessor(SpanProcessor):
 
 
 def _attach_remote_parent_if_present() -> None:
-    """Attach the W3C ``TRACEPARENT`` env var (injected by the optimizer into
+    """Attach the W3C ``TRACEPARENT`` env var (injected by the optimiser into
     agent subprocesses) as the ambient parent context. No-op when absent."""
     raw = os.environ.get("TRACEPARENT") or os.environ.get("OTEL_TRACEPARENT")
     if not raw:
@@ -287,7 +287,7 @@ def _attach_remote_parent_if_present() -> None:
 
 
 # ---------------------------------------------------------------------------
-# SDK initialization
+# SDK initialisation
 # ---------------------------------------------------------------------------
 
 
@@ -317,7 +317,7 @@ def init(
     agent_name: str | None = None,
     project_id: str | None = None,
 ):
-    """Initialize the Overmind SDK for automatic monitoring.
+    """Initialise the Overmind SDK for automatic monitoring.
 
     Args:
         overmind_api_key: API key; defaults to OVERMIND_API_KEY env var.
@@ -337,12 +337,12 @@ def init(
 
     if _initialized:
         # Re-init only refreshes identity + providers; exporters stay as-is.
-        logger.debug(f"Overmind SDK already initialized, reinitializing with providers: {providers}")
+        logger.debug(f"Overmind SDK already initialised, reinitialising with providers: {providers}")
         _seed_identity_context(agent_id, agent_name, project_id)
         enable_tracing(providers)
         return
 
-    # Optimize-step subprocess: the runner wrapper set up a file-exporter
+    # Optimise-step subprocess: the runner wrapper set up a file-exporter
     # provider (OVERMIND_TRACE_FILE) and stripped the API key — reuse it
     # instead of crashing or replacing the exporter.
     if os.environ.get("OVERMIND_TRACE_FILE") and not (overmind_api_key or os.environ.get("OVERMIND_API_KEY")):
@@ -351,7 +351,7 @@ def init(
         logger.debug(
             "Overmind SDK init() skipped: OVERMIND_TRACE_FILE is set and no "
             "OVERMIND_API_KEY available; reusing the local file-exporter "
-            "TracerProvider configured by the optimize runner wrapper.",
+            "TracerProvider configured by the optimise runner wrapper.",
         )
         _tracer = trace.get_tracer("overmind", sdk_version)
         _seed_identity_context(agent_id, agent_name, project_id)
@@ -412,13 +412,13 @@ def init(
     _attach_remote_parent_if_present()
 
     _initialized = True
-    logger.info(f"Overmind SDK initialized: service={service_name}, environment={environment}")
+    logger.info(f"Overmind SDK initialised: service={service_name}, environment={environment}")
 
 
 def get_tracer() -> trace.Tracer:
-    """Return the Overmind tracer; raises RuntimeError if not initialized."""
+    """Return the Overmind tracer; raises RuntimeError if not initialised."""
     if not _initialized or _tracer is None:
-        raise RuntimeError("Overmind SDK not initialized. Call overmind.init() first.")
+        raise RuntimeError("Overmind SDK not initialised. Call overmind.init() first.")
     return _tracer
 
 
@@ -869,7 +869,7 @@ def set_iteration_analytics(
     reason: str | None = None,
     dimension_scores: Mapping[str, float] | None = None,
 ) -> None:
-    """Stamp optimizer iteration analytics (``overmind.optimize.*``) on the
+    """Stamp optimiser iteration analytics (``overmind.optimize.*``) on the
     current span."""
     set_tag(attrs.OPTIMIZE_ITERATION, iteration)
     set_tag(attrs.OPTIMIZE_ITERATION_DECISION, decision)

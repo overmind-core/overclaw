@@ -6,7 +6,7 @@ silently break trace ingestion.
 The CANONICAL token/cost namespace the Overmind server rolls up is ``genai.*``
 (see ``overbae/api/overmind_attrs.py`` + ``otlp.py::_build_span_usage``).  The
 SDK emits those keys AND, alongside them, the OTel GenAI semconv ``gen_ai.*``
-keys (defined here as ``OTEL_*``) so OTel-native consumers and the optimizer's
+keys (defined here as ``OTEL_*``) so OTel-native consumers and the optimiser's
 :mod:`overmind.optimize.trace_reader` keep resolving model + tokens.
 """
 
