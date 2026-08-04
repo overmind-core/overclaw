@@ -53,6 +53,8 @@ from itertools import groupby
 import psutil
 import requests
 
+from . import __version__
+
 API_URL = os.getenv("OVERMIND_API_URL", "https://api.overmindlab.ai").rstrip("/")
 API_KEY = os.getenv("OVERMIND_API_KEY", "")
 # Local working dir for git + command runs. We ALWAYS run from the repo root: the
@@ -67,6 +69,7 @@ BUSY_INTERVAL = 0.5  # poll fast while there is work to drain
 MAX_BACKOFF = 30.0  # cap the exponential backoff on transport errors
 OUTPUT_TAIL = 8000  # chars of stdout/stderr to report back
 LOG_SNIPPET = 200  # chars of an error surfaced at INFO (full body rides DEBUG)
+REDACTED_SECRET = "[REDACTED]"
 
 logger = logging.getLogger("optimizer.client")
 
@@ -116,7 +119,7 @@ class OptimizerAPI:
         runtime = _runtime_metadata()
         payload = {
             "hostname": socket.gethostname(),
-            "cli_version": "optimizer/0.1",
+            "cli_version": f"optimizer/{__version__}",
             "metadata": {
                 "pid": os.getpid(),
                 "cpu.count": os.cpu_count(),  # traditional API, usually logical
@@ -228,6 +231,28 @@ def _new_traceparent() -> tuple[str, str]:
     return f"00-{trace_id}-{span_id}-01", trace_id
 
 
+def _secret_env_values(command_env: dict, effective_env: dict[str, str]) -> tuple[str, ...]:
+    """Return non-empty values from secret-looking command environment keys."""
+    secret_markers = ("KEY", "TOKEN", "SECRET", "PASSWORD")
+    values = {
+        str(value)
+        for name, value in command_env.items()
+        if value is not None and str(value) and any(marker in str(name).upper() for marker in secret_markers)
+    }
+    # Local-source OpenRouter runs omit the key from command_env by design, but
+    # command output must still never send the inherited local key upstream.
+    if local_openrouter_key := effective_env.get("OPENROUTER_API_KEY"):
+        values.add(local_openrouter_key)
+    return tuple(sorted(values, key=len, reverse=True))
+
+
+def _redact_secret_values(text: str, secret_values: tuple[str, ...]) -> str:
+    """Replace injected secret values before command output is stored or logged."""
+    for value in secret_values:
+        text = text.replace(value, REDACTED_SECRET)
+    return text
+
+
 def _git_apply(diff_text: str, cwd: str | None, *, reverse: bool = False) -> subprocess.CompletedProcess:
     args = ["git", "apply", "--whitespace=nowarn"]
     if reverse:
@@ -246,6 +271,26 @@ def _current_branch(cwd: str | None) -> str:
         text=True,
     )
     return proc.stdout.strip()
+
+
+def _optimizer_base_ref(cwd: str | None) -> str:
+    """Return the clean commit beneath any optimizer-created candidate commits."""
+    proc = subprocess.run(["git", "rev-parse", "HEAD"], cwd=cwd, capture_output=True, text=True)
+    ref = proc.stdout.strip()
+    while ref:
+        subject = subprocess.run(
+            ["git", "show", "-s", "--format=%s", ref],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        if not subject.startswith("apply patch for candidate "):
+            return ref
+        parent = subprocess.run(["git", "rev-parse", f"{ref}^"], cwd=cwd, capture_output=True, text=True)
+        if parent.returncode != 0:
+            break
+        ref = parent.stdout.strip()
+    return _current_branch(cwd) or "main"
 
 
 def _setup_candidate_branch(base_ref: str, candidate_id: str, patch: str, cwd: str | None) -> None:
@@ -290,7 +335,14 @@ def run_command(cmd: dict, cwd: str | None = None) -> tuple[bool, dict, str]:
     candidate_id = cmd.get("candidate_id", "")
     timeout = int(cmd.get("timeout") or 600)
     traceparent, trace_id = _new_traceparent()
-    env = {**os.environ, "TRACEPARENT": traceparent}
+    # The server supplies the matrix model and, for platform-BYOK runs, the
+    # server-provided project key.  Per-command values override the process only
+    # when explicitly present: local-source runs omit the key and therefore
+    # keep the executioner's local OPENROUTER_API_KEY untouched.
+    command_env = cmd.get("environment") if isinstance(cmd.get("environment"), dict) else {}
+    env = {**os.environ, **{str(k): str(v) for k, v in command_env.items() if v is not None}}
+    env["TRACEPARENT"] = traceparent
+    secret_values = _secret_env_values(command_env, env)
 
     if not command:
         logger.error("command %s has empty command text; reporting failure", cmd_id)
@@ -318,20 +370,22 @@ def run_command(cmd: dict, cwd: str | None = None) -> tuple[bool, dict, str]:
         timeout,
         traceparent,
     )
-    logger.debug("command %s shell:\n%s", cmd_id, command)
+    logger.debug("command %s shell:\n%s", cmd_id, _redact_secret_values(command, secret_values))
 
     started = time.monotonic()
     try:
         proc = subprocess.run(command, shell=True, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout)
         elapsed = time.monotonic() - started
         success = proc.returncode == 0
+        stdout = _redact_secret_values(proc.stdout or "", secret_values)
+        stderr = _redact_secret_values(proc.stderr or "", secret_values)
         result = {
-            "output": (proc.stdout or "")[-OUTPUT_TAIL:],
-            "stdout": (proc.stdout or "")[-OUTPUT_TAIL:],
+            "output": stdout[-OUTPUT_TAIL:],
+            "stdout": stdout[-OUTPUT_TAIL:],
             "exit_code": proc.returncode,
             "trace_id": trace_id,
         }
-        error = "" if success else (proc.stderr or "")[-OUTPUT_TAIL:]
+        error = "" if success else stderr[-OUTPUT_TAIL:]
         if success:
             logger.info("command %s ok in %.1fs (exit=0)", cmd_id, elapsed)
         else:
@@ -374,7 +428,23 @@ def poll_once(api: OptimizerAPI, session_id: str, cwd: str | None = None, base_r
         batch = list(batch_iter)
         patch = batch[0].get("candidate_patch", "")
 
-        if candidate_id and base_ref:
+        if not candidate_id and base_ref:
+            try:
+                # Smoke runs the unchanged harness. A non-forced checkout keeps
+                # local tracked edits safe by failing instead of discarding them.
+                subprocess.run(
+                    ["git", "checkout", base_ref],
+                    cwd=cwd,
+                    check=True,
+                    capture_output=True,
+                )
+            except Exception as exc:
+                logger.error("base checkout failed: %s", exc)
+                for cmd in batch:
+                    api.submit_result(cmd["id"], success=False, result={}, error=f"base checkout failed: {exc}")
+                total += len(batch)
+                continue
+        elif candidate_id and base_ref:
             try:
                 _setup_candidate_branch(base_ref, candidate_id, patch, cwd)
             except Exception as exc:
@@ -474,7 +544,7 @@ def run_optimizer(
 
     # Capture the base branch before any candidate checkouts so every candidate
     # can branch from the same clean starting point.
-    base_ref = _current_branch(cwd) or "main"
+    base_ref = _optimizer_base_ref(cwd)
 
     logger.info(
         "optimiser starting: api=%s host=%s idle=%.1fs heartbeat=%.0fs base_ref=%s",
