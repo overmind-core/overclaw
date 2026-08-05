@@ -335,10 +335,11 @@ def run_command(cmd: dict, cwd: str | None = None) -> tuple[bool, dict, str]:
     candidate_id = cmd.get("candidate_id", "")
     timeout = int(cmd.get("timeout") or 600)
     traceparent, trace_id = _new_traceparent()
-    # The server supplies the matrix model and, for platform-BYOK runs, the
-    # server-provided project key.  Per-command values override the process only
-    # when explicitly present: local-source runs omit the key and therefore
-    # keep the executioner's local OPENROUTER_API_KEY untouched.
+    # The server supplies the matrix model per command (OPENROUTER_MODEL) and
+    # never sends keys. Platform (Overmind credits) runs authenticate with the
+    # daemon's own OVERMIND_API_KEY/OVERMIND_API_URL; local-source runs keep the
+    # user's local OPENROUTER_API_KEY. Per-command values override the process
+    # only when explicitly present — a missing key keeps the local value.
     command_env = cmd.get("environment") if isinstance(cmd.get("environment"), dict) else {}
     env = {**os.environ, **{str(k): str(v) for k, v in command_env.items() if v is not None}}
     env["TRACEPARENT"] = traceparent

@@ -57,35 +57,34 @@ def test_run_command_failure_reports_exit_code_and_stderr():
     assert not ok and result["exit_code"] == 3 and "boom" in error, (ok, result, error)
 
 
-def test_run_command_platform_env_overrides_stale_local_key(monkeypatch):
+def test_run_command_server_model_wins_and_local_key_redacted(monkeypatch):
+    # The server sends only OPENROUTER_MODEL per command (never a key), and an
+    # explicit command_env value wins over the daemon's own env. The inherited
+    # local key must never appear in captured output.
+    monkeypatch.setenv("OPENROUTER_MODEL", "local-model")
     monkeypatch.setenv("OPENROUTER_API_KEY", "local-secret")
     ok, result, error = run_command({
         "command": 'printf \'%s|%s\' "$OPENROUTER_MODEL" "$OPENROUTER_API_KEY"',
         "timeout": 10,
-        "environment": {
-            "OPENROUTER_MODEL": "openai/gpt-5",
-            "OPENROUTER_API_KEY": "server-secret",
-        },
+        "environment": {"OPENROUTER_MODEL": "openai/gpt-5"},
     })
     assert ok, (result, error)
     assert result["output"] == "openai/gpt-5|[REDACTED]"
-    assert "server-secret" not in result["output"]
+    assert "local-secret" not in result["output"]
 
 
-def test_run_command_redacts_injected_secret_from_stderr_and_debug_logs(caplog):
+def test_run_command_redacts_local_key_from_stderr_and_debug_logs(caplog, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "local-secret")
     with caplog.at_level(logging.DEBUG, logger="optimizer.client"):
         ok, result, error = run_command({
             "command": 'printf \'model=%s key=%s\\n\' "$OPENROUTER_MODEL" "$OPENROUTER_API_KEY" >&2; exit 1',
             "timeout": 10,
-            "environment": {
-                "OPENROUTER_MODEL": "openai/gpt-5",
-                "OPENROUTER_API_KEY": "server-secret",
-            },
+            "environment": {"OPENROUTER_MODEL": "openai/gpt-5"},
         })
     assert not ok
     assert result["output"] == ""
     assert error == "model=openai/gpt-5 key=[REDACTED]\n"
-    assert "server-secret" not in caplog.text
+    assert "local-secret" not in caplog.text
     assert "openai/gpt-5" in caplog.text
 
 
@@ -101,21 +100,6 @@ def test_run_command_local_env_keeps_local_key(monkeypatch):
     assert "local-secret" not in result["output"]
 
 
-def test_run_command_explicit_empty_key_overrides_local_key(monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "local-secret")
-    ok, result, error = run_command({
-        "command": 'printf \'%s|%s\' "$OPENROUTER_MODEL" "$OPENROUTER_API_KEY"',
-        "timeout": 10,
-        "environment": {
-            "OPENROUTER_MODEL": "openai/gpt-5",
-            "OPENROUTER_API_KEY": "",
-        },
-    })
-    assert ok, (result, error)
-    assert result["output"] == "openai/gpt-5|"
-    assert "local-secret" not in result["output"]
-
-
 # ── OptimizerAPI.poll sends lease flag ───────────────────────────────────────
 
 
@@ -126,8 +110,7 @@ def _make_api(responses: list):
     mock_session = MagicMock()
     # Each call to session.post returns the next response in the list.
     mock_session.post.side_effect = [
-        SimpleNamespace(raise_for_status=lambda: None, json=lambda: r)
-        for r in responses
+        SimpleNamespace(raise_for_status=lambda: None, json=lambda r=r: r) for r in responses
     ]
     api.session = mock_session
     api.base_url = "http://test"
