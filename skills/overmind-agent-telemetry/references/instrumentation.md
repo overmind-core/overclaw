@@ -1,14 +1,16 @@
----
-name: overmind-agent-telemetry
-description: Add Overmind tracing to an existing AI/LLM project so its traces are sent to Overmind. Handles projects that already have OpenTelemetry or another telemetry library configured (fan-out) as well as greenfield projects. Use when the user asks to add Overmind telemetry/observability/tracing, send traces to Overmind, or instrument an existing agent with Overmind.
----
-
-# Overmind Agent Telemetry
+# Instrumenting an application with Overmind tracing
 
 Wire an existing Python project into Overmind so every LLM call and traced
 function is exported to Overmind (`https://api.overmindlab.ai/api/v1/traces`).
 Overmind is built on OpenTelemetry, so it can either own the tracing pipeline
 or ride alongside a telemetry stack the project already has.
+
+Before writing code, fetch the current tracing docs — the SDK surface below
+may have moved on since this file was written:
+
+```bash
+curl -sL https://docs.overmindlab.ai/core/observability.md
+```
 
 ## Workflow
 
@@ -18,8 +20,23 @@ or ride alongside a telemetry stack the project already has.
 - [ ] 3. Initialise — greenfield OR fan-out onto the existing provider
 - [ ] 4. Auto-instrument the LLM providers in use
 - [ ] 5. Add custom spans where useful
-- [ ] 6. Flush on shutdown and verify traces land in the Console
+- [ ] 6. Flush on shutdown, then run the app and audit the traces
 ```
+
+## What a good trace carries
+
+Audit every integration — new or existing — against this baseline before
+calling it done:
+
+| Requirement | How | Why |
+| --- | --- | --- |
+| Agent name | `agent_name=` in `init()`, `OVERMIND_AGENT_NAME`, or `set_agent_name()` — pick one constant string; the server slugifies it into the agent's identity, so renaming forks a new agent | Traces group under one agent in the Console |
+| Model + token usage | Automatic via provider auto-instrumentation (Step 4); raw-OTel spans should carry `gen_ai.request.model` / `gen_ai.usage.*` | Cost is computed server-side from these |
+| Inputs and outputs | The decorators (Step 5) capture call args and return values automatically; make sure the entry point and key steps are decorated so the trace shows what the agent saw and produced | A trace without I/O can't be debugged or turned into eval data |
+| Sensitive data excluded | Use `@observe_safe()` on functions whose args/returns hold secrets or PII — it traces timing/status without capturing values | Inputs/outputs are stored verbatim |
+| Session grouping | `set_conversation_id(...)` per conversation/thread (stamped as `conversation.id`) whenever the app has multi-turn interactions | Groups traces into Sessions in the Console |
+| User attribution | `set_user(user_id, email=...)` where the app has accounts | Per-user filtering and cost attribution |
+| Span hierarchy + types | One `@entry_point` at the top; `@workflow` / `@tool` / `@retrieval` for the steps under it, with descriptive names | Shows which step failed or was slow, instead of one flat LLM call |
 
 ## Step 1 — Detect existing telemetry
 
@@ -167,7 +184,7 @@ except Exception as exc:
 `start_span` and the decorators use the ambient tracer, so they attach to
 whichever provider is active — greenfield or fan-out.
 
-## Step 6 — Flush on shutdown and verify
+## Step 6 — Flush on shutdown, then run and audit (required)
 
 Batch export is async; flush before a short-lived process exits or spans are
 lost:
@@ -176,8 +193,35 @@ lost:
 overmind.force_flush_traces()
 ```
 
-Verify: run the app, then check traces appear in the
-[Console](https://console.overmindlab.ai/). If nothing shows up:
+Instrumentation isn't done when the code compiles. This is a loop you own as
+the agent:
+
+**a.** Run the instrumented path end-to-end so a real trace is sent.
+
+**b.** Fetch the trace you just created back from the API — full commands and
+response fields in [api-access.md](api-access.md):
+
+```bash
+curl -s -H "X-Api-Key: $OVERMIND_API_KEY" \
+  "https://api.overmindlab.ai/api/traces/?ordering=-received_at&page_size=1"
+# then, with the trace_id from that response:
+curl -s -H "X-Api-Key: $OVERMIND_API_KEY" \
+  "https://api.overmindlab.ai/api/traces/<trace_id>/"
+```
+
+**c.** Audit the fetched trace against the [baseline table](#what-a-good-trace-carries)
+and against the current docs (fetch fresh, never audit from memory:
+`curl -sL https://docs.overmindlab.ai/core/observability.md`). On the list row
+check `agent_name`, `model`, `total_tokens`, `total_cost`, `conversation`; on
+the detail spans check `span_type` variety (not everything `llm_call`), span
+`attributes` carrying inputs/outputs on the entry point and key steps, and
+that no secrets appear in captured payloads.
+
+**d.** Fix every gap, re-run, re-fetch. Repeat until the trace clears the
+baseline. Then report what is traced and link the trace in the
+[Console](https://console.overmindlab.ai/).
+
+If nothing shows up:
 
 - Confirm `OVERMIND_API_KEY` is set in the running process.
 - On the fan-out path, confirm the existing object really is an SDK
@@ -185,3 +229,15 @@ Verify: run the app, then check traces appear in the
   `force_flush_traces()` (or the app) ran long enough to export.
 - Set `OVERMIND_STRICT_MODE=true` to make missing instrumentation packages
   raise instead of warn.
+
+## Common mistakes
+
+| Mistake | Consequence | Fix |
+| --- | --- | --- |
+| No flush in scripts/serverless | Traces silently never sent | `force_flush_traces()` before exit |
+| Init after LLM clients are created | Provider calls not instrumented | Call `init()` at process start, before client construction |
+| `overmind.init()` on top of an existing `TracerProvider` | OTel keeps the first provider; Overmind attaches nothing | Fan-out path (Step 3b) |
+| Agent name varies per run/env | Each variant becomes a separate agent | One constant `agent_name`, set once |
+| Only auto-instrumentation, no decorators | Flat traces with no inputs/outputs and no step structure | Decorate the entry point and key steps (Step 5) |
+| Secrets or PII in decorated function args | Stored verbatim in the trace | `@observe_safe()` on those functions, or mask before passing |
+| No `set_conversation_id` in a chat app | Sessions view stays empty | Stamp the thread/conversation id per request |

@@ -12,17 +12,13 @@ class Skill:
 
 skills = [
     Skill(
-        name="Overmind Agent Builder",
-        slug="overmind-agent-builder",
-        description="Build an agent from scratch using natural language",
-        version="1.0",
-        provider="overmind-core",
-    ),
-    Skill(
         name="Overmind Telemetry",
         slug="overmind-agent-telemetry",
-        description="Configure Overmind telemetry for your AI project",
-        version="1.0",
+        description=(
+            "Add Overmind tracing, verify and audit instrumentation by fetching "
+            "real traces, query traces via the REST API, and look up current docs"
+        ),
+        version="1.1",
         provider="overmind-core",
     ),
 ]

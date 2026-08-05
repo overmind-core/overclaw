@@ -66,19 +66,16 @@ This registers the current machine with the backend and loops forever: it leases
 
 ## Skills
 
-Use these from Cursor, Codex, or Claude Code to scaffold agents and configure telemetry without leaving your coding environment.
+Use these from Cursor, Codex, or Claude Code to scaffold agents and configure telemetry without leaving your coding environment. Skills live at the repo-root [`skills/`](./skills/) directory so agent installers can pick them up from this repository (e.g. `npx skills add overmind-core/overmind`).
 
 ```bash
 overmind skills list --verbose
-overmind skills sync <skill-name>
+overmind skills sync "Overmind Telemetry"   # or: overmind-agent-telemetry
 ```
 
-| Skill                        | What it does                                                                     |
-| ----------------------------- | --------------------------------------------------------------------------------- |
-| `Overmind Register Agent`     | Create or register an Overmind agent entrypoint and bootstrap provider config.     |
-| `Overmind Generate Agent`     | Build an agent from scratch using natural language.                               |
-| `Overmind Telemetry`          | Configure Overmind tracing for your AI project.                                   |
-| `Ponytail`                    | Review an optimisation report and adjust the policy, eval spec, or dataset.       |
+| Skill                  | What it does                                                                                                      |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `Overmind Telemetry`   | Add tracing, verify traces via the REST API, and look up current Overmind docs (`overmind-agent-telemetry`).       |
 
 ## CLI reference
 

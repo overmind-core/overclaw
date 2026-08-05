@@ -1,0 +1,20 @@
+{
+  "name": "overmind",
+  "description": "Skills for working with Overmind — agent observability, tracing, and optimization.",
+  "version": "1.1.0",
+  "author": {
+    "name": "Overmind",
+    "email": "hello@overmindlab.ai"
+  },
+  "homepage": "https://overmindlab.ai",
+  "repository": "https://github.com/overmind-core/overmind",
+  "license": "MIT",
+  "keywords": [
+    "overmind",
+    "llm",
+    "observability",
+    "tracing",
+    "agent",
+    "optimization"
+  ]
+}
