@@ -50,6 +50,12 @@ version = "0.1.57"
 [tool.hatch.build.targets.wheel]
 packages = ["overmind"]
 
+# Top-level `skills/` is the source of truth for agent installers
+# (`npx skills add overmind-core/overmind`). Bundle a copy into the wheel so
+# `overmind skills sync` still works from an installed package.
+[tool.hatch.build.targets.wheel.force-include]
+"skills" = "overmind/skills"
+
 [tool.coverage.report]
 sort = "Cover"
 

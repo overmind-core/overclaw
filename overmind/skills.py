@@ -21,7 +21,17 @@ from overmind.skills_db import Skill, skills
 
 console = Console()
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
+# Package dir (`.../site-packages/overmind` or `.../repo/overmind`). Skills live at
+# the repo-root `skills/` for agent installers; the wheel force-includes that
+# tree at `overmind/skills/` so sync still works from an installed package.
+_PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _skills_root() -> str:
+    packaged = os.path.join(_PACKAGE_DIR, "skills")
+    if os.path.isdir(packaged):
+        return packaged
+    return os.path.join(os.path.dirname(_PACKAGE_DIR), "skills")
 
 
 skills_app = typer.Typer(help="Manage Overmind agent skills.")
@@ -50,7 +60,7 @@ def sync_skills(
     ide: Annotated[str, typer.Option(..., help="IDE to use")] = "cursor",  # ide: cursor, claude code etc
 ):
     for name in names:
-        skill = next((s for s in skills if s.name == name), None)
+        skill = next((s for s in skills if s.name == name or s.slug == name), None)
         if skill:
             sync_skill(skill, ide)
         else:
@@ -58,17 +68,13 @@ def sync_skills(
 
 
 def sync_skill(skill: Skill, ide: str):
-    """Copy a skill's SKILL.md into the destination directory."""
-    src = os.path.join(current_dir, "skills", skill.slug, "SKILL.md")
-    dest_dir = get_destination_dir(ide)
-    dest_path = os.path.join(dest_dir, skill.slug, "SKILL.md")
-
-    if os.path.exists(dest_path):
-        logging.info(f"{dest_path} already exists, skipping copy.")
-        return
-    os.makedirs(dest_dir, exist_ok=True)
-    shutil.copy2(src, dest_path)
-    logging.info(f"Copied {src} to {dest_path}")
+    """Copy the whole skill directory (SKILL.md + references/) into the destination."""
+    src = os.path.join(_skills_root(), skill.slug)
+    if not os.path.isdir(src):
+        raise FileNotFoundError(f"Skill directory not found: {src}")
+    dest = os.path.join(get_destination_dir(ide), skill.slug)
+    shutil.copytree(src, dest, dirs_exist_ok=True)
+    logging.info(f"Copied {src} to {dest}")
 
 
 def get_destination_dir(ide: str):
