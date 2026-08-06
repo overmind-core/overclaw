@@ -5,9 +5,8 @@
 Overmind is two things in one package:
 
 - **Tracing SDK** — drop-in observability for LLM agents. Decorate your code, get structured traces of every LLM call and tool invocation.
-- **Optimiser client** — a thin, agent- and codebase-agnostic executioner. The optimisation loop (experiments → iterations → candidates → commands) is configured and driven **server-side** by the [Overmind Console](https://console.overmindlab.ai/). This repo just registers your machine, leases queued commands, runs them against your repo, and reports results back.
 
-**Documentation:** [Overmind guide](https://docs.overmindlab.ai/guides/overmind_optimizer/)
+**Documentation:** [Overmind guide](https://docs.overmindlab.ai/core/observability)
 
 **Console:** [console.overmindlab.ai](https://console.overmindlab.ai/)
 
@@ -26,43 +25,21 @@ Wire up tracing once at process start, then annotate the functions you want trac
 ```python
 import overmind
 
-overmind.init(service_name="my-agent", providers=["openai", "anthropic"])  # reads OVERMIND_API_KEY from the environment
+overmind.init(
+    service_name="my-agent", providers=["openai", "anthropic"]
+)  # reads OVERMIND_API_KEY from the environment
+
 
 @overmind.entry_point()
 def run(input_data: dict) -> dict:
     return {"response": handle(input_data)}
 
+
 @overmind.tool()
-def search(query: str) -> list[dict]:
-    ...
+def search(query: str) -> list[dict]: ...
 ```
 
 Available decorators/helpers: `entry_point`, `workflow`, `tool`, `function`, plus `start_span` (context manager), `set_tag`, `set_user`, and `capture_exception` for Sentry-style annotations on the current span.
-
-## Optimise
-
-Set up and configure the experiment (agent, policy, dataset, iterations) in the [Console](https://console.overmindlab.ai/). Then, from the root of the repo you want optimised:
-
-```bash
-export OVERMIND_API_KEY=<your-api-key>
-overmind optimise
-```
-
-This registers the current machine with the backend and loops forever: it leases queued commands from the experiment you configured in the Console, checks out the iteration's git branch (applying its candidate diff as a commit), runs the shell command against your repo, and reports the result back. Stop it any time with Ctrl-C; re-running is safe and idempotent per iteration branch.
-
-### Options / environment variables
-
-| Flag                    | Env var                        | Default                          | Description                                        |
-| ----------------------- | ------------------------------- | --------------------------------- | --------------------------------------------------- |
-| `--api-key`              | `OVERMIND_API_KEY`               | *(required)*                      | Sent as `X-Api-Key`.                                 |
-| `--api-url`              | `OVERMIND_API_URL`               | `https://api.overmindlab.ai`      | Backend base URL.                                    |
-| `--cwd`                  | `OVERMIND_CWD`                   | current directory                 | Repo root to run commands in.                        |
-| `--poll-interval`        | `OPTIMIZER_POLL_INTERVAL`        | `5`                                | Idle poll seconds.                                   |
-| `--heartbeat-interval`   | `OPTIMIZER_HEARTBEAT_INTERVAL`   | `60`                               | Idle "still alive" log interval, seconds.            |
-| `--log-level`            | `OPTIMIZER_LOG_LEVEL`            | `INFO`                             | `DEBUG`/`INFO`/`WARNING`/`ERROR`.                    |
-
-> [!WARNING]
-> The Console can hand this client arbitrary shell to run (`shell=True`, guarded only by a per-command timeout). Only point it at a backend you trust.
 
 ## Skills
 
@@ -73,9 +50,9 @@ overmind skills list --verbose
 overmind skills sync "Overmind Telemetry"   # or: overmind-agent-telemetry
 ```
 
-| Skill                  | What it does                                                                                                      |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `Overmind Telemetry`   | Add tracing, verify traces via the REST API, and look up current Overmind docs (`overmind-agent-telemetry`).       |
+| Skill                | What it does                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `Overmind Telemetry` | Add tracing, verify traces via the REST API, and look up current Overmind docs (`overmind-agent-telemetry`). |
 
 ## CLI reference
 
