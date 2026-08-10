@@ -622,9 +622,11 @@ def observe(
     type: SpanType = SpanType.FUNCTION,
     agent_id: str | None = None,
     project_id: str | None = None,
+    _capture_io: bool = True,
 ) -> Callable[[Callable], Callable]:
     """Decorator (sync or async) that traces a function: captures ``inputs`` /
-    ``outputs`` and stamps canonical span type / status / duration."""
+    ``outputs`` and stamps canonical span type / status / duration. Set
+    ``_capture_io=False`` to skip input/output capture (see ``observe_safe``)."""
 
     def decorator(func: Callable) -> Callable:
         name = span_name or func.__name__
@@ -642,7 +644,8 @@ def observe(
                         otel_span.set_attribute(attrs.AGENT_ID, agent_id)
                     if type == SpanType.TOOL:
                         _stamp_tool_metadata(otel_span, name, func, args, kwargs)
-                    _capture_inputs(otel_span, func, args, kwargs)
+                    if _capture_io:
+                        _capture_inputs(otel_span, func, args, kwargs)
                     start = time.monotonic()
                     try:
                         result = await func(*args, **kwargs)
@@ -651,7 +654,8 @@ def observe(
                             otel_span.set_attribute(attrs.TOOL_ERROR, exc.__class__.__name__)
                         _finalize_span(otel_span, exc, start)
                         raise
-                    _capture_output(otel_span, result)
+                    if _capture_io:
+                        _capture_output(otel_span, result)
                     _finalize_span(otel_span, None, start)
                     return result
 
@@ -668,7 +672,8 @@ def observe(
                     otel_span.set_attribute(attrs.AGENT_ID, agent_id)
                 if type == SpanType.TOOL:
                     _stamp_tool_metadata(otel_span, name, func, args, kwargs)
-                _capture_inputs(otel_span, func, args, kwargs)
+                if _capture_io:
+                    _capture_inputs(otel_span, func, args, kwargs)
                 start = time.monotonic()
                 try:
                     result = func(*args, **kwargs)
@@ -677,7 +682,8 @@ def observe(
                         otel_span.set_attribute(attrs.TOOL_ERROR, exc.__class__.__name__)
                     _finalize_span(otel_span, exc, start)
                     raise
-                _capture_output(otel_span, result)
+                if _capture_io:
+                    _capture_output(otel_span, result)
                 _finalize_span(otel_span, None, start)
                 return result
 
@@ -798,23 +804,18 @@ def observe_safe(
     agent_id: str | None = None,
 ) -> Callable[[F], F]:
     """Like :func:`observe` but never captures arguments or return values;
-    use :func:`set_tag` inside the function for specific metadata."""
+    use :func:`set_tag` inside the function for specific metadata.
 
-    def decorator(func: F) -> F:
-        name = span_name or func.__name__
-
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            with start_child_span(name, span_type=type) as otel_span:
-                if project_id:
-                    otel_span.set_attribute(attrs.PROJECT_ID, project_id)
-                if agent_id:
-                    otel_span.set_attribute(attrs.AGENT_ID, agent_id)
-                return func(*args, **kwargs)
-
-        return wrapper  # type: ignore[return-value]
-
-    return decorator
+    Manual escape hatch for code that handles credentials (API keys, auth
+    tokens, passwords); prefer masking values before they reach traced
+    functions over dropping input/output capture."""
+    return observe(
+        span_name=span_name,
+        type=type,
+        agent_id=agent_id,
+        project_id=project_id,
+        _capture_io=False,
+    )
 
 
 # ---------------------------------------------------------------------------
