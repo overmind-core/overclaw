@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "overmind": {
+      "url": "https://api.overmindlab.ai/api/mcp/",
+      "headers": {
+        "X-Api-Key": "${OVERMIND_API_KEY}"
+      }
+    }
+  }
+}
