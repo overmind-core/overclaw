@@ -141,10 +141,12 @@ def test_poll_default_lease_is_true():
 
 
 def test_register_payload_uses_package_version():
+    from overmind import __version__
+
     api = _make_api([{"id": "sess-1"}])
     assert api.register() == "sess-1"
     _, kwargs = api.session.post.call_args
-    assert kwargs["json"]["cli_version"] == "optimizer/0.1.58"
+    assert kwargs["json"]["cli_version"] == f"optimizer/{__version__}"
 
 
 # ── heartbeat thread calls poll(lease=False) while main loop is busy ─────────
