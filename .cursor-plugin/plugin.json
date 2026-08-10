@@ -1,8 +1,8 @@
 {
   "name": "overmind",
   "displayName": "Overmind",
-  "version": "1.1.0",
-  "description": "Skills for working with Overmind — agent observability, tracing, and optimization.",
+  "version": "1.2.0",
+  "description": "Overmind skills and MCP — agent observability, tracing, and platform tools for coding agents.",
   "author": {
     "name": "Overmind",
     "email": "hello@overmindlab.ai"
@@ -16,8 +16,21 @@
     "observability",
     "tracing",
     "agent",
-    "optimization"
+    "optimization",
+    "mcp"
   ],
   "category": "developer-tools",
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "mcpServers": "./mcp.json",
+  "variables": {
+    "type": "object",
+    "properties": {
+      "OVERMIND_API_KEY": {
+        "type": "string",
+        "title": "Overmind API key",
+        "description": "Project API key from Console (Projects → API keys). Used for MCP and tracing ingest."
+      }
+    },
+    "required": ["OVERMIND_API_KEY"]
+  }
 }

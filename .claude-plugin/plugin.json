@@ -1,7 +1,7 @@
 {
   "name": "overmind",
-  "description": "Skills for working with Overmind — agent observability, tracing, and optimization.",
-  "version": "1.1.0",
+  "description": "Overmind skills — agent observability, tracing, and platform workflows for coding agents.",
+  "version": "1.2.0",
   "author": {
     "name": "Overmind",
     "email": "hello@overmindlab.ai"
@@ -15,6 +15,7 @@
     "observability",
     "tracing",
     "agent",
-    "optimization"
+    "optimization",
+    "mcp"
   ]
 }
