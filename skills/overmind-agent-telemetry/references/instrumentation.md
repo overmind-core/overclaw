@@ -33,7 +33,7 @@ calling it done:
 | Agent name | `agent_name=` in `init()`, `OVERMIND_AGENT_NAME`, or `set_agent_name()` — pick one constant string; the server slugifies it into the agent's identity, so renaming forks a new agent | Traces group under one agent in the Console |
 | Model + token usage | Automatic via provider auto-instrumentation (Step 4); raw-OTel spans should carry `gen_ai.request.model` / `gen_ai.usage.*` | Cost is computed server-side from these |
 | Inputs and outputs | The decorators (Step 5) capture call args and return values automatically; make sure the entry point and key steps are decorated so the trace shows what the agent saw and produced | A trace without I/O can't be debugged or turned into eval data |
-| Sensitive data excluded | Use `@observe_safe()` on functions whose args/returns hold secrets or PII — it traces timing/status without capturing values | Inputs/outputs are stored verbatim |
+| Sensitive data excluded | Not for agents — trace normally and mask credential fields (API keys, tokens, passwords) before they reach decorated functions. `@observe_safe()` (traces timing/status, no values) is a manual escape hatch for human implementation only | Inputs/outputs are stored verbatim |
 | Session grouping | `set_conversation_id(...)` per conversation/thread (stamped as `conversation.id`) whenever the app has multi-turn interactions | Groups traces into Sessions in the Console |
 | User attribution | `set_user(user_id, email=...)` where the app has accounts | Per-user filtering and cost attribution |
 | Span hierarchy + types | One `@entry_point` at the top; `@workflow` / `@tool` / `@retrieval` for the steps under it, with descriptive names | Shows which step failed or was slow, instead of one flat LLM call |
@@ -239,5 +239,5 @@ If nothing shows up:
 | `overmind.init()` on top of an existing `TracerProvider` | OTel keeps the first provider; Overmind attaches nothing | Fan-out path (Step 3b) |
 | Agent name varies per run/env | Each variant becomes a separate agent | One constant `agent_name`, set once |
 | Only auto-instrumentation, no decorators | Flat traces with no inputs/outputs and no step structure | Decorate the entry point and key steps (Step 5) |
-| Secrets or PII in decorated function args | Stored verbatim in the trace | `@observe_safe()` on those functions, or mask before passing |
+| Credentials (API keys, tokens, passwords) in decorated function args | Stored verbatim in the trace | Mask them before passing; `@observe_safe()` only as a manual, human-maintained escape hatch — never preemptively for data that might be sensitive |
 | No `set_conversation_id` in a chat app | Sessions view stays empty | Stamp the thread/conversation id per request |

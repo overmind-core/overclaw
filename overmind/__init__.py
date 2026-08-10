@@ -6,7 +6,7 @@ Overmind: automatic observability for LLM applications.
 
 """
 
-__version__ = "0.1.58"
+__version__ = "0.1.60"
 
 from opentelemetry.overmind.prompt import PromptString
 
@@ -21,6 +21,7 @@ from .tracing import (
     get_tracer,
     init,
     observe,
+    observe_safe,
     retrieval,
     set_agent_id,
     set_agent_name,
@@ -48,6 +49,7 @@ __all__ = [
     "get_tracer",
     "init",
     "observe",
+    "observe_safe",
     "retrieval",
     "set_agent_id",
     "set_agent_name",
