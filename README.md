@@ -45,17 +45,14 @@ Available decorators/helpers: `entry_point`, `workflow`, `tool`, `function`, plu
 
 Use these from Cursor, Codex, or Claude Code to scaffold agents and configure telemetry without leaving your coding environment. Skills live at the repo-root [`skills/`](./skills/) directory so agent installers can pick them up from this repository (e.g. `npx skills add overmind-core/overmind`).
 
-This repo is also a [Cursor plugin](https://cursor.com/docs/plugins) (see [`.cursor-plugin/`](./.cursor-plugin/) and [`mcp.json`](./mcp.json)): install it to get skills plus a remote Overmind MCP server. Set **OVERMIND_API_KEY** when prompted (project API key from Console).
-
 ```bash
 overmind skills list --verbose
 overmind skills sync "Overmind Telemetry"   # or: overmind-agent-telemetry
 ```
 
-| Skill                   | What it does                                                                                                       |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `Overmind Telemetry`    | Add tracing, verify traces via the REST API, and look up current Overmind docs (`overmind-agent-telemetry`).       |
-| `Overmind platform MCP` | Use Overmind MCP tools from a coding agent — agents, traces, datasets, evals, finetunes (`overmind-platform-mcp`). |
+| Skill                | What it does                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `Overmind Telemetry` | Add tracing, verify traces via the REST API, and look up current Overmind docs (`overmind-agent-telemetry`). |
 
 ## CLI reference
 
