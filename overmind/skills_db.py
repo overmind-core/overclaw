@@ -21,4 +21,14 @@ skills = [
         version="1.1",
         provider="overmind-core",
     ),
+    Skill(
+        name="Overmind Platform",
+        slug="overmind",
+        description=(
+            "Operate the Overmind platform via MCP — fine-tuning, dataset "
+            "upload and cleaning, evals, and optimizer experiments"
+        ),
+        version="1.0",
+        provider="overmind-core",
+    ),
 ]
