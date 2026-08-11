@@ -39,6 +39,17 @@ def test_runtime_metadata_reports_python_and_uv():
         assert meta["uv.version"] is None
 
 
+def test_runtime_metadata_reports_extra_toolchains():
+    meta = _runtime_metadata()
+    for tool in ("node", "npx", "pnpm", "bun", "go", "cargo", "rustc"):
+        assert isinstance(meta[f"{tool}.exists"], bool)
+        if meta[f"{tool}.exists"]:
+            assert meta[f"{tool}.path"]
+        else:
+            assert meta[f"{tool}.path"] is None
+            assert meta[f"{tool}.version"] is None
+
+
 def test_traceparent_shape():
     header, trace_id = _new_traceparent()
     assert header == f"00-{trace_id}-{header.split('-')[2]}-01", header
