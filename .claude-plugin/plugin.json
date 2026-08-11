@@ -17,5 +17,6 @@
     "agent",
     "optimization",
     "mcp"
-  ]
+  ],
+  "mcpServers": "./mcp.json"
 }
