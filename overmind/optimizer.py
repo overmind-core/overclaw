@@ -205,10 +205,12 @@ def _runtime_metadata() -> dict:
 
     The server stores these on the session and should prefer ``uv`` only when
     ``uv.exists`` is true (and fall back to ``python.executable`` otherwise).
+    Non-Python toolchains (node/go/cargo) are reported the same way so codegen
+    can pick a language-appropriate invoke form.
     """
     uv_path = shutil.which("uv")
     python_on_path = shutil.which("python3") or shutil.which("python")
-    return {
+    meta = {
         "python.version": sys.version,
         "python.version_info": (f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"),
         "python.executable": sys.executable,
@@ -217,6 +219,12 @@ def _runtime_metadata() -> dict:
         "uv.path": uv_path,
         "uv.version": _tool_version(uv_path) if uv_path else None,
     }
+    for tool in ("node", "npx", "pnpm", "bun", "go", "cargo", "rustc"):
+        path = shutil.which(tool)
+        meta[f"{tool}.exists"] = path is not None
+        meta[f"{tool}.path"] = path
+        meta[f"{tool}.version"] = _tool_version(path) if path else None
+    return meta
 
 
 def _new_traceparent() -> tuple[str, str]:
