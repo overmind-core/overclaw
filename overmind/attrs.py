@@ -448,6 +448,16 @@ OTEL_LLM_USAGE_COMPLETION_TOKENS = "gen_ai.usage.completion_tokens"
 OTEL_LLM_USAGE_TOTAL_TOKENS = "gen_ai.usage.total_tokens"
 
 # ---------------------------------------------------------------------------
+# OTel code semantic-convention keys — stamped by ``observe()`` on every
+# decorated span so the server can bind spans to Behaviour Registry anchors
+# (``module.qualname``).  ``code.function.name`` is the stable semconv key
+# (carries ``__qualname__``); ``code.namespace`` is deprecated upstream but
+# kept so module and qualname stay separately queryable server-side.
+# ---------------------------------------------------------------------------
+CODE_NAMESPACE = "code.namespace"
+CODE_FUNCTION_NAME = "code.function.name"
+
+# ---------------------------------------------------------------------------
 # Tool-call metadata (server reads these to classify + attribute tool spans).
 # ---------------------------------------------------------------------------
 TOOL_NAME = "tool.name"
@@ -466,6 +476,9 @@ RETRIEVAL_RESULT_COUNT = "overmind.retrieval.result_count"
 # ---------------------------------------------------------------------------
 SDK_NAME = "overmind.sdk.name"
 SDK_VERSION = "overmind.sdk.version"
+# Commit sha of the running code (OTel VCS semconv), auto-detected in
+# ``init()`` from env vars or ``.git/HEAD``.  Omitted when undetectable.
+VCS_REF_HEAD_REVISION = "vcs.ref.head.revision"
 
 # ---------------------------------------------------------------------------
 # Span-level classification / error summary

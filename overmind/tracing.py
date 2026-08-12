@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping
 from contextlib import contextmanager
 from enum import Enum
 from functools import wraps
-from pathlib import PurePath
+from pathlib import Path, PurePath
 from typing import Any, TypeVar
 
 from opentelemetry import trace
@@ -287,6 +287,57 @@ def _attach_remote_parent_if_present() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Git commit sha auto-detection (resource attribute ``vcs.ref.head.revision``)
+# ---------------------------------------------------------------------------
+
+
+_GIT_SHA_ENV_VARS = (
+    "OVERMIND_GIT_SHA",  # explicit override, checked first
+    "GIT_SHA",
+    "GIT_COMMIT",
+    "GITHUB_SHA",
+    "RENDER_GIT_COMMIT",
+    "VERCEL_GIT_COMMIT_SHA",
+    "HEROKU_SLUG_COMMIT",
+    "CI_COMMIT_SHA",
+)
+
+
+def _detect_git_sha(start: Path | None = None) -> str | None:
+    """Best-effort commit sha of the running code: env vars first, then
+    ``.git/HEAD`` walking up from *start* (default cwd). Never raises,
+    never shells out to git."""
+    for var in _GIT_SHA_ENV_VARS:
+        if sha := os.environ.get(var, "").strip():
+            return sha
+    try:
+        start = start or Path.cwd()
+        for directory in (start, *start.parents):
+            # ponytail: ``.git`` as a *file* (worktree / submodule) is not
+            # resolved; upgrade path is following its ``gitdir:`` pointer.
+            head = directory / ".git" / "HEAD"
+            if not head.is_file():
+                continue
+            content = head.read_text(encoding="utf-8").strip()
+            if not content.startswith("ref:"):
+                return content or None  # detached HEAD holds the sha itself
+            ref_name = content[4:].strip()
+            ref_file = directory / ".git" / ref_name
+            if ref_file.is_file():
+                return ref_file.read_text(encoding="utf-8").strip() or None
+            packed = directory / ".git" / "packed-refs"
+            if packed.is_file():
+                for line in packed.read_text(encoding="utf-8").splitlines():
+                    sha, _, name = line.partition(" ")
+                    if name == ref_name:
+                        return sha
+            return None
+    except Exception:
+        logger.debug("git sha detection failed", exc_info=True)
+    return None
+
+
+# ---------------------------------------------------------------------------
 # SDK initialisation
 # ---------------------------------------------------------------------------
 
@@ -384,6 +435,9 @@ def init(
         resource_attributes[attrs.AGENT_NAME] = agent_name
     if project_id:
         resource_attributes[attrs.PROJECT_ID] = project_id
+    # Commit sha binds every trace to the exact code the process runs.
+    if git_sha := _detect_git_sha():
+        resource_attributes[attrs.VCS_REF_HEAD_REVISION] = git_sha
 
     resource = Resource.create(resource_attributes)
 
@@ -601,6 +655,20 @@ def _capture_output(otel_span, result: Any) -> None:
         logger.debug("observe(): output capture failed", exc_info=True)
 
 
+def _stamp_code_identity(otel_span, func: Callable) -> None:
+    """Stamp ``code.namespace`` / ``code.function.name`` from the *unwrapped*
+    function so the server can bind the span to a code-symbol anchor
+    (``module.qualname``). Best-effort, never raises."""
+    try:
+        target = inspect.unwrap(func)
+        if module := getattr(target, "__module__", None):
+            otel_span.set_attribute(attrs.CODE_NAMESPACE, module)
+        if qualname := getattr(target, "__qualname__", None):
+            otel_span.set_attribute(attrs.CODE_FUNCTION_NAME, qualname)
+    except Exception:
+        logger.debug("observe(): code identity capture failed", exc_info=True)
+
+
 def _stamp_tool_metadata(otel_span, tool_name: str, func: Callable, args: tuple, kwargs: dict) -> None:
     """Stamp ``tool.name`` / ``tool.arg_keys`` (keys only) on a tool span."""
     try:
@@ -636,6 +704,7 @@ def observe(
                 tracer = get_tracer()
                 with tracer.start_as_current_span(name) as otel_span:
                     otel_span.set_attribute(attrs.SPAN_TYPE, type.value)
+                    _stamp_code_identity(otel_span, func)
                     if project_id:
                         otel_span.set_attribute(attrs.PROJECT_ID, project_id)
                     if agent_id:
@@ -662,6 +731,7 @@ def observe(
             tracer = get_tracer()
             with tracer.start_as_current_span(name) as otel_span:
                 otel_span.set_attribute(attrs.SPAN_TYPE, type.value)
+                _stamp_code_identity(otel_span, func)
                 if project_id:
                     otel_span.set_attribute(attrs.PROJECT_ID, project_id)
                 if agent_id:

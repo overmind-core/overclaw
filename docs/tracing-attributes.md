@@ -35,6 +35,7 @@ absent.
 | `overmind.agent.id` | string (UUID) | if `init(agent_id=)` / `OVERMIND_AGENT_ID` | Agent PK. Server resolves this first (direct lookup). |
 | `overmind.agent.name` | string | if `init(agent_name=)` / `OVERMIND_AGENT_NAME` | Agent display name; server slugifies for stable identity. |
 | `overmind.project.id` | string (UUID) | if `init(project_id=)` / `OVERMIND_PROJECT_ID` | Project PK (session auth only; API tokens pin the project). |
+| `vcs.ref.head.revision` | string | if detectable | Commit sha of the running code (OTel VCS semconv). Auto-detected: `OVERMIND_GIT_SHA` (explicit override), then `GIT_SHA` / `GIT_COMMIT` / `GITHUB_SHA` / `RENDER_GIT_COMMIT` / `VERCEL_GIT_COMMIT_SHA` / `HEROKU_SLUG_COMMIT` / `CI_COMMIT_SHA`, then `.git/HEAD` (resolving the ref file / packed-refs) walking up from cwd. Silently omitted when undetectable. |
 
 Identity is *also* seeded into the OTel context, so the on-start processor stamps
 the same `overmind.agent.id` / `overmind.agent.name` / `overmind.project.id` onto
@@ -50,6 +51,8 @@ Emitted by `@observe` / `@entry_point` / `@workflow` / `@tool` / `@function` /
 | Key | Type | When present | Meaning |
 |-----|------|-------------|---------|
 | `overmind.span.type` | string | always | One of `function`, `entry_point`, `workflow`, `tool_call`, `llm_call`, `retrieval`. |
+| `code.namespace` | string | decorators only | `__module__` of the decorated function (after `inspect.unwrap`). Not stamped by `start_span` (no function to read). |
+| `code.function.name` | string | decorators only | `__qualname__` of the decorated function (includes the class for methods). `code.namespace` + `.` + `code.function.name` is the Behaviour Registry anchor the server binds spans to. |
 | `overmind.status` | string | always | `success` \| `failed` \| `cancelled`. |
 | `overmind.duration.seconds` | float | always | Wall-clock duration of the wrapped span. |
 | `overmind.error.type` | string | on failure | Exception class name. |
