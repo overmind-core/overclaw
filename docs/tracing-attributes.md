@@ -131,7 +131,33 @@ step-specific keys are set by the caller via `set_tag`.
 
 ---
 
-## 6. Server-ingest reconciliation (Phase 2 checklist)
+## 6. Eval envelope span events (`overmind.eval.*`) — wire contract v1
+
+Runtime eval declarations, emitted by `overmind.expect()` / `eval_context()` /
+`checkpoint()` / `end_conversation()` (`overmind/evals.py`) as **span events**
+on the current span (standard OTel `add_event`; no-ops without a recording
+span). The platform's evaluation layer parses `Span.events` against exactly
+these names and payload shapes — **pinned, do not rename**.
+
+Every envelope event carries the same two attributes:
+
+| Attribute | Type | Meaning |
+|-----------|------|---------|
+| `overmind.eval.schema_version` | int | Envelope schema version. Currently `1`. |
+| `overmind.eval.payload` | JSON string | Event payload; shape depends on the event name (below). |
+
+Payload shapes (v1):
+
+| Event name | Payload | Emitted by |
+|------------|---------|------------|
+| `overmind.eval.expectation` | `{"id": str, "kind": "contains"\|"regex"\|"schema"\|"constraint"\|"checkpoints", "spec": str or object, "scope": "span"\|"trace"\|"conversation", "gate": bool}` | `expect(kind, spec, *, id=None, scope="trace", gate=False)`. For `checkpoints`, `spec` is the ordered list of checkpoint names the run is expected to reach. `id` is auto-derived as a short stable hash of kind+spec when omitted. Bad `kind`/`scope` raise `ValueError`. |
+| `overmind.eval.context` | `{"facts": {str: JSON scalar or small object}}` | `eval_context(**facts)`. Values are coerced the same way `set_tag` coerces attribute values (rich values become JSON strings). |
+| `overmind.eval.checkpoint` | `{"name": str}` | `checkpoint(name)` — named trajectory milestone / turn boundary. |
+| `overmind.eval.conversation_end` | `{}` | `end_conversation()` — triggers conversation-scope scoring. |
+
+---
+
+## 7. Server-ingest reconciliation (Phase 2 checklist)
 
 The server **already reads** these keys today (`_build_span_usage` /
 `_resolve_agent` / `_classify_span_type`):
@@ -149,6 +175,8 @@ call out for Phase 2 server work if you want them surfaced:
 - `genai.response.message_chars` / `genai.response.finish_reason`
 - `genai.streaming` / `genai.time_to_first_token_seconds`
 - `overmind.retrieval.query_chars` / `overmind.retrieval.result_count`
+- the `overmind.eval.*` span events (§6) — envelope parsing is the platform's
+  Phase 1 ingest work
 
 These are all additive and namespaced; ingesting spans that carry them is safe
 today (unknown attributes are stored, just not aggregated).

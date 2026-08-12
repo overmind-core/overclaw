@@ -238,6 +238,19 @@ OPTIMIZE_BACKTEST_MODEL = "overmind.optimize.backtest_model"
 OPTIMIZE_BACKTEST_SCORE = "overmind.optimize.backtest_score"
 
 # ---------------------------------------------------------------------------
+# Runtime eval envelope (overmind/evals.py) — SPAN EVENT names plus the two
+# attributes every envelope event carries.  These are wire contract v1: the
+# platform parses them server-side (see docs/tracing-attributes.md §6), so
+# the values are pinned in tests/test_attrs.py — never rename.
+# ---------------------------------------------------------------------------
+EVAL_EXPECTATION_EVENT = "overmind.eval.expectation"
+EVAL_CONTEXT_EVENT = "overmind.eval.context"
+EVAL_CHECKPOINT_EVENT = "overmind.eval.checkpoint"
+EVAL_CONVERSATION_END_EVENT = "overmind.eval.conversation_end"
+EVAL_SCHEMA_VERSION = "overmind.eval.schema_version"  # int, currently 1
+EVAL_PAYLOAD = "overmind.eval.payload"  # JSON-serialized payload string
+
+# ---------------------------------------------------------------------------
 # Evaluator (overmind/optimize/evaluator.py)
 # ---------------------------------------------------------------------------
 EVAL_BATCH_SIZE = "overmind.eval.batch_size"

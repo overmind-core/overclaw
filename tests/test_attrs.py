@@ -130,6 +130,25 @@ class TestNoDeadConstants:
         )
 
 
+class TestEvalEnvelopeNamespace:
+    """Eval envelope wire contract v1 — event names + event attributes.
+
+    The platform parses ``Span.events`` against exactly these strings
+    (emitters live in ``overmind/evals.py``), so a rename here silently
+    breaks server-side evaluation.
+    """
+
+    def test_event_names_are_pinned(self) -> None:
+        assert attrs.EVAL_EXPECTATION_EVENT == "overmind.eval.expectation"
+        assert attrs.EVAL_CONTEXT_EVENT == "overmind.eval.context"
+        assert attrs.EVAL_CHECKPOINT_EVENT == "overmind.eval.checkpoint"
+        assert attrs.EVAL_CONVERSATION_END_EVENT == "overmind.eval.conversation_end"
+
+    def test_event_attribute_keys_are_pinned(self) -> None:
+        assert attrs.EVAL_SCHEMA_VERSION == "overmind.eval.schema_version"
+        assert attrs.EVAL_PAYLOAD == "overmind.eval.payload"
+
+
 class TestErrorSummaryAlias:
     """``ERROR`` is a legacy alias — keep it pointing at ``ERROR_SUMMARY``."""
 
