@@ -1,0 +1,140 @@
+# Telemetry — traces, sessions, health
+
+Start here for "is my agent working?", "are traces landing?", "what failed?",
+cost/latency, or anything about production traffic. Do not fetch traces over
+REST — use the Overmind MCP tools named below. Inspect each tool's schema
+for arguments.
+
+Adding tracing *code* (SDK init, decorators, flush) is
+[instrumentation.md](instrumentation.md). Once traces should be landing,
+verify them here with `list_traces` / `get_trace`.
+
+Conventions (names not ids, errors-as-values, mutations) live in
+[SKILL.md](../SKILL.md).
+
+## Workflow
+
+```
+- [ ] 1. list_agents — get the slug / display name
+- [ ] 2. agent_health — start here for "how is this agent doing"
+- [ ] 3. agent_failures if quality is down (do not copy ids into create_dataset_from_traces)
+- [ ] 4. list_traces → get_trace to drill in (use summary for totals, don't sum pages)
+- [ ] 5. list_sessions / get_session when the app is multi-turn
+- [ ] 6. graph_* when the question is lineage / similarity, not a simple list
+- [ ] 7. After instrumenting: run the path, then list_traces (newest) → get_trace and audit
+```
+
+## Orientation
+
+1. `list_agents` — names, slugs, model, status. Use slug or display name in
+   every later call.
+1. `agent_health(days?, agent?)` — **start here** for "how is this agent
+   doing". Returns offline eval-run rollups in `scores` AND live production
+   trace scoring in `live_trace_scores` (what the traces UI shows). Each
+   block has per-evaluator count, avg, pass rate, failures, and deltas vs the
+   previous window (worst first), plus trace volume / error rate / latency
+   (avg, p95). Prefer `live_trace_scores` for production quality when present.
+1. `get_agent(agent_name_or_slug)` / `agent_prompts` / `agent_eval_spec` —
+   identity, versioned prompts, eval contract (input schema, output fields,
+   tools, weights, what is optimizable).
+1. `cost_rollup(since?)` — inference spend per served model.
+1. `tool_stats(tool)` / `tool_error_trends(days?)` — tool-call volume, error
+   rate, naming drift vs capability cards.
+1. `contract_drift(agent, since?)` — declared schema vs what traces actually
+   wrote.
+1. `evaluator_stats(evaluator?, since?)` — noisy judges (abstain + error).
+1. `eval_score_trends(days?, agent?, evaluator?)` — daily pass_rate / avg
+   over a window.
+
+## Failures
+
+`agent_failures(agent, since_days?, limit?)` — one-call digest of recent
+traces with at least one failing score: failed evaluator names + reasoning,
+tools the trace called, violated schema_field refs. Use this instead of
+walking traces by hand.
+
+When the user wants a dataset from those failures, jump to
+`create_dataset_from_failures` (see [datasets.md](datasets.md)) — do **not**
+copy trace ids from this result into `create_dataset_from_traces`.
+
+## Traces
+
+- `list_traces(agent?, limit?, offset?)` — production root spans. Compact
+  rows: `trace_id`, name, agent, status, duration, `total_tokens`,
+  `total_cost`, model, live `trace_scores`, `n_scored`, `any_failed`,
+  `graph_ref`. The `summary` object aggregates the **full** filtered set
+  (counts, errors, sum/avg tokens and cost, duration stats) regardless of
+  the page returned — answer totals/averages from `summary`; do not paginate
+  or sum rows yourself. Paginate (`limit` + `offset`, `has_more`) only when
+  the user needs the per-trace rows. Default page is small (~20); raise
+  `limit` (max 5000) rather than stopping after one page.
+- `get_trace(trace_id)` — one trace in detail: headline usage
+  (`total_tokens` / `total_cost` / model, same as the Observability table),
+  root span, live `trace_scores` with rationale, child spans (name, type,
+  status, duration). Use the top-level usage fields; child span rows omit
+  attribute-level token keys. Multi-invocation traces include
+  `scoring_mode='multi_entry'` and per entry_point scores.
+- `assign_traces_to_agent` — move mis-attributed traces onto the right agent.
+
+### Verification after instrumenting
+
+Instrumentation isn't done when the code compiles — it's done when you have
+fetched the trace you just sent and it carries everything the baseline in
+[instrumentation.md](instrumentation.md#what-a-good-trace-carries) requires.
+
+1. Run the instrumented path end-to-end so a real trace is sent (flush
+   short-lived processes first: `overmind.force_flush_traces()`).
+1. `list_traces` (newest) → `get_trace` on that `trace_id`.
+1. Audit: `agent_name` set and constant, `model` + `total_tokens` +
+   `total_cost` populated, `conversation` / session set for multi-turn apps
+   (`list_sessions`), span types varied (not everything `llm_call`),
+   inputs/outputs on the entry point and key steps (`overmind.input.data` /
+   `overmind.output.data` on span attributes), no secrets in payloads.
+1. Fix every gap, re-run, re-fetch until it clears. Empty `list_traces`
+   means ingest failed — see troubleshooting in
+   [instrumentation.md](instrumentation.md). Do not poll REST.
+
+## Sessions (multi-turn)
+
+Traces group by `conversation.id`:
+
+- `list_sessions(agent_name_or_slug?, limit?)` — trace/span counts, tokens,
+  cost, activity window.
+- `get_session(session, limit?)` — aggregates plus member traces (newest
+  first). Drill any trace with `get_trace`. Raise `limit` when the session
+  has more traces than the default page.
+
+## Context graph
+
+Use when the question is lineage / similarity / "what produced this", not a
+simple list:
+
+- `graph_search(query, kind?, where?, limit?)` — semantic search over the
+  project graph (trace summaries, score reasoning, …). Empty when embeddings
+  are unavailable.
+- `graph_node(ref)` — one node by `source_ref` (e.g. `agents:<id>`,
+  `traces:<trace_id>`) plus 1-hop edges.
+- `graph_walk(start_ref, edge_kinds, depth?, target_kind?, direction?, target_where?)` — follow edges up to 3 hops. Example: from a trace,
+  `edge_kinds=['score_for']`, `direction='in'`, `target_kind='score'` lists
+  attached scores; then `edge_kinds=['violates']` (out) for fields a score
+  broke.
+- `graph_lineage(start_ref, edge_kinds?, max_depth?)` — bidirectional BFS up
+  to 8 hops, the mixed-direction spine a single `graph_walk` can't express
+  (failing score → trace → datapoint → dataset → training run → model).
+- `graph_trend(kind, bucket?, where?, since?)` — time-bucketed counts (e.g.
+  failing scores per week: `kind='score'`, `where={"passed": false}`).
+- `backfill_context_graph` — rebuild graph nodes/edges when search/lineage
+  looks empty after a data import.
+
+## External trace sources (connectors)
+
+When traces live in Langfuse (etc.) rather than Overmind's SDK:
+
+1. `list_connectors` — existing credentials and sync status.
+1. `create_connector(connector_type, ...)` — currently `langfuse`. Omit
+   secrets from the call so the config form collects them; never invent keys.
+1. `configure_connector_sync` → `start_connector_setup` (first sync, optional
+   auto_sync) or `trigger_connector_sync` for an on-demand pull.
+1. `discover_connector_agents` → `set_connector_agent_mapping` so imported
+   spans land on the right Overmind agents.
+1. `connector_preview` / `connector_fetch_import` for a bounded import check.

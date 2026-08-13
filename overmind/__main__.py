@@ -8,7 +8,9 @@ Use --help with any command or subcommand for details.
 """
 # Allow ``python -m overmind …`` when a different ``overmind`` script shadows PATH.
 
+import json
 import os
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -23,7 +25,7 @@ from overmind.optimizer import (
     configure_logging,
     run_optimizer,
 )
-from overmind.skills import skills_app
+from overmind.skills import get_destination_dir, skills_app, sync_skills
 
 app = typer.Typer(
     name="overmind",
@@ -81,6 +83,46 @@ app.command("optimise", help=OPTIMISE_HELP)(optimise)
 app.command("optimize", hidden=True, help=f"Deprecated alias for `optimise`. {OPTIMISE_HELP}")(optimise)
 
 app.add_typer(skills_app, name="skills")
+
+
+MCP_URLS = {
+    "staging": "https://staging.overmindlab.ai/api/mcp/",
+    "development": "http://localhost:8000/api/mcp/",
+    "local": "http://localhost:8000/api/mcp/",
+    "dev": "http://localhost:8000/api/mcp/",
+}
+
+
+def overmind_init(
+    env: Annotated[str, typer.Option(help="production, staging or dev")] = "production",
+    api_key: Annotated[str, typer.Option(envvar="OVERMIND_API_KEY", help="Overmind API key")] = API_KEY,
+    ide: Annotated[str, typer.Option(..., help="IDE to use")] = "cursor",  # ide: cursor, claude code etc
+):
+    """
+    Add (or update) the overmind MCP server in {.cursor or .claude}/mcp.json and install
+    the overmind skill, leaving any other configured servers untouched.
+    """
+    url = MCP_URLS.get(env, "https://api.overmindlab.ai/api/mcp/")
+    dest = get_destination_dir(ide)
+    mcp_path = Path.cwd() / dest / "mcp.json"
+
+    config = json.loads(mcp_path.read_text()) if mcp_path.exists() else {}
+    config.setdefault("mcpServers", {})["overmind"] = {
+        "url": url,
+        "headers": {"X-Api-Key": api_key},
+    }
+    mcp_path.parent.mkdir(parents=True, exist_ok=True)
+    mcp_path.write_text(json.dumps(config, indent=2) + "\n")
+    console.print(f"overmind MCP server written to {dest}/mcp.json")
+
+    sync_skills(["overmind"], ide=ide)
+    console.print(f"overmind skill installed to {dest}/skills/overmind")
+
+    # claude mcp add --transport http corridor https://app.corridor.dev/api/mcp --header "Authorization: Bearer ..."
+
+
+app.command("init")(overmind_init)
+
 
 if __name__ == "__main__":
     app()

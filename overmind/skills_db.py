@@ -12,23 +12,14 @@ class Skill:
 
 skills = [
     Skill(
-        name="Overmind Telemetry",
-        slug="overmind-agent-telemetry",
-        description=(
-            "Add Overmind tracing, verify and audit instrumentation by fetching "
-            "real traces, query traces via the REST API, and look up current docs"
-        ),
-        version="1.1",
-        provider="overmind-core",
-    ),
-    Skill(
-        name="Overmind Platform",
+        name="Overmind",
         slug="overmind",
         description=(
-            "Operate the Overmind platform via MCP — fine-tuning, dataset "
-            "upload and cleaning, evals, and optimizer experiments"
+            "Operate the Overmind platform via MCP — tracing, telemetry, "
+            "fine-tuning, dataset upload and cleaning, evals, and optimizer "
+            "experiments"
         ),
-        version="1.0",
+        version="1.3",
         provider="overmind-core",
     ),
 ]

@@ -43,16 +43,19 @@ Available decorators/helpers: `entry_point`, `workflow`, `tool`, `function`, plu
 
 ## Skills
 
-Use these from Cursor, Codex, or Claude Code to scaffold agents and configure telemetry without leaving your coding environment. Skills live at the repo-root [`skills/`](./skills/) directory so agent installers can pick them up from this repository (e.g. `npx skills add overmind-core/overmind`).
+Use these from Cursor, Codex, or Claude Code to scaffold agents and operate
+Overmind without leaving your coding environment. Skills live at the repo-root
+[`skills/`](./skills/) directory so agent installers can pick them up from this
+repository (e.g. `npx skills add overmind-core/overmind`).
 
 ```bash
 overmind skills list --verbose
-overmind skills sync "Overmind Telemetry"   # or: overmind-agent-telemetry
+overmind skills sync overmind
 ```
 
-| Skill                | What it does                                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `Overmind Telemetry` | Add tracing, verify traces via the REST API, and look up current Overmind docs (`overmind-agent-telemetry`). |
+| Skill      | What it does                                                                                        |
+| ---------- | --------------------------------------------------------------------------------------------------- |
+| `Overmind` | Instrument tracing, inspect telemetry via MCP, upload datasets, run evals, fine-tune, and optimize. |
 
 ## CLI reference
 
