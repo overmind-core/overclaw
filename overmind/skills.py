@@ -27,11 +27,17 @@ console = Console()
 _PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-def _skills_root() -> str:
-    packaged = os.path.join(_PACKAGE_DIR, "skills")
-    if os.path.isdir(packaged):
-        return packaged
-    return os.path.join(os.path.dirname(_PACKAGE_DIR), "skills")
+def _skill_src(slug: str) -> str | None:
+    """First candidate dir containing the slug: packaged wheel tree, then repo root.
+
+    A dev checkout has unrelated prompt files at ``overmind/skills/``, so the
+    packaged dir existing is not enough — it must contain the skill itself.
+    """
+    candidates = (
+        os.path.join(_PACKAGE_DIR, "skills", slug),
+        os.path.join(os.path.dirname(_PACKAGE_DIR), "skills", slug),
+    )
+    return next((p for p in candidates if os.path.isdir(p)), None)
 
 
 skills_app = typer.Typer(help="Manage Overmind agent skills.")
@@ -69,19 +75,19 @@ def sync_skills(
 
 def sync_skill(skill: Skill, ide: str):
     """Copy the whole skill directory (SKILL.md + references/) into the destination."""
-    src = os.path.join(_skills_root(), skill.slug)
-    if not os.path.isdir(src):
-        raise FileNotFoundError(f"Skill directory not found: {src}")
-    dest = os.path.join(get_destination_dir(ide), skill.slug)
+    src = _skill_src(skill.slug)
+    if src is None:
+        raise FileNotFoundError(f"Skill directory not found for: {skill.slug}")
+    dest = os.path.join(get_destination_dir(ide), "skills", skill.slug)
     shutil.copytree(src, dest, dirs_exist_ok=True)
     logging.info(f"Copied {src} to {dest}")
 
 
 def get_destination_dir(ide: str):
     if ide == "cursor":
-        return ".cursor/skills"
+        return ".cursor"
 
-    if ide == "claude":
-        return ".claude/skills"
+    if ide == "claude_code" or ide == "claude" or ide == "claude-code":
+        return ".claude"
 
-    raise ValueError(f"Invalid IDE: {ide}")
+    raise typer.BadParameter(f"use cursor or claude_code, got: {ide}", param_hint="--ide")
