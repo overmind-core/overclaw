@@ -84,12 +84,17 @@ fetched the trace you just sent and it carries everything the baseline in
 
 1. Run the instrumented path end-to-end so a real trace is sent (flush
    short-lived processes first: `overmind.force_flush_traces()`).
-1. `list_traces` (newest) → `get_trace` on that `trace_id`.
-1. Audit: `agent_name` set and constant, `model` + `total_tokens` +
-   `total_cost` populated, `conversation` / session set for multi-turn apps
-   (`list_sessions`), span types varied (not everything `llm_call`),
-   inputs/outputs on the entry point and key steps (`overmind.input.data` /
-   `overmind.output.data` on span attributes), no secrets in payloads.
+1. `list_traces` (newest) → `get_trace` on that `trace_id`. When the task
+   names one agent in a multi-agent repo, filter `list_traces(agent=...)` to
+   that agent's UUID — never the repo-wide newest trace, which may belong to
+   a sibling agent.
+1. Audit: `agent_id` (the agent's UUID, verbatim) and `agent_name` set and
+   constant, `model` + `total_tokens` + `total_cost` populated, `conversation`
+   / session set for multi-turn apps (`list_sessions`), span types varied (not
+   everything `llm_call`), inputs/outputs on the entry point and key steps
+   (`overmind.input.data` / `overmind.output.data` on span attributes), no
+   secrets in payloads. If the trace's agent UUID differs from the card's,
+   the identity stamp is wrong — fix it before anything else.
 1. Fix every gap, re-run, re-fetch until it clears. Empty `list_traces`
    means ingest failed — see troubleshooting in
    [instrumentation.md](instrumentation.md). Do not poll REST.

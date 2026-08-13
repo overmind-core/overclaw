@@ -43,6 +43,12 @@ Follow these for ALL Overmind MCP work:
    compiles — it's done when you have fetched the trace you just sent via
    MCP (`list_traces` → `get_trace`) and it carries everything the baseline
    in [references/instrumentation.md](references/instrumentation.md) requires.
+1. **One agent at a time.** Instrumentation tasks map to agents. Resolve the
+   agent's identity and capability card from `get_agent` (the `id` UUID
+   verbatim) and scope changes to that agent's files
+   ([references/instrumentation.md](references/instrumentation.md) Step 0 /
+   5b). For repo-wide tasks, run the systematic one-at-a-time pass (Step 5c)
+   — never a giant all-agents-at-once edit.
 
 ## Use-case references
 
@@ -112,7 +118,8 @@ Typical loop, always via MCP:
 1. **See what's happening** — [telemetry.md](references/telemetry.md)
    (`agent_health` → `agent_failures` → `list_traces` / `get_trace`). Add
    tracing first if nothing is landing:
-   [instrumentation.md](references/instrumentation.md).
+   [instrumentation.md](references/instrumentation.md) — resolve each
+   agent's identity with `get_agent` and instrument one at a time.
 1. **Turn traces into data** — [datasets.md](references/datasets.md)
    (`create_dataset_from_failures` or `create_dataset_from_file`).
 1. **Clean it** — workshop in [datasets.md](references/datasets.md).
