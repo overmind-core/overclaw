@@ -15,11 +15,14 @@ See [telemetry.md](telemetry.md).
 ## Workflow
 
 ```
+- [ ] 0. Resolve the agent's identity — `get_agent` via MCP; copy its `id` (UUID) verbatim
 - [ ] 1. Detect existing telemetry (OpenTelemetry, Traceloop, LangSmith, etc.)
 - [ ] 2. Install the SDK and set env vars
-- [ ] 3. Initialise — greenfield OR fan-out onto the existing provider
+- [ ] 3. Initialise — greenfield OR fan-out onto the existing provider, with the agent's identity (Step 3a/3b)
 - [ ] 4. Auto-instrument the LLM providers in use
 - [ ] 5. Add custom spans where useful
+- [ ] 5b. Scope everything to the ONE agent your task names — identity, files, verification
+- [ ] 5c. Multi-agent repos: run the systematic one-at-a-time pass
 - [ ] 6. Flush on shutdown, then run the app and audit traces via MCP
 ```
 
@@ -31,13 +34,25 @@ calling it done. Fetch a real trace with `list_traces` → `get_trace`
 
 | Requirement             | How                                                                                                                                                                                                                                        | Why                                                               |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| Agent name              | `agent_name=` in `init()`, `OVERMIND_AGENT_NAME`, or `set_agent_name()` — pick one constant string; the server slugifies it into the agent's identity, so renaming forks a new agent                                                       | Traces group under one agent                                      |
+| Agent identity          | `agent_id=` **and** `agent_name=` in `init()` (or `set_agent_id()` + `set_agent_name()`). Get BOTH from `get_agent` via MCP — copy `agent_id` verbatim (it is a UUID; never invent, truncate, or reformat it)                                | The server resolves `overmind.agent.id` by direct UUID lookup (drift-proof); `agent_name` is display + fallback. Name-only stamps risk a slug mismatch with the code-scan agent, which mints a duplicate agent whose live trace scoring silently no-ops |
+| Per-agent scoping       | When your task names ONE agent in a multi-agent repo, stamp THAT agent's identity only — never the repo's, never a generic name                                                                                                             | Traces group under the right agent in the Console; sibling agents' spans are untouched |
 | Model + token usage     | Automatic via provider auto-instrumentation (Step 4); raw-OTel spans should carry `gen_ai.request.model` / `gen_ai.usage.*`                                                                                                                | Cost is computed server-side from these                           |
 | Inputs and outputs      | The decorators (Step 5) capture call args and return values automatically; make sure the entry point and key steps are decorated so the trace shows what the agent saw and produced                                                        | A trace without I/O can't be debugged or turned into eval data    |
 | Sensitive data excluded | Not for agents — trace normally and mask credential fields (API keys, tokens, passwords) before they reach decorated functions. `@observe_safe()` (traces timing/status, no values) is a manual escape hatch for human implementation only | Inputs/outputs are stored verbatim                                |
 | Session grouping        | `set_conversation_id(...)` per conversation/thread (stamped as `conversation.id`) whenever the app has multi-turn interactions                                                                                                             | Groups traces into Sessions                                       |
 | User attribution        | `set_user(user_id, email=...)` where the app has accounts                                                                                                                                                                                  | Per-user filtering and cost attribution                           |
 | Span hierarchy + types  | One `@entry_point` at the top; `@workflow` / `@tool` / `@retrieval` for the steps under it, with descriptive names                                                                                                                         | Shows which step failed or was slow, instead of one flat LLM call |
+
+## Step 0 — Resolve the agent's identity
+
+The authoritative source for agent identity is `get_agent` via MCP (see
+[telemetry.md](telemetry.md)): it returns the agent's `id` (a UUID) and its
+`flow` — the capability card with `agent_path`, `modes[*].entrypoint_fn`,
+system prompt, and tool surface. Call it with the agent's name/slug before
+writing any instrumentation. Copy the returned `id` verbatim — never invent,
+shorten, re-format, or "fix" it, and never substitute another agent's id. If
+the id is missing or does not look like a UUID, STOP and report instead of
+guessing: a wrong id silently attributes every trace to the wrong agent.
 
 ## Step 1 — Detect existing telemetry
 
@@ -89,6 +104,8 @@ import overmind
 
 overmind.init(
     service_name="my-agent",
+    agent_id="<agent-uuid>",        # copy verbatim from get_agent — never invent
+    agent_name="My Agent",          # this agent's constant display name
     providers=["openai", "anthropic"],  # auto-instrument these SDKs; see Step 4
 )
 ```
@@ -109,14 +126,19 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
 import overmind
-from overmind.tracing import enable_tracing, get_api_settings
+from overmind.tracing import enable_tracing, get_api_settings, set_agent_id, set_agent_name
 
 api_key, base_url = get_api_settings()  # reads OVERMIND_API_KEY / OVERMIND_API_URL
 
 provider = trace.get_tracer_provider()
 if not isinstance(provider, TracerProvider):
     # Nothing real was installed yet — let Overmind own the pipeline instead.
-    overmind.init(service_name="my-agent", providers=["openai"])
+    overmind.init(
+        service_name="my-agent",
+        agent_id="<agent-uuid>",   # copy verbatim from get_agent
+        agent_name="My Agent",
+        providers=["openai"],
+    )
 else:
     provider.add_span_processor(
         BatchSpanProcessor(
@@ -128,6 +150,10 @@ else:
     )
     # Auto-instrument the LLM SDKs against the existing provider.
     enable_tracing(["openai", "anthropic"])
+    # Fan-out path: identity is NOT stamped by an on-start processor, so stamp it
+    # explicitly on the spans you decorate (Step 5) and via the context helpers.
+    set_agent_id("<agent-uuid>")    # verbatim from get_agent
+    set_agent_name("My Agent")
 ```
 
 Notes:
@@ -179,7 +205,8 @@ with overmind.start_span("rerank", span_type=overmind.SpanType.FUNCTION) as span
 
 overmind.set_user("user-123", email="a@b.com")
 overmind.set_conversation_id("conv-abc")  # groups spans into one session
-overmind.set_agent_name("support-bot")
+overmind.set_agent_id("<agent-uuid>")     # verbatim from get_agent — never invented
+overmind.set_agent_name("My Agent")       # keep constant for this agent
 
 try:
     ...
@@ -190,6 +217,78 @@ except Exception as exc:
 
 `start_span` and the decorators use the ambient tracer, so they attach to
 whichever provider is active — greenfield or fan-out.
+
+**Minimum for a good trace.** The entry point alone is NOT enough. For every
+function the agent's code path actually calls that is a meaningful step — a
+tool the agent can invoke, a policy lookup, a retrieval, a scoring step —
+decorate it with the matching type (`@tool`, `@retrieval`, `@function`,
+`@workflow`). A trace whose spans are all `entry_point` is flat: it cannot
+show which step failed or was slow. Rule of thumb: if the function has a name
+a human would use to describe the agent's work ("search", "lookup_policy",
+"rerank"), it should be a span.
+
+## Step 5b — Instrumenting ONE agent in a multi-agent repo
+
+Most instrumentation tasks name **one specific agent**. Everything in this
+skill is scoped to that agent:
+
+- **Identity.** Stamp exactly the `agent_id` and `agent_name` from `get_agent`
+  (Step 0). The `agent_id` is a UUID — copy it verbatim into `init(agent_id=)`,
+  `set_agent_id()`, or `OVERMIND_AGENT_ID`. Never invent, shorten, re-format,
+  or substitute another agent's id.
+- **Scope.** Only touch the named agent's files (`agent_path`,
+  `modes[*].entrypoint_fn`, its own tools and prompt). Do not edit sibling
+  agents, and do not re-decorate code they own. Shared infrastructure (a
+  common LLM client, a shared `core/` module) is usually fine to instrument
+  once — leave its own identity alone and let this agent's identity ride on
+  the spans that pass through it.
+- **One identity per agent.** Other agents in the repo each have their own
+  stable `agent_id`/`agent_name`. Distinct names across agents are correct;
+  only a SINGLE agent's name changing between runs is a bug (it forks the
+  agent).
+- **Shared process.** If several agents run in one process (e.g. a FastAPI
+  app with per-agent routers), do not rely on one global identity. Resource
+  attrs are process-global — the first `init()` in a shared process pins
+  them, so spans from sibling agents misattribute to that first agent. Stamp
+  each agent's identity at the start of its own request path: the identity
+  setters (`set_agent_id` / `set_agent_name`) are scoped to the current
+  task/context, so calling them in each handler keeps that agent's spans
+  attributed to it. Span-level stamps win over the stale resource identity on
+  the server.
+- **Verify per agent.** In Step 6, fetch traces filtered to THIS agent's UUID
+  (`list_traces` with the agent filter, see [telemetry.md](telemetry.md)) and
+  confirm they carry `overmind.agent.id` = the agent's UUID and its
+  `agent_name`.
+
+## Step 5c — Multi-agent repos: the systematic one-at-a-time pass
+
+When the task covers every agent in a repo (or the repo as a whole), do NOT
+try to instrument everything in one giant pass. Work ONE agent at a time,
+end to end, in a strict loop — each pass has a small, focused context (one
+agent's files + one UUID), a failure can't poison sibling agents, and every
+agent ships *verified* instead of "hope it worked". A repo with 20 agents =
+20 small successful passes, not one huge risky one.
+
+The loop:
+
+1. **Discover.** `list_agents` (MCP) — or the agents named in the task
+   prompt. The work unit is N separate passes.
+2. **Pick one agent.** Start with the first, and never start the next until
+   the current one is done and verified.
+3. **Fetch its card.** `get_agent` → its `id` (UUID) and capability card.
+   Note `agent_path` / `modes[*].entrypoint_fn` — the exact files this agent
+   owns.
+4. **Instrument only that agent.** Follow Steps 0-5b scoped to THIS agent:
+   touch only its files, stamp its UUID verbatim, leave sibling agents' code
+   alone (shared infrastructure is fine to instrument once).
+5. **Run + verify only that agent.** Run its entrypoint, flush, then fetch
+   traces filtered to ITS UUID (Step 6). Audit against the baseline: the
+   trace's `agent` equals this agent's UUID, `agent_name` constant, model +
+   tokens + cost populated, inputs/outputs on the entry point, no secrets.
+6. **Close it.** Fix gaps until this agent's trace clears. Then move to the
+   next agent (back to step 2).
+
+Only at the end, report each agent with its trace link.
 
 ## Step 6 — Flush on shutdown, then run and audit (required)
 
@@ -207,13 +306,19 @@ the agent:
 
 **b.** Fetch it via Overmind MCP — [telemetry.md](telemetry.md):
 `list_traces` (newest) → `get_trace` on that `trace_id`. Do not curl REST.
+When your task names one agent in a multi-agent repo, fetch filtered to that
+agent's UUID — never the repo-wide newest trace, which may belong to a
+sibling agent.
 
 **c.** Audit against the [baseline table](#what-a-good-trace-carries). On the
-list row check `agent_name`, `model`, `total_tokens`, `total_cost`, and
-session grouping for multi-turn apps; on the detail spans check `span_type`
-variety (not everything `llm_call`), inputs/outputs on the entry point and
-key steps (`overmind.input.data` / `overmind.output.data` on span
-attributes), and that no secrets appear in captured payloads.
+list row check `agent_id` (the agent's UUID, verbatim) and `agent_name`,
+`model`, `total_tokens`, `total_cost`, and session grouping for multi-turn
+apps; on the detail spans check `span_type` variety (not everything
+`llm_call`, and not everything `entry_point`), inputs/outputs on the entry
+point and key steps (`overmind.input.data` / `overmind.output.data` on span
+attributes), and that no secrets appear in captured payloads. If the trace's
+agent UUID differs from the card's, the identity stamp is wrong — fix it
+before anything else.
 
 **d.** Fix every gap, re-run, re-fetch. Repeat until the trace clears the
 baseline. Then report what is traced.
@@ -236,7 +341,9 @@ If nothing shows up:
 | No flush in scripts/serverless                                       | Traces silently never sent                               | `force_flush_traces()` before exit                                                                                                                |
 | Init after LLM clients are created                                   | Provider calls not instrumented                          | Call `init()` at process start, before client construction                                                                                        |
 | `overmind.init()` on top of an existing `TracerProvider`             | OTel keeps the first provider; Overmind attaches nothing | Fan-out path (Step 3b)                                                                                                                            |
-| Agent name varies per run/env                                        | Each variant becomes a separate agent                    | One constant `agent_name`, set once                                                                                                               |
+| Agent name varies per run/env                                        | Each variant becomes a separate agent                    | Set `agent_id` (UUID) once and keep `agent_name` constant — distinct names across DIFFERENT agents are correct, drift on ONE agent is the bug     |
+| Invented / mangled `agent_id` (UUID)                                 | Traces attribute to the wrong or a brand-new agent       | Copy the UUID verbatim from `get_agent` (Step 0); if it is missing or not a UUID, stop and report                                                |
+| Several agents share one process and one global identity             | All spans land under one agent                           | Stamp each agent's `agent_id`/`agent_name` at its own entry point (Step 5b)                                                                       |
 | Only auto-instrumentation, no decorators                             | Flat traces with no inputs/outputs and no step structure | Decorate the entry point and key steps (Step 5)                                                                                                   |
 | Credentials (API keys, tokens, passwords) in decorated function args | Stored verbatim in the trace                             | Mask them before passing; `@observe_safe()` only as a manual, human-maintained escape hatch — never preemptively for data that might be sensitive |
 | No `set_conversation_id` in a chat app                               | Sessions view stays empty                                | Stamp the thread/conversation id per request                                                                                                      |
