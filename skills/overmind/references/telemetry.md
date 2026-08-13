@@ -6,8 +6,8 @@ REST — use the Overmind MCP tools named below. Inspect each tool's schema
 for arguments.
 
 Adding tracing *code* (SDK init, decorators, flush) is
-[overmind-agent-telemetry](../../overmind-agent-telemetry/SKILL.md). Once
-traces should be landing, verify and operate on them here.
+[instrumentation.md](instrumentation.md). Once traces should be landing,
+verify them here with `list_traces` / `get_trace`.
 
 Conventions (names not ids, errors-as-values, mutations) live in
 [SKILL.md](../SKILL.md).
@@ -78,15 +78,21 @@ copy trace ids from this result into `create_dataset_from_traces`.
 
 ### Verification after instrumenting
 
+Instrumentation isn't done when the code compiles — it's done when you have
+fetched the trace you just sent and it carries everything the baseline in
+[instrumentation.md](instrumentation.md#what-a-good-trace-carries) requires.
+
 1. Run the instrumented path end-to-end so a real trace is sent (flush
-   short-lived processes first).
+   short-lived processes first: `overmind.force_flush_traces()`).
 1. `list_traces` (newest) → `get_trace` on that `trace_id`.
-1. Audit: agent name set and constant, model + tokens + cost populated, span
-   types varied (not everything `llm_call`), inputs/outputs on the entry
-   point and key steps, no secrets in payloads. For multi-turn apps, traces
-   should group into a session (`list_sessions`).
-1. Empty `list_traces` means ingest failed — fix instrumentation, don't poll
-   REST.
+1. Audit: `agent_name` set and constant, `model` + `total_tokens` +
+   `total_cost` populated, `conversation` / session set for multi-turn apps
+   (`list_sessions`), span types varied (not everything `llm_call`),
+   inputs/outputs on the entry point and key steps (`overmind.input.data` /
+   `overmind.output.data` on span attributes), no secrets in payloads.
+1. Fix every gap, re-run, re-fetch until it clears. Empty `list_traces`
+   means ingest failed — see troubleshooting in
+   [instrumentation.md](instrumentation.md). Do not poll REST.
 
 ## Sessions (multi-turn)
 
@@ -108,8 +114,7 @@ simple list:
   are unavailable.
 - `graph_node(ref)` — one node by `source_ref` (e.g. `agents:<id>`,
   `traces:<trace_id>`) plus 1-hop edges.
-- `graph_walk(start_ref, edge_kinds, depth?, target_kind?, direction?,
-  target_where?)` — follow edges up to 3 hops. Example: from a trace,
+- `graph_walk(start_ref, edge_kinds, depth?, target_kind?, direction?, target_where?)` — follow edges up to 3 hops. Example: from a trace,
   `edge_kinds=['score_for']`, `direction='in'`, `target_kind='score'` lists
   attached scores; then `edge_kinds=['violates']` (out) for fields a score
   broke.

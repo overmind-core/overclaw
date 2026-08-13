@@ -1,6 +1,6 @@
 ---
 name: overmind
-description: Operate the Overmind platform through its MCP server — inspect telemetry (traces, sessions, agent health, failures, context graph), upload and clean datasets, author evaluators / eval sets / eval runs, fine-tune models, and launch optimizer experiments. Use when the user mentions Overmind, traces or telemetry, finetuning or training a model, uploading datasets, eval runs, evaluators, dataset quality, prompt/agent optimization, or when Overmind MCP tools are available.
+description: Operate the Overmind platform through its MCP server — add tracing to a Python AI/LLM project, inspect telemetry (traces, sessions, agent health, failures, context graph), upload and clean datasets, author evaluators / eval sets / eval runs, fine-tune models, and launch optimizer experiments. Use when the user mentions Overmind, adding telemetry/observability/tracing, traces landing, finetuning or training a model, uploading datasets, eval runs, evaluators, dataset quality, prompt/agent optimization, or when Overmind MCP tools are available.
 ---
 
 # Overmind platform MCP
@@ -9,8 +9,9 @@ Overmind is an agent observability and optimization platform. It ingests traces
 from LLM agents, turns them into datasets, grades them with evaluators, and
 uses those datasets to fine-tune models and optimize agent prompts/code.
 
-This skill covers the common Overmind MCP workflows: telemetry, datasets,
-evals, fine-tuning, and optimizer experiments.
+This skill covers the common Overmind workflows: instrumenting applications
+with tracing, inspecting telemetry, datasets, evals, fine-tuning, and
+optimizer experiments.
 
 ## Core principles
 
@@ -24,25 +25,31 @@ Follow these for ALL Overmind MCP work:
    tell the user to run `overmind init` (or re-check MCP config /
    `OVERMIND_API_KEY`). Do not paste a URL or ask them to paste the raw key
    into chat.
-2. **Reference file per use case.** Check the relevant reference below before
+1. **Reference file per use case.** Check the relevant reference below before
    implementing. This file holds conventions that apply everywhere; the
    workflow lives in the reference.
-3. **Names, not ids.** Tools take human names resolved against the project.
+1. **Names, not ids.** Tools take human names resolved against the project.
    Get them from the matching `list_*` tool first. UUIDs work as a fallback.
    Never paste raw UUIDs to the user when a name/slug exists.
-4. **Intent gates every dataset workflow.** Eval runs and optimizer
+1. **Intent gates every dataset workflow.** Eval runs and optimizer
    experiments need **eval** intent; fine-tuning needs **ft** + model
    surface. Read the intent section below before creating or picking a
    dataset.
-5. **Errors are values; mutations run immediately.** Every tool returns
+1. **Errors are values; mutations run immediately.** Every tool returns
    `{"error": "..."}` instead of raising — follow the `hint` when present.
    There is no confirmation gate, so verify arguments (and ask the user when
    destructive) before create/delete/cancel.
+1. **Verify with a real trace.** Instrumentation isn't done when the code
+   compiles — it's done when you have fetched the trace you just sent via
+   MCP (`list_traces` → `get_trace`) and it carries everything the baseline
+   in [references/instrumentation.md](references/instrumentation.md) requires.
 
 ## Use-case references
 
+- Instrumenting an application (greenfield or alongside existing telemetry):
+  [references/instrumentation.md](references/instrumentation.md)
 - Inspecting traces, sessions, agent health, failures, the context graph, and
-  connectors:
+  connectors (including the post-setup verification loop):
   [references/telemetry.md](references/telemetry.md)
 - Uploading / building datasets (from traces, failures, or an attached file)
   and cleaning them in the workshop:
@@ -50,14 +57,10 @@ Follow these for ALL Overmind MCP work:
 - Authoring evaluators, grouping them into eval sets, running and comparing
   eval runs:
   [references/evals.md](references/evals.md)
-- Fine-tuning a model (prerequisites, train, deploy, swap PR):
+- Fine-tuning a model (prerequisites, recommended-model sweep, deploy, swap PR):
   [references/finetuning.md](references/finetuning.md)
 - Optimizer experiments (prompt/agent search via the local executioner):
   [references/optimizer.md](references/optimizer.md)
-
-SDK instrumentation (init, decorators, flush) is
-[overmind-agent-telemetry](../overmind-agent-telemetry/SKILL.md). After adding
-tracing, verify here with [references/telemetry.md](references/telemetry.md).
 
 ## Conventions (read before any workflow)
 
@@ -107,15 +110,17 @@ job ends.
 Typical loop, always via MCP:
 
 1. **See what's happening** — [telemetry.md](references/telemetry.md)
-   (`agent_health` → `agent_failures` → `list_traces` / `get_trace`).
-2. **Turn traces into data** — [datasets.md](references/datasets.md)
+   (`agent_health` → `agent_failures` → `list_traces` / `get_trace`). Add
+   tracing first if nothing is landing:
+   [instrumentation.md](references/instrumentation.md).
+1. **Turn traces into data** — [datasets.md](references/datasets.md)
    (`create_dataset_from_failures` or `create_dataset_from_file`).
-3. **Clean it** — workshop in [datasets.md](references/datasets.md).
-4. **Grade it** — [evals.md](references/evals.md) (baseline `create_eval_run`
+1. **Clean it** — workshop in [datasets.md](references/datasets.md).
+1. **Grade it** — [evals.md](references/evals.md) (baseline `create_eval_run`
    on an **eval**-intent dataset).
-5. **Improve** — [finetuning.md](references/finetuning.md) (**ft** dataset)
-   or [optimizer.md](references/optimizer.md) (**eval** dataset + connected
-   local executioner).
-6. **Prove it** — `compare_eval_runs` new vs baseline
+1. **Improve** — [finetuning.md](references/finetuning.md) (**ft** dataset;
+   recommended-model sweep) or [optimizer.md](references/optimizer.md)
+   (**eval** dataset + connected local executioner).
+1. **Prove it** — `compare_eval_runs` new vs baseline
    ([evals.md](references/evals.md)).
-7. **Ship** — `create_model_swap_pr` or `create_optimizer_pr`.
+1. **Ship** — `create_model_swap_pr` or `create_optimizer_pr`.
