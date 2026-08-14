@@ -15,7 +15,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from overmind import attrs
-from overmind.evals import checkpoint, end_conversation, eval_context, expect
+from overmind.evals import checkpoint, end_conversation, eval_context, expect, intent
 
 
 @pytest.fixture
@@ -146,6 +146,19 @@ def test_checkpoint_emits_name(inmem):
     assert _payload(event) == {"name": "payment_confirmed"}
 
 
+def test_intent_emits_text_and_source(inmem):
+    provider, _ = inmem
+    with provider.get_tracer("t").start_as_current_span("s"):
+        intent("fine-tune a model on my support tickets")
+
+    event = _only_event(inmem)
+    assert event.name == "overmind.eval.intent"
+    assert _payload(event) == {
+        "text": "fine-tune a model on my support tickets",
+        "source": "declared",
+    }
+
+
 def test_end_conversation_emits_empty_payload(inmem):
     provider, _ = inmem
     with provider.get_tracer("t").start_as_current_span("s"):
@@ -166,5 +179,6 @@ def test_all_functions_noop_without_recording_span(inmem):
     expect("contains", "USD")
     eval_context(user_tier="premium")
     checkpoint("step")
+    intent("do the thing")
     end_conversation()
     assert exporter.get_finished_spans() == ()

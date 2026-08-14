@@ -247,6 +247,7 @@ EVAL_EXPECTATION_EVENT = "overmind.eval.expectation"
 EVAL_CONTEXT_EVENT = "overmind.eval.context"
 EVAL_CHECKPOINT_EVENT = "overmind.eval.checkpoint"
 EVAL_CONVERSATION_END_EVENT = "overmind.eval.conversation_end"
+EVAL_INTENT_EVENT = "overmind.eval.intent"
 EVAL_SCHEMA_VERSION = "overmind.eval.schema_version"  # int, currently 1
 EVAL_PAYLOAD = "overmind.eval.payload"  # JSON-serialized payload string
 

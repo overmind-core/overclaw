@@ -78,6 +78,13 @@ def eval_context(**facts: Any) -> None:
     )
 
 
+def intent(text: str, *, source: str = "declared") -> None:
+    """Declare what the user asked for in this run; the platform grounds judge
+    scoring in it. Undeclared runs fall back server-side to the first user
+    message."""
+    _emit(attrs.EVAL_INTENT_EVENT, {"text": str(text), "source": str(source)})
+
+
 def checkpoint(name: str) -> None:
     """Mark a named trajectory milestone / turn boundary."""
     _emit(attrs.EVAL_CHECKPOINT_EVENT, {"name": name})
@@ -88,4 +95,4 @@ def end_conversation() -> None:
     _emit(attrs.EVAL_CONVERSATION_END_EVENT, {})
 
 
-__all__ = ["checkpoint", "end_conversation", "eval_context", "expect"]
+__all__ = ["checkpoint", "end_conversation", "eval_context", "expect", "intent"]

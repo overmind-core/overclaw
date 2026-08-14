@@ -143,6 +143,7 @@ class TestEvalEnvelopeNamespace:
         assert attrs.EVAL_CONTEXT_EVENT == "overmind.eval.context"
         assert attrs.EVAL_CHECKPOINT_EVENT == "overmind.eval.checkpoint"
         assert attrs.EVAL_CONVERSATION_END_EVENT == "overmind.eval.conversation_end"
+        assert attrs.EVAL_INTENT_EVENT == "overmind.eval.intent"
 
     def test_event_attribute_keys_are_pinned(self) -> None:
         assert attrs.EVAL_SCHEMA_VERSION == "overmind.eval.schema_version"
