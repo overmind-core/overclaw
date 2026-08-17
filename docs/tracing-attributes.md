@@ -35,6 +35,7 @@ absent.
 | `overmind.agent.id` | string (UUID) | if `init(agent_id=)` / `OVERMIND_AGENT_ID` | Agent PK. Server resolves this first (direct lookup). |
 | `overmind.agent.name` | string | if `init(agent_name=)` / `OVERMIND_AGENT_NAME` | Agent display name; server slugifies for stable identity. |
 | `overmind.project.id` | string (UUID) | if `init(project_id=)` / `OVERMIND_PROJECT_ID` | Project PK (session auth only; API tokens pin the project). |
+| `vcs.ref.head.revision` | string | if detectable | Commit sha of the running code (OTel VCS semconv). Auto-detected: `OVERMIND_GIT_SHA` (explicit override), then `GIT_SHA` / `GIT_COMMIT` / `GITHUB_SHA` / `RENDER_GIT_COMMIT` / `VERCEL_GIT_COMMIT_SHA` / `HEROKU_SLUG_COMMIT` / `CI_COMMIT_SHA`, then `.git/HEAD` (resolving the ref file / packed-refs) walking up from cwd. Silently omitted when undetectable. |
 
 Identity is *also* seeded into the OTel context, so the on-start processor stamps
 the same `overmind.agent.id` / `overmind.agent.name` / `overmind.project.id` onto
@@ -50,6 +51,8 @@ Emitted by `@observe` / `@entry_point` / `@workflow` / `@tool` / `@function` /
 | Key | Type | When present | Meaning |
 |-----|------|-------------|---------|
 | `overmind.span.type` | string | always | One of `function`, `entry_point`, `workflow`, `tool_call`, `llm_call`, `retrieval`. |
+| `code.namespace` | string | decorators only | `__module__` of the decorated function (after `inspect.unwrap`). Not stamped by `start_span` (no function to read). |
+| `code.function.name` | string | decorators only | `__qualname__` of the decorated function (includes the class for methods). `code.namespace` + `.` + `code.function.name` is the Behaviour Registry anchor the server binds spans to. |
 | `overmind.status` | string | always | `success` \| `failed` \| `cancelled`. |
 | `overmind.duration.seconds` | float | always | Wall-clock duration of the wrapped span. |
 | `overmind.error.type` | string | on failure | Exception class name. |
@@ -131,7 +134,33 @@ step-specific keys are set by the caller via `set_tag`.
 
 ---
 
-## 6. Server-ingest reconciliation (Phase 2 checklist)
+## 6. Eval envelope span events (`overmind.eval.*`) — wire contract v1
+
+Runtime eval declarations, emitted by `overmind.expect()` / `eval_context()` /
+`checkpoint()` / `end_conversation()` (`overmind/evals.py`) as **span events**
+on the current span (standard OTel `add_event`; no-ops without a recording
+span). The platform's evaluation layer parses `Span.events` against exactly
+these names and payload shapes — **pinned, do not rename**.
+
+Every envelope event carries the same two attributes:
+
+| Attribute | Type | Meaning |
+|-----------|------|---------|
+| `overmind.eval.schema_version` | int | Envelope schema version. Currently `1`. |
+| `overmind.eval.payload` | JSON string | Event payload; shape depends on the event name (below). |
+
+Payload shapes (v1):
+
+| Event name | Payload | Emitted by |
+|------------|---------|------------|
+| `overmind.eval.expectation` | `{"id": str, "kind": "contains"\|"regex"\|"schema"\|"constraint"\|"checkpoints", "spec": str or object, "scope": "span"\|"trace"\|"conversation", "gate": bool}` | `expect(kind, spec, *, id=None, scope="trace", gate=False)`. For `checkpoints`, `spec` is the ordered list of checkpoint names the run is expected to reach. `id` is auto-derived as a short stable hash of kind+spec when omitted. Bad `kind`/`scope` raise `ValueError`. |
+| `overmind.eval.context` | `{"facts": {str: JSON scalar or small object}}` | `eval_context(**facts)`. Values are coerced the same way `set_tag` coerces attribute values (rich values become JSON strings). |
+| `overmind.eval.checkpoint` | `{"name": str}` | `checkpoint(name)` — named trajectory milestone / turn boundary. |
+| `overmind.eval.conversation_end` | `{}` | `end_conversation()` — triggers conversation-scope scoring. |
+
+---
+
+## 7. Server-ingest reconciliation (Phase 2 checklist)
 
 The server **already reads** these keys today (`_build_span_usage` /
 `_resolve_agent` / `_classify_span_type`):
@@ -149,6 +178,8 @@ call out for Phase 2 server work if you want them surfaced:
 - `genai.response.message_chars` / `genai.response.finish_reason`
 - `genai.streaming` / `genai.time_to_first_token_seconds`
 - `overmind.retrieval.query_chars` / `overmind.retrieval.result_count`
+- the `overmind.eval.*` span events (§6) — envelope parsing is the platform's
+  Phase 1 ingest work
 
 These are all additive and namespaced; ingesting spans that carry them is safe
 today (unknown attributes are stored, just not aggregated).

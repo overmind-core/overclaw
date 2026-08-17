@@ -11,6 +11,7 @@ __version__ = "0.1.60"
 from opentelemetry.overmind.prompt import PromptString
 
 from .client import Client, ModelDeleted, OvermindInferenceError
+from .evals import checkpoint, end_conversation, eval_context, expect, intent
 from .tracing import (
     SpanType,
     capture_exception,
@@ -42,12 +43,17 @@ __all__ = [
     "PromptString",
     "SpanType",
     "capture_exception",
+    "checkpoint",
     "conversation",
+    "end_conversation",
     "entry_point",
+    "eval_context",
+    "expect",
     "force_flush_traces",
     "function",
     "get_tracer",
     "init",
+    "intent",
     "observe",
     "observe_safe",
     "retrieval",
