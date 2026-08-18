@@ -17,10 +17,11 @@ arguments.
 
 ```
 - [ ] 1. list_datasets — confirm the dataset is eval intent
-- [ ] 2. list_evaluators — reuse before creating
+- [ ] 2. list_evaluators / list_eval_sets — reuse before creating
+         (Default set may already exist from the post-scan preload)
 - [ ] 3. Author: generate_evaluators (agent suite) OR create_judge_evaluator (one judge)
 - [ ] 4. create_eval_set → add_evaluators_to_eval_set → activate_eval_set
-- [ ] 5. create_eval_run (creates AND launches)
+- [ ] 5. create_eval_run (creates AND launches) — MCP is the launch path
 - [ ] 6. Poll job_status until completed / failed / cancelled
 - [ ] 7. get_eval_run / eval_run_comparison; compare_eval_runs against a baseline when one exists
 ```
@@ -28,6 +29,9 @@ arguments.
 ## 1. Author evaluators
 
 - `list_evaluators(agent?, limit?)` first — reuse before creating.
+- `list_eval_sets(agent?)` before authoring a suite — the Console runs the
+  same authoring pass as `generate_evaluators` automatically after a code
+  scan, so the agent's Default eval set may already exist.
 - Whole suite for an agent: `generate_evaluators(agent_name_or_slug)` —
   authors grounded judges from the agent's codebase and merges them into its
   Default eval set. Runs in the background.
@@ -36,42 +40,54 @@ arguments.
   Suggestions without persisting: `generate_dataset_evals(dataset_name)`
   (spends LLM credits).
 - One judge: draft with
-  `generate_evaluator_prompt(description, agent_name_or_slug?,
-  applicable_role?)` or `compile_rubric(rubric_md, score_type?)` (both spend
+  `generate_evaluator_prompt(description, agent_name_or_slug?, applicable_role?)` or `compile_rubric(rubric_md, score_type?)` (both spend
   LLM credits, persist nothing), then save with
-  `create_judge_evaluator(name, evaluation_prompt, score_type
-  [numeric|boolean|categorical], categories? [required for categorical],
-  agent_name_or_slug?, applicable_roles?, judge_model?)`.
+  `create_judge_evaluator(name, evaluation_prompt, score_type [numeric|boolean|categorical], categories? [required for categorical], agent_name_or_slug?, applicable_roles?, judge_model?)`.
+  Edit an existing judge in place (same id/version):
+  `update_judge_evaluator(evaluator, evaluation_prompt, score_type, …)`.
 - Verify what a judge reads:
   `preview_evaluator_prompt(evaluator, trajectory?, structured?, expected?)`.
 
 ## 2. Group into eval sets
 
-1. `list_eval_sets(agent?, limit?)` — member counts and each member's name +
-   role.
+1. `list_eval_sets(agent?, limit?)` — member counts and each member's
+   `id` / name / role / enabled.
 1. `create_eval_set(agent_name_or_slug, name, description?, activate?)`.
 1. `add_evaluators_to_eval_set(eval_set_name, evaluator_names, role?)` —
    `role="generative"` grades eval-run outputs; `role="trace_scoring"` on the
    agent's ACTIVE set binds them as live scorers on incoming traces.
+1. `update_eval_set_member(eval_set_name, member_id, enabled?, role?, order?)`
+   to enable/disable; `remove_eval_set_member(eval_set_name, member_id)` to
+   drop a member (`member_id` from `list_eval_sets`).
 1. `activate_eval_set(eval_set_name)` — makes it the agent's active set (the
    default for eval runs, finetune jobs, and optimizer experiments).
 
 ## 3. Run
 
-`create_eval_run(name, dataset_name, eval_set_name? | evaluator_names?,
-max_items?)` — creates AND launches. The dataset **must** be eval intent.
-Evaluator precedence: `evaluator_names` > `eval_set_name` > the dataset
-agent's active set (error if none). Over MCP the run scores the dataset's
-captured rows as a single baseline variant. `max_items` caps datapoints
-(useful for a cheap smoke run).
+The Console has **no eval-run launcher** — MCP (or Brain chat) is the launch
+path.
 
-Always run a baseline on the eval dataset **before** a finetune or optimizer
-loop so you have a comparison point afterwards.
+`create_eval_run(name, dataset_name, eval_set_name? | evaluator_names?, max_items?, variants_input?)` — creates AND launches. The dataset **must** be eval intent.
+Evaluator precedence: `evaluator_names` > `eval_set_name` > the dataset
+agent's active set (error if none). Omit `variants_input` for a single
+captured-traces baseline; pass it through for multi-variant (same shape as
+`POST /eval-runs/`). `max_items` caps datapoints (useful for a cheap smoke
+run).
+
+To re-run an existing run (wipe samples/scores and queue again), use
+`relaunch_eval_run(eval_run_name)` — not `create_eval_run`.
+
+Finetune and optimizer loops create their own incumbent / experiment
+baselines — a manual `create_eval_run` beforehand is only for eval-vs-eval
+comparisons you drive yourself. See [finetuning.md](finetuning.md) and
+[optimizer.md](optimizer.md).
 
 ## 4. Monitor and analyze
 
 - Poll `job_status(kind="eval_run", id=<run name or uuid>)`;
   `cancel_eval_run(eval_run_name)` to stop.
+- `list_eval_samples(eval_run_name)` / `get_eval_sample(sample_id)` — bounded
+  datapoint/trajectory drill-in.
 - `get_eval_run(eval_run_name)` — status + aggregated summary.
 - `eval_run_comparison(eval_run_name)` — variants, progress, per-evaluator
   rollup with deltas/ranking.
