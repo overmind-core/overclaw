@@ -11,7 +11,8 @@ When opening, updating, or pushing a PR branch:
 
 1. Read `version` from `origin/main:pyproject.toml` (not the local file if it may already have been bumped).
 2. If this branch is not greater, bump the **patch** (`0.1.66` → `0.1.67`). Use minor/major only for a real API break.
-3. Include the bump in the same commit or PR as the work. Do not open a follow-up just to bump.
+3. Run `uv sync` so `uv.lock` matches. Commit `pyproject.toml` and `uv.lock` together.
+4. Include the bump in the same commit or PR as the work. Do not open a follow-up just to bump.
 
 Skip only when the PR does not change anything that ships (no `overmind/`, `skills/`, or `pyproject.toml` code). Skill and CLI changes **do** ship — bump them.
 
