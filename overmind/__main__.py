@@ -96,24 +96,38 @@ MCP_URLS = {
 def overmind_init(
     env: Annotated[str, typer.Option(help="production, staging or dev")] = "production",
     api_key: Annotated[str, typer.Option(envvar="OVERMIND_API_KEY", help="Overmind API key")] = API_KEY,
-    ide: Annotated[str, typer.Option(..., help="IDE to use")] = "cursor",  # ide: cursor, claude code etc
+    ide: Annotated[str, typer.Option(..., help="cursor, claude, claude_code or opencode")] = "cursor",
 ):
     """
-    Add (or update) the overmind MCP server in {.cursor or .claude}/mcp.json and install
-    the overmind skill, leaving any other configured servers untouched.
+    Add (or update) the overmind MCP server config and install the overmind
+    skill, leaving any other configured servers untouched.
     """
     url = MCP_URLS.get(env, "https://api.overmindlab.ai/api/mcp/")
     dest = get_destination_dir(ide)
-    mcp_path = Path.cwd() / dest / "mcp.json"
 
-    config = json.loads(mcp_path.read_text()) if mcp_path.exists() else {}
-    config.setdefault("mcpServers", {})["overmind"] = {
-        "url": url,
-        "headers": {"X-Api-Key": api_key},
-    }
+    if ide == "opencode":
+        # opencode reads MCP servers from project-root opencode.json, not <dest>/mcp.json
+        mcp_path = Path.cwd() / "opencode.json"
+        config = (
+            json.loads(mcp_path.read_text()) if mcp_path.exists() else {"$schema": "https://opencode.ai/config.json"}
+        )
+        config.setdefault("mcp", {})["overmind"] = {
+            "type": "remote",
+            "url": url,
+            "enabled": True,
+            "headers": {"X-Api-Key": api_key},
+        }
+    else:
+        mcp_path = Path.cwd() / dest / "mcp.json"
+        config = json.loads(mcp_path.read_text()) if mcp_path.exists() else {}
+        config.setdefault("mcpServers", {})["overmind"] = {
+            "url": url,
+            "headers": {"X-Api-Key": api_key},
+        }
+
     mcp_path.parent.mkdir(parents=True, exist_ok=True)
     mcp_path.write_text(json.dumps(config, indent=2) + "\n")
-    console.print(f"overmind MCP server written to {dest}/mcp.json")
+    console.print(f"overmind MCP server written to {mcp_path.name if ide == 'opencode' else f'{dest}/mcp.json'}")
 
     sync_skills(["overmind"], ide=ide)
     console.print(f"overmind skill installed to {dest}/skills/overmind")
