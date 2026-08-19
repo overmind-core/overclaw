@@ -52,7 +52,7 @@ def get_api_settings(
             "Missing OVERMIND_API_KEY. Set the environment variable to use Overmind services. "
             "Create a key at https://console.overmindlab.ai/projects"
         )
-    return overmind_api_key, (base_url or DEFAULT_BASE_URL).rstrip("/")
+    return overmind_api_key, (base_url or os.getenv("OVERMIND_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
 
 
 # Guards against cyclic / mock-heavy inputs that recurse forever.

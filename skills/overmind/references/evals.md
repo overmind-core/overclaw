@@ -42,8 +42,31 @@ arguments.
   `create_judge_evaluator(name, evaluation_prompt, score_type
   [numeric|boolean|categorical], categories? [required for categorical],
   agent_name_or_slug?, applicable_roles?, judge_model?)`.
-- Verify what a judge reads:
+- Verify what a judge reads (before persisting):
   `preview_evaluator_prompt(evaluator, trajectory?, structured?, expected?)`.
+  `trajectory` is an **eval-authoring preview flag** (whether the preview
+  includes the sample's transcript) — unrelated to runtime traces; it only
+  controls how much context the preview shows while you author.
+
+## Runtime eval envelope as an evaluation input
+
+Traces instrumented with the runtime envelope
+([instrumentation.md](instrumentation.md) Step 5a) feed evaluation directly:
+
+- **Deterministic verdicts.** `expect(...)` declarations check mechanically —
+  `contains` / `regex` / `schema` are verified without a judge; `constraint`
+  (natural language) becomes an LLM-judge checklist item. Each declaration is
+  addressed by its stable `id` (auto-derived from kind+spec, so re-running the
+  code reuses the same expectation).
+- **Predicates for authored evaluators.** `checkpoint_reached` /
+  `expectation_declared` let an evaluator ask "did the run reach checkpoint X /
+  declare expectation Y?" instead of re-parsing the transcript.
+- **Gate semantics.** `expect(..., gate=True)` failures are hard fails: they
+  cap the execution's score at 0. Reserve gates for invariants a run must
+  never break; use plain expectations for quality checks.
+- **Gap-finding.** `behaviour_coverage(agent)` reports per-behaviour /
+  per-step eval coverage and gaps — use it to find where an agent lacks an
+  authored evaluator instead of guessing from trace volume.
 
 ## 2. Group into eval sets
 

@@ -21,6 +21,7 @@ See [telemetry.md](telemetry.md).
 - [ ] 3. Initialise — greenfield OR fan-out onto the existing provider, with the agent's identity (Step 3a/3b)
 - [ ] 4. Auto-instrument the LLM providers in use
 - [ ] 5. Add custom spans where useful
+- [ ] 5a. Emit the runtime eval envelope (intent / checkpoint / expect / eval_context / end_conversation)
 - [ ] 5b. Scope everything to the ONE agent your task names — identity, files, verification
 - [ ] 5c. Multi-agent repos: run the systematic one-at-a-time pass
 - [ ] 6. Flush on shutdown, then run the app and audit traces via MCP
@@ -39,9 +40,12 @@ calling it done. Fetch a real trace with `list_traces` → `get_trace`
 | Model + token usage     | Automatic via provider auto-instrumentation (Step 4); raw-OTel spans should carry `gen_ai.request.model` / `gen_ai.usage.*`                                                                                                                | Cost is computed server-side from these                           |
 | Inputs and outputs      | The decorators (Step 5) capture call args and return values automatically; make sure the entry point and key steps are decorated so the trace shows what the agent saw and produced                                                        | A trace without I/O can't be debugged or turned into eval data    |
 | Sensitive data excluded | Not for agents — trace normally and mask credential fields (API keys, tokens, passwords) before they reach decorated functions. `@observe_safe()` (traces timing/status, no values) is a manual escape hatch for human implementation only | Inputs/outputs are stored verbatim                                |
-| Session grouping        | `set_conversation_id(...)` per conversation/thread (stamped as `conversation.id`) whenever the app has multi-turn interactions                                                                                                             | Groups traces into Sessions                                       |
-| User attribution        | `set_user(user_id, email=...)` where the app has accounts                                                                                                                                                                                  | Per-user filtering and cost attribution                           |
-| Span hierarchy + types  | One `@entry_point` at the top; `@workflow` / `@tool` / `@retrieval` for the steps under it, with descriptive names                                                                                                                         | Shows which step failed or was slow, instead of one flat LLM call |
+| Session grouping        | `set_conversation_id(...)` per conversation/thread (stamped as `conversation.id`) whenever the app has multi-turn interactions; `@conversation` wraps a handler that owns a conversation. Session grain, conversation-scope `expect` and `end_conversation()` all depend on it                                      | Groups traces into Sessions                                       |
+| User attribution        | `set_user(user_id, email=...)` where the app has accounts                                                                                                                                                                                                                  | Per-user filtering and cost attribution                           |
+| Span hierarchy + types  | One `@entry_point` at the top; `@workflow` / `@tool` / `@retrieval` for the steps under it, with descriptive names                                                                                                                                                          | Shows which step failed or was slow, instead of one flat LLM call |
+| Behaviour anchor        | Every decorator auto-stamps `code.namespace` (`__module__`) + `code.function.name` (`__qualname__`) — the pair is the Behaviour Registry anchor the server binds spans to for task-execution scoring (`start_span` has no function to read, so no stamp)                     | Without the pair the server cannot bind spans to an anchor; executions land `unbound` |
+| Git sha                 | `vcs.ref.head.revision` auto-stamped at `init()` — detects `OVERMIND_GIT_SHA` (explicit override), then CI env vars (`GIT_SHA`, `GITHUB_SHA`, …), then `.git/HEAD`; silently omitted when undetectable                                                                      | Lets the server pin executions to the exact code revision          |
+| Runtime eval envelope   | The five `overmind.eval.*` span events (`intent`, `expectation`, `context`, `checkpoint`, `conversation_end`), each with `schema_version`=1 + JSON `payload` (Step 5a)                                                                                                       | The scoring inputs: declared intent grounds the judge, expectations become verdicts, checkpoints mark milestones |
 
 ## Step 0 — Resolve the agent's identity
 
@@ -227,6 +231,75 @@ show which step failed or was slow. Rule of thumb: if the function has a name
 a human would use to describe the agent's work ("search", "lookup_policy",
 "rerank"), it should be a span.
 
+## Step 5a — Runtime envelope: declare intent, milestones, expectations
+
+Decorators make a trace *visible*; the runtime envelope makes it *scorable*.
+Each call emits a pinned `overmind.eval.*` span event (see the baseline
+table). Exact signatures/semantics live in `overmind/evals.py` — read it if
+in doubt. All five **no-op (debug log) when there is no recording span**, so
+call them inside a decorated span:
+
+```python
+@overmind.entry_point()
+def run(request: dict) -> dict:
+    overmind.intent(request["user_message"])  # grounds the judge; omit -> server falls back to the first user message
+    overmind.eval_context(user_tier="premium", retries=3)  # facts for the judge
+
+    overmind.expect("contains", "USD", gate=True)   # hard fail: failure caps the execution score at 0
+    overmind.expect("regex", r"\d{4}-\d{2}-\d{2}", id="date-format")
+    overmind.expect("schema", {"type": "object", "required": ["amount"]}, scope="trace")
+    overmind.expect("checkpoints", ["plan_formed", "payment_confirmed", "receipt_sent"])
+
+    overmind.checkpoint("plan_formed")            # named milestone / turn boundary
+    ...
+    overmind.checkpoint("payment_confirmed")
+    ...
+    overmind.end_conversation()   # conversation-scope scoring; needs set_conversation_id / @conversation
+```
+
+Semantics:
+
+- **`intent(text, *, source="declared")`** — declare what the user asked for
+  this run; the platform grounds judge scoring in it. Declare it at every
+  turn boundary in multi-turn agents. When undeclared, the server falls back
+  to the first user message.
+- **`checkpoint(name)`** — named trajectory milestone / turn boundary;
+  `expect(..., kind="checkpoints")` can assert the expected ordered path.
+- **`expect(kind, spec, *, id=None, scope="trace", gate=False)`** — runtime
+  expectation. `kind` ∈ `contains | regex | schema | constraint |
+  checkpoints`; `scope` ∈ `span | trace | conversation`. `id` auto-derives as
+  a stable short hash of kind+spec when omitted (the platform dedupes /
+  aggregates per expectation). `schema` takes a JSON schema object,
+  `checkpoints` an ordered list of names, `constraint` natural-language text.
+  `gate=True` makes a failure a hard fail that caps the execution's score at 0.
+- **`eval_context(**facts)`** — runtime facts for the judge; values coerced
+  like `set_tag`.
+- **`end_conversation()`** — signal the conversation is complete; triggers
+  conversation-scope scoring (requires a conversation id from
+  `set_conversation_id` / `@conversation`).
+
+### Where to instrument — anchor priority
+
+`get_instrumentation_context(agent)` returns the agent's Behaviour anchors —
+the `code.namespace` + `code.function.name` span-identity pairs the server
+binds spans to — ranked `entry → discriminating → supplementary`. Each anchor
+carries an `instrumented` bool, an `import_line`, a `verification_hint`
+(tells you how to confirm the `code.namespace=…` / `code.function.name=…`
+pair really arrives on the trace), and the context bundles `remaining` (the
+anchors not yet instrumented) and `indistinguishable_pairs`.
+
+Work `remaining` first, in priority order:
+
+1. **entry** — the task's entry point(s); the spine of the execution row.
+2. **discriminating** — steps that distinguish one execution/outcome from
+   another (scoring-critical).
+3. **supplementary** — supporting steps (nice-to-have structure).
+
+Honour each anchor's `verification_hint` when instrumenting it, and resolve
+`indistinguishable_pairs` — two anchors the trace cannot tell apart because
+their spans stamp the same identity — by naming spans/functions so the
+identities disambiguate.
+
 ## Step 5b — Instrumenting ONE agent in a multi-agent repo
 
 Most instrumentation tasks name **one specific agent**. Everything in this
@@ -310,8 +383,20 @@ When your task names one agent in a multi-agent repo, fetch filtered to that
 agent's UUID — never the repo-wide newest trace, which may belong to a
 sibling agent.
 
-**c.** Audit against the [baseline table](#what-a-good-trace-carries). On the
-list row check `agent_id` (the agent's UUID, verbatim) and `agent_name`,
+**b2.** Task-execution-first audit — execution rows are the primary
+observability row for trajectory instrumentation. `list_task_executions` on
+that agent → `get_task_execution(id)` on the row:
+`binding_source` must be `anchor_join` or `declared` (an `unbound` execution
+means the code identity + git sha never matched the server's registry — fix
+the identity or the code path, don't move on), `user_intent` must be the
+declared intent (or the expected first-user-message fallback), and
+`success_score` / `session_score` must be populated. Then pull
+`behaviour_coverage` on the agent to confirm every step evaluator got
+evidence and no `remaining` anchors are still silent.
+
+**c.** Audit the raw spans against the [baseline table](#what-a-good-trace-carries)
+too — this is complementary to b2, not a replacement. On
+the list row check `agent_id` (the agent's UUID, verbatim) and `agent_name`,
 `model`, `total_tokens`, `total_cost`, and session grouping for multi-turn
 apps; on the detail spans check `span_type` variety (not everything
 `llm_call`, and not everything `entry_point`), inputs/outputs on the entry

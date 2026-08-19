@@ -427,3 +427,21 @@ def test_observe_safe_exported_from_package():
     from overmind import observe_safe
 
     assert callable(observe_safe)
+
+
+def test_get_api_settings_honors_overmind_base_url_env(monkeypatch):
+    """Self-hosting: init() export endpoint follows OVERMIND_BASE_URL from the env
+    (like Client already does) so a local platform needs no code change."""
+    from overmind.tracing import get_api_settings
+
+    monkeypatch.setenv("OVERMIND_API_KEY", "ovr_test")
+    monkeypatch.setenv("OVERMIND_BASE_URL", "http://localhost:8000/")
+    key, base = get_api_settings()
+    assert base == "http://localhost:8000"
+
+    key, base = get_api_settings(base_url="https://explicit.example.com")
+    assert base == "https://explicit.example.com"
+
+    monkeypatch.delenv("OVERMIND_BASE_URL")
+    key, base = get_api_settings()
+    assert base == "https://api.overmindlab.ai"

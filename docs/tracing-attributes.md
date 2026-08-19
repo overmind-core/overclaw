@@ -136,11 +136,12 @@ step-specific keys are set by the caller via `set_tag`.
 
 ## 6. Eval envelope span events (`overmind.eval.*`) — wire contract v1
 
-Runtime eval declarations, emitted by `overmind.expect()` / `eval_context()` /
-`checkpoint()` / `end_conversation()` (`overmind/evals.py`) as **span events**
-on the current span (standard OTel `add_event`; no-ops without a recording
-span). The platform's evaluation layer parses `Span.events` against exactly
-these names and payload shapes — **pinned, do not rename**.
+Runtime eval declarations, emitted by `overmind.intent()` / `expect()` /
+`eval_context()` / `checkpoint()` / `end_conversation()` (`overmind/evals.py`)
+as **span events** on the current span (standard OTel `add_event`; no-ops
+without a recording span). The platform's evaluation layer parses
+`Span.events` against exactly these names and payload shapes — **pinned, do
+not rename**.
 
 Every envelope event carries the same two attributes:
 
@@ -153,6 +154,7 @@ Payload shapes (v1):
 
 | Event name | Payload | Emitted by |
 |------------|---------|------------|
+| `overmind.eval.intent` | `{"text": str, "source": str}` | `intent(text, *, source="declared")` — declared user intent for this run; the platform grounds judge scoring in it. Undeclared runs fall back server-side to the first user message. Later declarations win. |
 | `overmind.eval.expectation` | `{"id": str, "kind": "contains"\|"regex"\|"schema"\|"constraint"\|"checkpoints", "spec": str or object, "scope": "span"\|"trace"\|"conversation", "gate": bool}` | `expect(kind, spec, *, id=None, scope="trace", gate=False)`. For `checkpoints`, `spec` is the ordered list of checkpoint names the run is expected to reach. `id` is auto-derived as a short stable hash of kind+spec when omitted. Bad `kind`/`scope` raise `ValueError`. |
 | `overmind.eval.context` | `{"facts": {str: JSON scalar or small object}}` | `eval_context(**facts)`. Values are coerced the same way `set_tag` coerces attribute values (rich values become JSON strings). |
 | `overmind.eval.checkpoint` | `{"name": str}` | `checkpoint(name)` — named trajectory milestone / turn boundary. |

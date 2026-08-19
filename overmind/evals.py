@@ -1,9 +1,11 @@
 """Runtime eval declarations — the ``overmind.eval.*`` envelope.
 
-Each public function emits a span event on the current span; the Overmind
-platform parses these server-side, so event names and payload shapes are a
-pinned wire contract (v1) — see ``docs/tracing-attributes.md`` §6.  All
-functions no-op (with a debug log) when there is no recording span.
+Each public function (``intent`` / ``expect`` / ``eval_context`` /
+``checkpoint`` / ``end_conversation``) emits a span event on the current
+span; the Overmind platform parses these server-side, so event names and
+payload shapes are a pinned wire contract (v1) — see
+``docs/tracing-attributes.md`` §6.  All functions no-op (with a debug log)
+when there is no recording span.
 """
 
 from __future__ import annotations

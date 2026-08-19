@@ -25,6 +25,11 @@ Follow these for ALL Overmind MCP work:
    tell the user to run `overmind init` (or re-check MCP config /
    `OVERMIND_API_KEY`). Do not paste a URL or ask them to paste the raw key
    into chat.
+   Read-only REST fallback, only when no MCP server is configured (e.g. a
+   machine where `overmind init` was never run still needs to instrument):
+   equivalent reads exist at `GET /api/behaviours/…` and
+   `GET /api/task-executions/…` with the project API key in an `X-Api-Key`
+   header. Prefer MCP whenever it is configured; never use REST for writes.
 1. **Reference file per use case.** Check the relevant reference below before
    implementing. This file holds conventions that apply everywhere; the
    workflow lives in the reference.
@@ -43,20 +48,41 @@ Follow these for ALL Overmind MCP work:
    compiles — it's done when you have fetched the trace you just sent via
    MCP (`list_traces` → `get_trace`) and it carries everything the baseline
    in [references/instrumentation.md](references/instrumentation.md) requires.
+   For trajectory instrumentation the execution row is the gate, not just
+   raw spans: fetch it (`list_task_executions` → `get_task_execution`) and
+   confirm `binding_source` is `anchor_join`/`declared` (not `unbound`),
+   `user_intent` is right, and `success_score`/`session_score` populated;
+   pull `behaviour_coverage` to confirm every step evaluator got evidence.
 1. **One agent at a time.** Instrumentation tasks map to agents. Resolve the
    agent's identity and capability card from `get_agent` (the `id` UUID
    verbatim) and scope changes to that agent's files
    ([references/instrumentation.md](references/instrumentation.md) Step 0 /
    5b). For repo-wide tasks, run the systematic one-at-a-time pass (Step 5c)
    — never a giant all-agents-at-once edit.
+1. **Trajectory-aware instrumentation.** The platform treats **task
+   executions** as the primary observability rows: spans bind to Behaviour
+   anchors by code identity (`code.namespace` + `code.function.name`) and git
+   sha (`vcs.ref.head.revision`), and a runtime envelope scores each
+   execution. Resolve the agent via `get_agent` (the capability card now also
+   carries trajectory paths), pull `get_instrumentation_context` to see which
+   anchors are still `remaining` vs already `instrumented`, instrument the
+   task entry points + remaining anchors, and emit the envelope — `intent` at
+   turn boundaries, `checkpoint` at milestones, `expect` per task contract,
+   `eval_context` facts, `end_conversation` at completion. Verify with
+   `list_task_executions` / `get_task_execution` (`binding_source`,
+   `user_intent`, `success_score`) + `behaviour_coverage` before moving to
+   the next agent.
 
 ## Use-case references
 
 - Instrumenting an application (greenfield or alongside existing telemetry):
   [references/instrumentation.md](references/instrumentation.md)
+  (`get_instrumentation_context` shows which behaviour anchors are `remaining`)
 - Inspecting traces, sessions, agent health, failures, the context graph, and
   connectors (including the post-setup verification loop):
   [references/telemetry.md](references/telemetry.md)
+  (`list_task_executions` / `get_task_execution` / `behaviour_coverage` /
+  `behaviour_deviations` / `list_behaviours`)
 - Uploading / building datasets (from traces, failures, or an attached file)
   and cleaning them in the workshop:
   [references/datasets.md](references/datasets.md)
@@ -73,7 +99,8 @@ Follow these for ALL Overmind MCP work:
 - **List first.** `list_datasets`, `list_agents`, `list_eval_sets`,
   `list_evaluators`, `list_eval_runs`, `list_finetune_jobs`,
   `list_deployed_models`, `list_optimizer_experiments`, `list_traces`,
-  `list_sessions`. Then pass `dataset_name`, `eval_set_name`,
+  `list_sessions`, `list_behaviours`, `list_task_executions`. Then pass
+  `dataset_name`, `eval_set_name`,
   `evaluator_names`, `agent_name_or_slug`, `eval_run_name`.
 - **Async jobs.** Launch tools return `job_status: {kind, id}` with kind one
   of `eval_run`, `finetune_job`, `optimizer_experiment`. Poll with
@@ -111,15 +138,28 @@ don't retry the same one. `analyze_dataset_file` infers intent from content;
 assigned at import. A dataset being read by a running job is frozen until the
 job ends.
 
+### Don't confuse runtime `intent()` with dataset intent
+
+`overmind.intent("…")` at runtime declares what the *user* asked for on a
+trace and grounds the judge's scoring of that execution — it is unrelated to
+dataset intent. Dataset `intent` (`eval | ft | unstructured`) is an immutable
+property assigned at ingestion that gates which workflows may use the dataset
+(above). Sharing the word "intent" is the only link: calling `intent()` in
+code does not change a dataset's intent, and a dataset's `eval` intent does
+not count as a runtime intent on a trace.
+
 ## How the workflows chain
 
 Typical loop, always via MCP:
 
 1. **See what's happening** — [telemetry.md](references/telemetry.md)
-   (`agent_health` → `agent_failures` → `list_traces` / `get_trace`). Add
+   (`agent_health` → `agent_failures` → `list_traces` / `get_trace`, or the
+   task-execution rows via `list_task_executions` / `get_task_execution`).
+   Add
    tracing first if nothing is landing:
    [instrumentation.md](references/instrumentation.md) — resolve each
-   agent's identity with `get_agent` and instrument one at a time.
+   agent's identity with `get_agent`, see which anchors are uninstrumented
+   via `get_instrumentation_context`, and instrument one at a time.
 1. **Turn traces into data** — [datasets.md](references/datasets.md)
    (`create_dataset_from_failures` or `create_dataset_from_file`).
 1. **Clean it** — workshop in [datasets.md](references/datasets.md).

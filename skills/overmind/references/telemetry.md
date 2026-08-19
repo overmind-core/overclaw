@@ -37,6 +37,21 @@ Conventions (names not ids, errors-as-values, mutations) live in
 1. `get_agent(agent_name_or_slug)` / `agent_prompts` / `agent_eval_spec` —
    identity, versioned prompts, eval contract (input schema, output fields,
    tools, weights, what is optimizable).
+1. `get_instrumentation_context(agent)` — anchor-level "where to instrument"
+   bundle: behaviours with anchors ranked `entry → discriminating →
+   supplementary`, each anchor carrying `instrumented`, `import_line`,
+   `verification_hint`; plus `remaining` (uninstrumented anchors) and
+   `indistinguishable_pairs`. Ask for this before instrumenting an agent
+   (see [instrumentation.md](instrumentation.md) Step 5a).
+1. `behaviour_coverage(agent)` — per-behaviour and per-step eval coverage and
+   gaps.
+1. `behaviour_deviations(project, agent?)` — deviation clusters across
+   executions.
+1. `list_behaviours(project, agent?, status?)` — behaviours with
+   `execution_count`, `avg_success_score`, `tool_inventory`.
+1. `list_task_executions(project?, agent?, behaviour?, binding_source?)` /
+   `get_task_execution(id)` — execution rows and detail (see Task
+   executions).
 1. `cost_rollup(since?)` — inference spend per served model.
 1. `tool_stats(tool)` / `tool_error_trends(days?)` — tool-call volume, error
    rate, naming drift vs capability cards.
@@ -95,9 +110,39 @@ fetched the trace you just sent and it carries everything the baseline in
    (`overmind.input.data` / `overmind.output.data` on span attributes), no
    secrets in payloads. If the trace's agent UUID differs from the card's,
    the identity stamp is wrong — fix it before anything else.
+1. For trajectory instrumentation, verify at the **execution** level too —
+   raw span checks are not the completion gate (`list_task_executions` →
+   `get_task_execution` → `binding_source` is `anchor_join`/`declared`, not
+   `unbound`; `user_intent` correct; `success_score`/`session_score`
+   populated; `behaviour_coverage` shows every step evaluator got evidence).
 1. Fix every gap, re-run, re-fetch until it clears. Empty `list_traces`
    means ingest failed — see troubleshooting in
    [instrumentation.md](instrumentation.md). Do not poll REST.
+
+## Task executions (trajectory)
+
+Task executions are the primary observability rows for trajectory
+instrumentation — one per task run, bound to a Behaviour anchor by code
+identity (`code.namespace` + `code.function.name`) and git sha
+(`vcs.ref.head.revision`).
+
+- `list_task_executions(project?, agent?, behaviour?, binding_source?)` —
+  execution rows incl. `binding_source` (`anchor_join | declared | unbound`),
+  `success_score` (this execution), `session_score` (conversation-level —
+  identical on every execution sharing the conversation), `terminal_kind`.
+- `get_task_execution(id)` — one execution in detail: `observed_route`,
+  `step_results`, `user_intent`.
+
+Verification flow after instrumenting:
+
+1. `list_task_executions(agent=...)` — narrow with an optional
+   `binding_source` filter.
+1. `get_task_execution(id)` — check `binding_source` is `anchor_join` /
+   `declared` (an `unbound` execution means the code identity + sha never
+   matched — fix, don't move on), `user_intent` is correct, and
+   `success_score` / `session_score` are populated.
+1. `behaviour_coverage(agent)` — confirm every step evaluator got evidence;
+   `behaviour_deviations(project)` clusters where executions drift.
 
 ## Sessions (multi-turn)
 
