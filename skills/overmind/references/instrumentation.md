@@ -21,7 +21,7 @@ See [telemetry.md](telemetry.md).
 - [ ] 3. Initialise — greenfield OR fan-out onto the existing provider, with the agent's identity (Step 3a/3b)
 - [ ] 4. Auto-instrument the LLM providers in use
 - [ ] 5. Add custom spans where useful
-- [ ] 5a. Emit the runtime eval envelope (intent / checkpoint / expect / eval_context / end_conversation)
+- [ ] 5a. Declare the task (`@overmind.task("<behaviour key>")` on the entry point) and emit the runtime eval envelope (intent / checkpoint / expect / eval_context / end_conversation)
 - [ ] 5b. Scope everything to the ONE agent your task names — identity, files, verification
 - [ ] 5c. Multi-agent repos: run the systematic one-at-a-time pass
 - [ ] 6. Flush on shutdown, then run the app and audit traces via MCP
@@ -33,19 +33,19 @@ Audit every integration — new or existing — against this baseline before
 calling it done. Fetch a real trace with `list_traces` → `get_trace`
 ([telemetry.md](telemetry.md)); do not ask the user to describe the Console.
 
-| Requirement             | How                                                                                                                                                                                                                                        | Why                                                               |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| Agent identity          | `agent_id=` **and** `agent_name=` in `init()` (or `set_agent_id()` + `set_agent_name()`). Get BOTH from `get_agent` via MCP — copy `agent_id` verbatim (it is a UUID; never invent, truncate, or reformat it)                                | The server resolves `overmind.agent.id` by direct UUID lookup (drift-proof); `agent_name` is display + fallback. Name-only stamps risk a slug mismatch with the code-scan agent, which mints a duplicate agent whose live trace scoring silently no-ops |
-| Per-agent scoping       | When your task names ONE agent in a multi-agent repo, stamp THAT agent's identity only — never the repo's, never a generic name                                                                                                             | Traces group under the right agent in the Console; sibling agents' spans are untouched |
-| Model + token usage     | Automatic via provider auto-instrumentation (Step 4); raw-OTel spans should carry `gen_ai.request.model` / `gen_ai.usage.*`                                                                                                                | Cost is computed server-side from these                           |
-| Inputs and outputs      | The decorators (Step 5) capture call args and return values automatically; make sure the entry point and key steps are decorated so the trace shows what the agent saw and produced                                                        | A trace without I/O can't be debugged or turned into eval data    |
-| Sensitive data excluded | Not for agents — trace normally and mask credential fields (API keys, tokens, passwords) before they reach decorated functions. `@observe_safe()` (traces timing/status, no values) is a manual escape hatch for human implementation only | Inputs/outputs are stored verbatim                                |
-| Session grouping        | `set_conversation_id(...)` per conversation/thread (stamped as `conversation.id`) whenever the app has multi-turn interactions; `@conversation` wraps a handler that owns a conversation. Session grain, conversation-scope `expect` and `end_conversation()` all depend on it                                      | Groups traces into Sessions                                       |
-| User attribution        | `set_user(user_id, email=...)` where the app has accounts                                                                                                                                                                                                                  | Per-user filtering and cost attribution                           |
-| Span hierarchy + types  | One `@entry_point` at the top; `@workflow` / `@tool` / `@retrieval` for the steps under it, with descriptive names                                                                                                                                                          | Shows which step failed or was slow, instead of one flat LLM call |
-| Behaviour anchor        | Every decorator auto-stamps `code.namespace` (`__module__`) + `code.function.name` (`__qualname__`) — the pair is the Behaviour Registry anchor the server binds spans to for task-execution scoring (`start_span` has no function to read, so no stamp)                     | Without the pair the server cannot bind spans to an anchor; executions land `unbound` |
-| Git sha                 | `vcs.ref.head.revision` auto-stamped at `init()` — detects `OVERMIND_GIT_SHA` (explicit override), then CI env vars (`GIT_SHA`, `GITHUB_SHA`, …), then `.git/HEAD`; silently omitted when undetectable                                                                      | Lets the server pin executions to the exact code revision          |
-| Runtime eval envelope   | The five `overmind.eval.*` span events (`intent`, `expectation`, `context`, `checkpoint`, `conversation_end`), each with `schema_version`=1 + JSON `payload` (Step 5a)                                                                                                       | The scoring inputs: declared intent grounds the judge, expectations become verdicts, checkpoints mark milestones |
+| Requirement             | How                                                                                                                                                                                                                                                                            | Why                                                                                                                                                                                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent identity          | `agent_id=` **and** `agent_name=` in `init()` (or `set_agent_id()` + `set_agent_name()`). Get BOTH from `get_agent` via MCP — copy `agent_id` verbatim (it is a UUID; never invent, truncate, or reformat it)                                                                  | The server resolves `overmind.agent.id` by direct UUID lookup (drift-proof); `agent_name` is display + fallback. Name-only stamps risk a slug mismatch with the code-scan agent, which mints a duplicate agent whose live trace scoring silently no-ops |
+| Per-agent scoping       | When your task names ONE agent in a multi-agent repo, stamp THAT agent's identity only — never the repo's, never a generic name                                                                                                                                                | Traces group under the right agent in the Console; sibling agents' spans are untouched                                                                                                                                                                  |
+| Model + token usage     | Automatic via provider auto-instrumentation (Step 4); raw-OTel spans should carry `gen_ai.request.model` / `gen_ai.usage.*`                                                                                                                                                    | Cost is computed server-side from these                                                                                                                                                                                                                 |
+| Inputs and outputs      | The decorators (Step 5) capture call args and return values automatically; make sure the entry point and key steps are decorated so the trace shows what the agent saw and produced                                                                                            | A trace without I/O can't be debugged or turned into eval data                                                                                                                                                                                          |
+| Sensitive data excluded | Not for agents — trace normally and mask credential fields (API keys, tokens, passwords) before they reach decorated functions. `@observe_safe()` (traces timing/status, no values) is a manual escape hatch for human implementation only                                     | Inputs/outputs are stored verbatim                                                                                                                                                                                                                      |
+| Session grouping        | `set_conversation_id(...)` per conversation/thread (stamped as `conversation.id`) whenever the app has multi-turn interactions; `@conversation` wraps a handler that owns a conversation. Session grain, conversation-scope `expect` and `end_conversation()` all depend on it | Groups traces into Sessions                                                                                                                                                                                                                             |
+| User attribution        | `set_user(user_id, email=...)` where the app has accounts                                                                                                                                                                                                                      | Per-user filtering and cost attribution                                                                                                                                                                                                                 |
+| Span hierarchy + types  | One `@entry_point` at the top; `@workflow` / `@tool` / `@retrieval` for the steps under it, with descriptive names                                                                                                                                                             | Shows which step failed or was slow, instead of one flat LLM call                                                                                                                                                                                       |
+| Behaviour anchor        | Every decorator auto-stamps `code.namespace` (`__module__`) + `code.function.name` (`__qualname__`) — the pair is the Behaviour Registry anchor the server binds spans to for task-execution scoring (`start_span` has no function to read, so no stamp)                       | Without the pair the server cannot bind spans to an anchor; executions land `unbound`                                                                                                                                                                   |
+| Git sha                 | `vcs.ref.head.revision` auto-stamped at `init()` — detects `OVERMIND_GIT_SHA` (explicit override), then CI env vars (`GIT_SHA`, `GITHUB_SHA`, …), then `.git/HEAD`; silently omitted when undetectable                                                                         | Lets the server pin executions to the exact code revision                                                                                                                                                                                               |
+| Runtime eval envelope   | The five `overmind.eval.*` span events (`intent`, `expectation`, `context`, `checkpoint`, `conversation_end`), each with `schema_version`=1 + JSON `payload` (Step 5a)                                                                                                         | The scoring inputs: declared intent grounds the judge, expectations become verdicts, checkpoints mark milestones                                                                                                                                        |
 
 ## Step 0 — Resolve the agent's identity
 
@@ -57,6 +57,10 @@ writing any instrumentation. Copy the returned `id` verbatim — never invent,
 shorten, re-format, or "fix" it, and never substitute another agent's id. If
 the id is missing or does not look like a UUID, STOP and report instead of
 guessing: a wrong id silently attributes every trace to the wrong agent.
+
+Then map the agent to its tasks with `list_behaviours(agent)`: behaviour
+keys, entry anchors, anchor sequence, terminal, and execution/unbound
+counts. The key for each task is what you declare in Step 5a.
 
 ## Step 1 — Detect existing telemetry
 
@@ -108,8 +112,8 @@ import overmind
 
 overmind.init(
     service_name="my-agent",
-    agent_id="<agent-uuid>",        # copy verbatim from get_agent — never invent
-    agent_name="My Agent",          # this agent's constant display name
+    agent_id="<agent-uuid>",  # copy verbatim from get_agent — never invent
+    agent_name="My Agent",  # this agent's constant display name
     providers=["openai", "anthropic"],  # auto-instrument these SDKs; see Step 4
 )
 ```
@@ -130,7 +134,12 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
 import overmind
-from overmind.tracing import enable_tracing, get_api_settings, set_agent_id, set_agent_name
+from overmind.tracing import (
+    enable_tracing,
+    get_api_settings,
+    set_agent_id,
+    set_agent_name,
+)
 
 api_key, base_url = get_api_settings()  # reads OVERMIND_API_KEY / OVERMIND_API_URL
 
@@ -139,7 +148,7 @@ if not isinstance(provider, TracerProvider):
     # Nothing real was installed yet — let Overmind own the pipeline instead.
     overmind.init(
         service_name="my-agent",
-        agent_id="<agent-uuid>",   # copy verbatim from get_agent
+        agent_id="<agent-uuid>",  # copy verbatim from get_agent
         agent_name="My Agent",
         providers=["openai"],
     )
@@ -156,7 +165,7 @@ else:
     enable_tracing(["openai", "anthropic"])
     # Fan-out path: identity is NOT stamped by an on-start processor, so stamp it
     # explicitly on the spans you decorate (Step 5) and via the context helpers.
-    set_agent_id("<agent-uuid>")    # verbatim from get_agent
+    set_agent_id("<agent-uuid>")  # verbatim from get_agent
     set_agent_name("My Agent")
 ```
 
@@ -181,7 +190,9 @@ Instrumentation is idempotent and safe to call more than once.
 Decorators (sync and async) — use the type that matches the code:
 
 ```python
-@overmind.entry_point()  # top-level request handler
+@overmind.task(
+    "behaviour-key"
+)  # declared key from list_behaviours; the task span is the entry point
 def run(payload: dict) -> dict: ...
 
 
@@ -201,6 +212,15 @@ def fetch_docs(q: str): ...
 def score(x): ...
 ```
 
+`@overmind.task("<behaviour key>")` (decorator, or the
+`with overmind.task("<behaviour key>"):` context-manager form) opens the
+task's `entry_point` unit span and stamps the declared key — copy the key
+from `list_behaviours(agent)`. `name=` on any decorator (`function`, `tool`,
+`workflow`, `retrieval`, `entry_point`, `task`) stamps `overmind.anchor.name` —
+a rename-proof anchor identity that survives module/function moves; without
+`name=` the qualname (`code.namespace` + `code.function.name`) stays the
+default.
+
 Context manager and current-span helpers:
 
 ```python
@@ -209,8 +229,8 @@ with overmind.start_span("rerank", span_type=overmind.SpanType.FUNCTION) as span
 
 overmind.set_user("user-123", email="a@b.com")
 overmind.set_conversation_id("conv-abc")  # groups spans into one session
-overmind.set_agent_id("<agent-uuid>")     # verbatim from get_agent — never invented
-overmind.set_agent_name("My Agent")       # keep constant for this agent
+overmind.set_agent_id("<agent-uuid>")  # verbatim from get_agent — never invented
+overmind.set_agent_name("My Agent")  # keep constant for this agent
 
 try:
     ...
@@ -234,7 +254,12 @@ a human would use to describe the agent's work ("search", "lookup_policy",
 ## Step 5a — Runtime envelope: declare intent, milestones, expectations
 
 Decorators make a trace *visible*; the runtime envelope makes it *scorable*.
-Each call emits a pinned `overmind.eval.*` span event (see the baseline
+First, bind the run to its task: decorate the task's entry point with
+`@overmind.task("<behaviour key from list_behaviours>")` (or wrap it in
+`with overmind.task("<behaviour key>"):`). The key is stamped on the
+`entry_point` unit span, and the trace binds to that Behaviour by contract.
+Then emit the envelope. Each call emits a pinned `overmind.eval.*` span
+event (see the baseline
 table). Exact signatures/semantics live in `overmind/evals.py` — read it if
 in doubt. All five **no-op (debug log) when there is no recording span**, so
 call them inside a decorated span:
@@ -242,19 +267,23 @@ call them inside a decorated span:
 ```python
 @overmind.entry_point()
 def run(request: dict) -> dict:
-    overmind.intent(request["user_message"])  # grounds the judge; omit -> server falls back to the first user message
+    overmind.intent(
+        request["user_message"]
+    )  # grounds the judge; omit -> server falls back to the first user message
     overmind.eval_context(user_tier="premium", retries=3)  # facts for the judge
 
-    overmind.expect("contains", "USD", gate=True)   # hard fail: failure caps the execution score at 0
+    overmind.expect(
+        "contains", "USD", gate=True
+    )  # hard fail: failure caps the execution score at 0
     overmind.expect("regex", r"\d{4}-\d{2}-\d{2}", id="date-format")
     overmind.expect("schema", {"type": "object", "required": ["amount"]}, scope="trace")
     overmind.expect("checkpoints", ["plan_formed", "payment_confirmed", "receipt_sent"])
 
-    overmind.checkpoint("plan_formed")            # named milestone / turn boundary
+    overmind.checkpoint("plan_formed")  # named milestone / turn boundary
     ...
     overmind.checkpoint("payment_confirmed")
     ...
-    overmind.end_conversation()   # conversation-scope scoring; needs set_conversation_id / @conversation
+    overmind.end_conversation()  # conversation-scope scoring; needs set_conversation_id / @conversation
 ```
 
 Semantics:
@@ -266,8 +295,7 @@ Semantics:
 - **`checkpoint(name)`** — named trajectory milestone / turn boundary;
   `expect(..., kind="checkpoints")` can assert the expected ordered path.
 - **`expect(kind, spec, *, id=None, scope="trace", gate=False)`** — runtime
-  expectation. `kind` ∈ `contains | regex | schema | constraint |
-  checkpoints`; `scope` ∈ `span | trace | conversation`. `id` auto-derives as
+  expectation. `kind` ∈ `contains | regex | schema | constraint | checkpoints`; `scope` ∈ `span | trace | conversation`. `id` auto-derives as
   a stable short hash of kind+spec when omitted (the platform dedupes /
   aggregates per expectation). `schema` takes a JSON schema object,
   `checkpoints` an ordered list of names, `constraint` natural-language text.
@@ -291,14 +319,31 @@ anchors not yet instrumented) and `indistinguishable_pairs`.
 Work `remaining` first, in priority order:
 
 1. **entry** — the task's entry point(s); the spine of the execution row.
-2. **discriminating** — steps that distinguish one execution/outcome from
+1. **discriminating** — steps that distinguish one execution/outcome from
    another (scoring-critical).
-3. **supplementary** — supporting steps (nice-to-have structure).
+1. **supplementary** — supporting steps (nice-to-have structure).
 
 Honour each anchor's `verification_hint` when instrumenting it, and resolve
 `indistinguishable_pairs` — two anchors the trace cannot tell apart because
 their spans stamp the same identity — by naming spans/functions so the
 identities disambiguate.
+
+### Declared keys vs the failsafe
+
+A declared key makes the binding a contract: the trace always binds
+(`declared`) even when the git sha is missing or unanalyzed. An unknown key
+is flagged `declared_key_unknown` and falls through to structural matching —
+never silently guessed.
+
+Without a declared key the server structurally matches span identity against
+the registry: scored matched/expected coverage-fraction, binds only when the
+best beats the runner-up by ≥1.5×, and is file-path-joined (a bare `run` in
+`entry.py` cannot suffix-collide with `app.b.run`). Ties and weak matches
+stay `unbound_ambiguous`; a sole candidate still binds but with zero evidence
+— flagged `bind_review` at confidence 0.0, never a silent overconfident bind.
+
+So verification checks `attribution_verdict` / `binding_confidence`, not
+just `binding_source`.
 
 ## Step 5b — Instrumenting ONE agent in a multi-agent repo
 
@@ -346,19 +391,19 @@ The loop:
 
 1. **Discover.** `list_agents` (MCP) — or the agents named in the task
    prompt. The work unit is N separate passes.
-2. **Pick one agent.** Start with the first, and never start the next until
+1. **Pick one agent.** Start with the first, and never start the next until
    the current one is done and verified.
-3. **Fetch its card.** `get_agent` → its `id` (UUID) and capability card.
+1. **Fetch its card.** `get_agent` → its `id` (UUID) and capability card.
    Note `agent_path` / `modes[*].entrypoint_fn` — the exact files this agent
    owns.
-4. **Instrument only that agent.** Follow Steps 0-5b scoped to THIS agent:
+1. **Instrument only that agent.** Follow Steps 0-5b scoped to THIS agent:
    touch only its files, stamp its UUID verbatim, leave sibling agents' code
    alone (shared infrastructure is fine to instrument once).
-5. **Run + verify only that agent.** Run its entrypoint, flush, then fetch
+1. **Run + verify only that agent.** Run its entrypoint, flush, then fetch
    traces filtered to ITS UUID (Step 6). Audit against the baseline: the
    trace's `agent` equals this agent's UUID, `agent_name` constant, model +
    tokens + cost populated, inputs/outputs on the entry point, no secrets.
-6. **Close it.** Fix gaps until this agent's trace clears. Then move to the
+1. **Close it.** Fix gaps until this agent's trace clears. Then move to the
    next agent (back to step 2).
 
 Only at the end, report each agent with its trace link.
@@ -386,13 +431,16 @@ sibling agent.
 **b2.** Task-execution-first audit — execution rows are the primary
 observability row for trajectory instrumentation. `list_task_executions` on
 that agent → `get_task_execution(id)` on the row:
-`binding_source` must be `anchor_join` or `declared` (an `unbound` execution
-means the code identity + git sha never matched the server's registry — fix
-the identity or the code path, don't move on), `user_intent` must be the
-declared intent (or the expected first-user-message fallback), and
-`success_score` / `session_score` must be populated. Then pull
-`behaviour_coverage` on the agent to confirm every step evaluator got
-evidence and no `remaining` anchors are still silent.
+`attribution_verdict` must be `bound_declared` or `bound_structurally`
+(never an `unbound_*` verdict or `bound_low_conf` — that means the declared
+key, code identity, or code path never matched the server's registry; fix
+it, don't move on) and `binding_confidence` should be high; on
+`get_task_execution` inspect `binding_provenance` (`rung`, `confidence`,
+`margin`, `version_mismatch`), confirm `user_intent` is the declared intent
+(or the expected first-user-message fallback), and that `success_score` /
+`session_score` are populated. Then pull `behaviour_coverage` on the agent
+to confirm every step evaluator got evidence and no `remaining` anchors are
+still silent.
 
 **c.** Audit the raw spans against the [baseline table](#what-a-good-trace-carries)
 too — this is complementary to b2, not a replacement. On
@@ -427,7 +475,7 @@ If nothing shows up:
 | Init after LLM clients are created                                   | Provider calls not instrumented                          | Call `init()` at process start, before client construction                                                                                        |
 | `overmind.init()` on top of an existing `TracerProvider`             | OTel keeps the first provider; Overmind attaches nothing | Fan-out path (Step 3b)                                                                                                                            |
 | Agent name varies per run/env                                        | Each variant becomes a separate agent                    | Set `agent_id` (UUID) once and keep `agent_name` constant — distinct names across DIFFERENT agents are correct, drift on ONE agent is the bug     |
-| Invented / mangled `agent_id` (UUID)                                 | Traces attribute to the wrong or a brand-new agent       | Copy the UUID verbatim from `get_agent` (Step 0); if it is missing or not a UUID, stop and report                                                |
+| Invented / mangled `agent_id` (UUID)                                 | Traces attribute to the wrong or a brand-new agent       | Copy the UUID verbatim from `get_agent` (Step 0); if it is missing or not a UUID, stop and report                                                 |
 | Several agents share one process and one global identity             | All spans land under one agent                           | Stamp each agent's `agent_id`/`agent_name` at its own entry point (Step 5b)                                                                       |
 | Only auto-instrumentation, no decorators                             | Flat traces with no inputs/outputs and no step structure | Decorate the entry point and key steps (Step 5)                                                                                                   |
 | Credentials (API keys, tokens, passwords) in decorated function args | Stored verbatim in the trace                             | Mask them before passing; `@observe_safe()` only as a manual, human-maintained escape hatch — never preemptively for data that might be sensitive |

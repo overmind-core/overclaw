@@ -21,10 +21,20 @@ ENVELOPE_FUNCTIONS = [
     "end_conversation()",
 ]
 
+TASK_DECLARATION = [
+    "overmind.task(",
+]
+
 BEHAVIOUR_ANCHOR_ATTRIBUTES = [
     "code.namespace",
     "code.function.name",
     "vcs.ref.head.revision",
+    "overmind.anchor.name",
+]
+
+BINDING_FIELDS = [
+    "binding_confidence",
+    "attribution_verdict",
 ]
 
 MCP_TOOLS = [
@@ -52,6 +62,18 @@ def test_skill_tree_mentions_behaviour_anchor_attributes() -> None:
     text = _docs_text()
     for attr in BEHAVIOUR_ANCHOR_ATTRIBUTES:
         assert attr in text
+
+
+def test_skill_tree_mentions_task_declaration() -> None:
+    text = _docs_text()
+    for token in TASK_DECLARATION:
+        assert token in text
+
+
+def test_skill_tree_mentions_binding_fields() -> None:
+    text = _docs_text()
+    for field in BINDING_FIELDS:
+        assert field in text
 
 
 def test_skill_tree_mentions_locked_mcp_tool_names() -> None:

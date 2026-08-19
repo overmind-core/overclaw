@@ -38,8 +38,7 @@ Conventions (names not ids, errors-as-values, mutations) live in
    identity, versioned prompts, eval contract (input schema, output fields,
    tools, weights, what is optimizable).
 1. `get_instrumentation_context(agent)` — anchor-level "where to instrument"
-   bundle: behaviours with anchors ranked `entry → discriminating →
-   supplementary`, each anchor carrying `instrumented`, `import_line`,
+   bundle: behaviours with anchors ranked `entry → discriminating → supplementary`, each anchor carrying `instrumented`, `import_line`,
    `verification_hint`; plus `remaining` (uninstrumented anchors) and
    `indistinguishable_pairs`. Ask for this before instrumenting an agent
    (see [instrumentation.md](instrumentation.md) Step 5a).
@@ -124,25 +123,37 @@ fetched the trace you just sent and it carries everything the baseline in
 Task executions are the primary observability rows for trajectory
 instrumentation — one per task run, bound to a Behaviour anchor by code
 identity (`code.namespace` + `code.function.name`) and git sha
-(`vcs.ref.head.revision`).
+(`vcs.ref.head.revision`). Binding is `declared` when the SDK stamped
+`overmind.behaviour.key` (`@overmind.task`), else `structural` / `anchor_join`
+server-side matching, or `unbound` when nothing matched.
 
+- `list_behaviours(agent)` — map the agent to its tasks: behaviour key,
+  entry anchor, anchor sequence, terminal, execution/unbound counts.
 - `list_task_executions(project?, agent?, behaviour?, binding_source?)` —
-  execution rows incl. `binding_source` (`anchor_join | declared | unbound`),
-  `success_score` (this execution), `session_score` (conversation-level —
-  identical on every execution sharing the conversation), `terminal_kind`.
+  execution rows incl. `binding_source`
+  (`declared | structural | anchor_join | unbound`), `binding_confidence`
+  (0-1), `attribution_verdict` (`bound_declared | bound_structurally | bound_low_conf | unbound_ambiguous | unbound_declared_key_unknown | unbound_no_evidence`), `success_score` (this execution), `session_score`
+  (conversation-level — identical on every execution sharing the
+  conversation), `terminal_kind`.
 - `get_task_execution(id)` — one execution in detail: `observed_route`,
-  `step_results`, `user_intent`.
+  `step_results`, `user_intent`, and `binding_provenance` (`rung`,
+  `confidence`, `margin`, `version_mismatch`, `evidence`).
 
 Verification flow after instrumenting:
 
 1. `list_task_executions(agent=...)` — narrow with an optional
    `binding_source` filter.
 1. `get_task_execution(id)` — check `binding_source` is `anchor_join` /
-   `declared` (an `unbound` execution means the code identity + sha never
-   matched — fix, don't move on), `user_intent` is correct, and
-   `success_score` / `session_score` are populated.
+   `declared` / `structural` and `attribution_verdict` is `bound_declared` /
+   `bound_structurally` (an `unbound_*` verdict or `bound_low_conf` means
+   the identity never matched — fix, don't move on), `binding_confidence` is
+   high, and `binding_provenance` (`rung`, `confidence`, `margin`,
+   `version_mismatch`) looks right; `user_intent` correct, `success_score` /
+   `session_score` populated.
 1. `behaviour_coverage(agent)` — confirm every step evaluator got evidence;
    `behaviour_deviations(project)` clusters where executions drift.
+1. `list_behaviours(agent)` / `get_instrumentation_context(agent)` — the
+   task ↔ key map and which anchors are still `remaining` vs `instrumented`.
 
 ## Sessions (multi-turn)
 

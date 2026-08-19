@@ -50,9 +50,11 @@ Follow these for ALL Overmind MCP work:
    in [references/instrumentation.md](references/instrumentation.md) requires.
    For trajectory instrumentation the execution row is the gate, not just
    raw spans: fetch it (`list_task_executions` → `get_task_execution`) and
-   confirm `binding_source` is `anchor_join`/`declared` (not `unbound`),
-   `user_intent` is right, and `success_score`/`session_score` populated;
-   pull `behaviour_coverage` to confirm every step evaluator got evidence.
+   confirm `binding_source` is `anchor_join`/`declared`/`structural` (not
+   `unbound`), check `attribution_verdict` / `binding_confidence` (never an
+   `unbound_*` verdict or `bound_low_conf`), `user_intent` is right, and
+   `success_score`/`session_score` populated; pull `behaviour_coverage` to
+   confirm every step evaluator got evidence.
 1. **One agent at a time.** Instrumentation tasks map to agents. Resolve the
    agent's identity and capability card from `get_agent` (the `id` UUID
    verbatim) and scope changes to that agent's files
@@ -72,6 +74,14 @@ Follow these for ALL Overmind MCP work:
    `list_task_executions` / `get_task_execution` (`binding_source`,
    `user_intent`, `success_score`) + `behaviour_coverage` before moving to
    the next agent.
+1. **Declare tasks, don't guess the binding.** The trace binds to the right
+   task/trajectory by contract, not guesswork: resolve the agent with
+   `get_agent` (copy the `id` verbatim), map it to its tasks with
+   `list_behaviours`, and declare the behaviour key with
+   `@overmind.task("<behaviour key>")` on the task entry point (or the
+   context-manager form) and `name=` on separating anchors. A declared key
+   binds even when the git sha is missing or unanalyzed; without one the
+   server falls back to structural matching, which can stay `unbound`.
 
 ## Use-case references
 

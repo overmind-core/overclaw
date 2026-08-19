@@ -459,6 +459,16 @@ CODE_NAMESPACE = "code.namespace"
 CODE_FUNCTION_NAME = "code.function.name"
 
 # ---------------------------------------------------------------------------
+# Behaviour Registry binding keys — stamped by ``overmind.task()`` and the
+# ``name=`` anchor identity on decorators so the server can bind a trace to
+# the task/trajectory it executes. ``BEHAVIOUR_KEY`` is the declared task
+# contract (wins over fuzzy anchor joining); ``ANCHOR_NAME`` is an explicit
+# rename-proof anchor identity that survives module/function moves.
+# ---------------------------------------------------------------------------
+BEHAVIOUR_KEY = "overmind.behaviour.key"
+ANCHOR_NAME = "overmind.anchor.name"
+
+# ---------------------------------------------------------------------------
 # Tool-call metadata (server reads these to classify + attribute tool spans).
 # ---------------------------------------------------------------------------
 TOOL_NAME = "tool.name"
