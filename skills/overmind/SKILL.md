@@ -68,20 +68,32 @@ Follow these for ALL Overmind MCP work:
    execution. Resolve the agent via `get_agent` (the capability card now also
    carries trajectory paths), pull `get_instrumentation_context` to see which
    anchors are still `remaining` vs already `instrumented`, instrument the
-   task entry points + remaining anchors, and emit the envelope — `intent` at
-   turn boundaries, `checkpoint` at milestones, `expect` per task contract,
-   `eval_context` facts, `end_conversation` at completion. Verify with
+   task entry points + remaining anchors, and emit the envelope from the
+   primary task boundary — `intent` at turn boundaries, `checkpoint` at
+   milestones, `expect` for stable runtime invariants, `eval_context` facts,
+   `end_conversation` at completion. Verify with
    `list_task_executions` / `get_task_execution` (`binding_source`,
    `user_intent`, `success_score`) + `behaviour_coverage` before moving to
    the next agent.
-1. **Declare tasks, don't guess the binding.** The trace binds to the right
-   task/trajectory by contract, not guesswork: resolve the agent with
+1. **Declare tasks, don't guess the binding.** Use exactly one primary task
+   boundary per trace. A dispatcher chooses the behaviour before entering that
+   boundary; nested work uses workflow/tool/function spans. Use
+   `mode="child"` only for a genuinely independent nested agent execution.
+   The trace binds to the right task/trajectory by contract, not guesswork:
+   resolve the agent with
    `get_agent` (copy the `id` verbatim), map it to its tasks with
    `list_behaviours`, and declare the behaviour key with
-   `@overmind.task("<behaviour key>")` on the task entry point (or the
-   context-manager form) and `name=` on separating anchors. A declared key
-   binds even when the git sha is missing or unanalyzed; without one the
-   server falls back to structural matching, which can stay `unbound`.
+   `@overmind.task("<behaviour key>")` on the task entry point and `name=` on
+   stable separating anchors. The context-manager form is only for a dynamic
+   boundary with explicit `entrypoint=` metadata; it is not equivalent to the
+   decorator for code identity or I/O capture. A declared key is strong
+   evidence, but revision mismatch and unknown anchors remain verification
+   failures; without one the server falls back to structural matching, which
+   can stay `unbound`.
+
+   Instrumentation may use behaviour keys, entry anchors, tool interfaces, and
+   machine-readable output contracts. It must not copy evaluator prompts,
+   rubrics, or judge logic into the application.
 
 ## Use-case references
 

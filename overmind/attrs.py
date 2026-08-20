@@ -467,6 +467,7 @@ CODE_FUNCTION_NAME = "code.function.name"
 # ---------------------------------------------------------------------------
 BEHAVIOUR_KEY = "overmind.behaviour.key"
 ANCHOR_NAME = "overmind.anchor.name"
+TASK_MODE = "overmind.task.mode"
 
 # ---------------------------------------------------------------------------
 # Tool-call metadata (server reads these to classify + attribute tool spans).

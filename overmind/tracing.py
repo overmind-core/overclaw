@@ -12,9 +12,11 @@ import os
 import time
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager
+from contextvars import ContextVar
 from enum import Enum
 from functools import wraps
 from pathlib import Path, PurePath
+from threading import Lock
 from typing import Any, TypeVar
 
 from opentelemetry import trace
@@ -38,6 +40,11 @@ _strict_mode = os.environ.get("OVERMIND_STRICT_MODE", "false").lower() == "true"
 _initialized = False
 _tracer: trace.Tracer | None = None
 _providers: set[str] = set()
+_provider_lock = Lock()
+_ACTIVE_TASK: ContextVar[tuple[str, str] | None] = ContextVar(
+    "overmind_active_task", default=None
+)
+_ACTIVE_TASK_SPAN: ContextVar[Any | None] = ContextVar("overmind_active_task_span", default=None)
 
 DEFAULT_BASE_URL = os.getenv("OVERMIND_API_URL", "https://api.overmindlab.ai")
 
@@ -125,21 +132,33 @@ def _default_serializer(obj):
 def _enable_provider(name: str, module: str, instrumentor_factory) -> None:
     """Instrument *module* if installed. Idempotent; missing module raises
     only in strict mode. Factories import lazily to avoid upfront cost."""
-    if name in _providers:
-        logger.debug(f"{name} already enabled")
-        return
+    with _provider_lock:
+        if name in _providers:
+            logger.debug(f"{name} already enabled")
+            return
 
-    if importlib.util.find_spec(module) is None:
-        install_name = module.replace(".", "-")
-        msg = f"{install_name} is not installed. Please install it with `pip install {install_name}`."
-        if _strict_mode:
-            raise ImportError(msg)
-        logger.warning(msg)
-        return
+        try:
+            installed = importlib.util.find_spec(module) is not None
+        except ModuleNotFoundError:
+            installed = False
+        if not installed:
+            install_name = module.replace(".", "-")
+            msg = f"{install_name} is not installed. Please install it with `pip install {install_name}`."
+            if _strict_mode:
+                raise ImportError(msg)
+            logger.warning(msg)
+            return
 
-    instrumentor_factory().instrument()
-    _providers.add(name)
-    logger.info(f"{name} instrumentation enabled")
+        try:
+            instrumentor_factory().instrument()
+        except Exception as exc:  # noqa: BLE001 — strict mode controls provider failures
+            msg = f"{name} instrumentation could not be enabled: {exc}"
+            if _strict_mode:
+                raise RuntimeError(msg) from exc
+            logger.warning(msg, exc_info=True)
+            return
+        _providers.add(name)
+        logger.info(f"{name} instrumentation enabled")
 
 
 def _agno_factory():
@@ -529,6 +548,36 @@ def capture_exception(exception: Exception) -> None:
         span.set_status(trace.Status(trace.StatusCode.ERROR, str(exception)))
 
 
+def get_active_task_span():
+    """Return the current task boundary span, if one is open."""
+    span = _ACTIVE_TASK_SPAN.get()
+    return span if span is not None and span.is_recording() else None
+
+
+def _ensure_task_scope_allowed(mode: str, key: str) -> None:
+    current = _ACTIVE_TASK.get()
+    if current is not None and mode == "primary":
+        raise RuntimeError(
+            f"cannot open primary task {key!r} inside task {current[1]!r}; "
+            "use workflow/tool spans or declare an explicit child task"
+        )
+
+
+def _enter_task_scope(mode: str, key: str):
+    _ensure_task_scope_allowed(mode, key)
+    return _ACTIVE_TASK.set((mode, key))
+
+
+def _stamp_context_span(key: str, value: Any) -> None:
+    spans = [trace.get_current_span(), _ACTIVE_TASK_SPAN.get()]
+    seen: set[int] = set()
+    for span in spans:
+        if span is None or id(span) in seen or not span.is_recording():
+            continue
+        seen.add(id(span))
+        _safe_set_attribute(span, key, value)
+
+
 def set_workflow_name(workflow_name: str) -> None:
     """Attach a Traceloop-compatible workflow label to every subsequent span."""
     attach(set_value(attrs.WORKFLOW_NAME, workflow_name))
@@ -537,21 +586,26 @@ def set_workflow_name(workflow_name: str) -> None:
 def set_agent_name(agent_name: str) -> None:
     """Stamp ``overmind.agent.name`` on every span created downstream."""
     attach(set_value(attrs.AGENT_NAME, agent_name))
+    _stamp_context_span(attrs.AGENT_NAME, agent_name)
 
 
 def set_agent_id(agent_id: str) -> None:
     """Stamp ``overmind.agent.id`` (server UUID) on every downstream span."""
     attach(set_value(attrs.AGENT_ID, agent_id))
+    _stamp_context_span(attrs.AGENT_ID, agent_id)
 
 
 def set_project_id(project_id: str) -> None:
     """Stamp ``overmind.project.id`` on every downstream span."""
     attach(set_value(attrs.PROJECT_ID, project_id))
+    _stamp_context_span(attrs.PROJECT_ID, project_id)
 
 
-def set_conversation_id(conversation_id: str) -> None:
+def set_conversation_id(conversation_id: str):
     """Tag downstream spans with a stable ``conversation.id`` for session grouping."""
-    attach(set_value(attrs.CONVERSATION_ID, conversation_id))
+    token = attach(set_value(attrs.CONVERSATION_ID, conversation_id))
+    _stamp_context_span(attrs.CONVERSATION_ID, conversation_id)
+    return token
 
 
 # ---------------------------------------------------------------------------
@@ -566,6 +620,11 @@ class SpanType(str, Enum):
     TOOL = "tool_call"
     LLM = "llm_call"
     RETRIEVAL = "retrieval"
+
+
+def _validate_anchor_name(name: str | None, kind: str) -> None:
+    if name is not None and (not isinstance(name, str) or not name.strip()):
+        raise ValueError(f"{kind} name must be non-empty when provided")
 
 
 # Type names never serialised into span attributes; matched by name to
@@ -693,6 +752,7 @@ def observe(
     _capture_io: bool = True,
     behaviour_key: str | None = None,
     anchor_name: str | None = None,
+    _task_mode: str | None = None,
 ) -> Callable[[Callable], Callable]:
     """Decorator (sync or async) that traces a function: captures ``inputs`` /
     ``outputs`` and stamps canonical span type / status / duration. Set
@@ -718,11 +778,15 @@ def observe(
 
             @wraps(func)
             async def async_wrapper(*args, **kwargs):
+                if _task_mode:
+                    _ensure_task_scope_allowed(_task_mode, behaviour_key or "")
                 tracer = get_tracer()
                 with tracer.start_as_current_span(name) as otel_span:
                     otel_span.set_attribute(attrs.SPAN_TYPE, type.value)
                     _stamp_code_identity(otel_span, func)
                     _stamp_binding(otel_span, anchor_name, behaviour_key)
+                    if _task_mode:
+                        otel_span.set_attribute(attrs.TASK_MODE, _task_mode)
                     if project_id:
                         otel_span.set_attribute(attrs.PROJECT_ID, project_id)
                     if agent_id:
@@ -732,6 +796,14 @@ def observe(
                     if _capture_io:
                         _capture_inputs(otel_span, func, args, kwargs)
                     start = time.monotonic()
+                    task_token = (
+                        _enter_task_scope(_task_mode, behaviour_key or "")
+                        if _task_mode
+                        else None
+                    )
+                    span_token = (
+                        _ACTIVE_TASK_SPAN.set(otel_span) if _task_mode else None
+                    )
                     try:
                         result = await func(*args, **kwargs)
                     except BaseException as exc:
@@ -739,20 +811,30 @@ def observe(
                             otel_span.set_attribute(attrs.TOOL_ERROR, exc.__class__.__name__)
                         _finalize_span(otel_span, exc, start)
                         raise
-                    if _capture_io:
-                        _capture_output(otel_span, result)
-                    _finalize_span(otel_span, None, start)
-                    return result
+                    else:
+                        if _capture_io:
+                            _capture_output(otel_span, result)
+                        _finalize_span(otel_span, None, start)
+                        return result
+                    finally:
+                        if span_token is not None:
+                            _ACTIVE_TASK_SPAN.reset(span_token)
+                        if task_token is not None:
+                            _ACTIVE_TASK.reset(task_token)
 
             return async_wrapper
 
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
+            if _task_mode:
+                _ensure_task_scope_allowed(_task_mode, behaviour_key or "")
             tracer = get_tracer()
             with tracer.start_as_current_span(name) as otel_span:
                 otel_span.set_attribute(attrs.SPAN_TYPE, type.value)
                 _stamp_code_identity(otel_span, func)
                 _stamp_binding(otel_span, anchor_name, behaviour_key)
+                if _task_mode:
+                    otel_span.set_attribute(attrs.TASK_MODE, _task_mode)
                 if project_id:
                     otel_span.set_attribute(attrs.PROJECT_ID, project_id)
                 if agent_id:
@@ -762,6 +844,12 @@ def observe(
                 if _capture_io:
                     _capture_inputs(otel_span, func, args, kwargs)
                 start = time.monotonic()
+                task_token = (
+                    _enter_task_scope(_task_mode, behaviour_key or "")
+                    if _task_mode
+                    else None
+                )
+                span_token = _ACTIVE_TASK_SPAN.set(otel_span) if _task_mode else None
                 try:
                     result = func(*args, **kwargs)
                 except BaseException as exc:
@@ -769,10 +857,16 @@ def observe(
                         otel_span.set_attribute(attrs.TOOL_ERROR, exc.__class__.__name__)
                     _finalize_span(otel_span, exc, start)
                     raise
-                if _capture_io:
-                    _capture_output(otel_span, result)
-                _finalize_span(otel_span, None, start)
-                return result
+                else:
+                    if _capture_io:
+                        _capture_output(otel_span, result)
+                    _finalize_span(otel_span, None, start)
+                    return result
+                finally:
+                    if span_token is not None:
+                        _ACTIVE_TASK_SPAN.reset(span_token)
+                    if task_token is not None:
+                        _ACTIVE_TASK.reset(task_token)
 
         return sync_wrapper
 
@@ -837,16 +931,22 @@ def conversation(conversation_id: str):
 
             @wraps(fn)
             async def async_wrapper(*args, **kwargs):
-                set_conversation_id(conversation_id)
-                return await fn(*args, **kwargs)
+                token = set_conversation_id(conversation_id)
+                try:
+                    return await fn(*args, **kwargs)
+                finally:
+                    detach(token)
 
             return async_wrapper
         else:
 
             @wraps(fn)
             def sync_wrapper(*args, **kwargs):
-                set_conversation_id(conversation_id)
-                return fn(*args, **kwargs)
+                token = set_conversation_id(conversation_id)
+                try:
+                    return fn(*args, **kwargs)
+                finally:
+                    detach(token)
 
             return sync_wrapper
 
@@ -856,18 +956,21 @@ def conversation(conversation_id: str):
 def function(name: str | None = None, **kwargs):
     """Decorator that traces a function span. ``name`` renames the span and
     stamps an explicit anchor identity (``overmind.anchor.name``)."""
+    _validate_anchor_name(name, "function")
     return observe(span_name=name, type=SpanType.FUNCTION, anchor_name=name, **kwargs)
 
 
 def entry_point(name: str | None = None, **kwargs):
     """Decorator that traces an entry point span. ``name`` renames the span and
     stamps an explicit anchor identity (``overmind.anchor.name``)."""
+    _validate_anchor_name(name, "entry_point")
     return observe(span_name=name, type=SpanType.ENTRY_POINT, anchor_name=name, **kwargs)
 
 
 def workflow(name: str | None = None, **kwargs):
     """Decorator that traces a workflow span. ``name`` renames the span and
     stamps an explicit anchor identity (``overmind.anchor.name``)."""
+    _validate_anchor_name(name, "workflow")
     return observe(span_name=name, type=SpanType.WORKFLOW, anchor_name=name, **kwargs)
 
 
@@ -875,49 +978,63 @@ def tool(name: str | None = None, **kwargs):
     """Decorator that traces a tool span (adds ``tool.name`` / ``tool.arg_keys``).
     ``name`` renames the span and stamps an explicit anchor identity
     (``overmind.anchor.name``)."""
+    _validate_anchor_name(name, "tool")
     return observe(span_name=name, type=SpanType.TOOL, anchor_name=name, **kwargs)
 
 
 def retrieval(name: str | None = None, **kwargs):
     """Decorator that traces a retrieval / RAG step span. ``name`` renames the
     span and stamps an explicit anchor identity (``overmind.anchor.name``)."""
+    _validate_anchor_name(name, "retrieval")
     return observe(span_name=name, type=SpanType.RETRIEVAL, anchor_name=name, **kwargs)
 
 
 def task(
     key: str,
     *,
-    aliases: tuple[str, ...] = (),
     name: str | None = None,
     agent_id: str | None = None,
     project_id: str | None = None,
+    mode: str = "primary",
+    entrypoint: Callable | None = None,
 ):
     """Declare the Behaviour-registry task an entry point executes.
 
-    Usable as a decorator (sync/async, like :func:`entry_point`) or as a
-    context manager::
+    Usable as a decorator (sync/async, like :func:`entry_point`). The
+    context-manager form is for a dynamic boundary and should provide
+    ``entrypoint=`` when code identity is available::
 
         @overmind.task("invoice-triage")
         def run_agent(query): ...
 
-        with overmind.task("invoice-triage"):
+        with overmind.task("invoice-triage", entrypoint=run_agent):
             run_agent(query)
 
     Opens a ``SpanType.ENTRY_POINT`` unit span and stamps
     ``overmind.behaviour.key`` (plus ``overmind.anchor.name`` when ``name=``
     is given) on it. The platform binds the trace to this task ahead of any
-    fuzzy anchor joining, so the declared key is the contract. ``aliases`` is
-    reserved for rename migration (old keys resolve once server-side alias
-    resolution lands); ``name=`` overrides both the span name and the anchor
+    fuzzy anchor joining, so the declared key is the contract. A primary task
+    cannot be nested inside another primary task; use workflow/tool spans for
+    ordinary nested work and ``mode="child"`` only for a separately scored
+    nested agent. ``name=`` overrides both the span name and the anchor
     identity. ``agent_id`` and ``project_id`` apply to both forms.
     """
     if not isinstance(key, str) or not key.strip():
         raise ValueError("task() requires a non-empty string key")
     behaviour_key = key.strip()
+    if mode not in {"primary", "child"}:
+        raise ValueError("task() mode must be 'primary' or 'child'")
+    if name is not None and (not isinstance(name, str) or not name.strip()):
+        raise ValueError("task() name must be non-empty when provided")
 
     class _Task:
         """Ambivalent: called with a function it decorates; used via ``with``
         it behaves as the context manager for a task-scoped entry span."""
+
+        def __init__(self):
+            self._entries: ContextVar[tuple[tuple[Any, ...], ...]] = ContextVar(
+                f"overmind_task_entries_{id(self)}", default=()
+            )
 
         def __call__(self, func: Callable) -> Callable:
             span_name = name or getattr(func, "__name__", None) or behaviour_key
@@ -928,26 +1045,47 @@ def task(
                 anchor_name=name,
                 agent_id=agent_id,
                 project_id=project_id,
+                _task_mode=mode,
             )(func)
 
         def __enter__(self):
             attributes = {}
             attributes[attrs.BEHAVIOUR_KEY] = behaviour_key
+            attributes[attrs.TASK_MODE] = mode
             if name:
                 attributes[attrs.ANCHOR_NAME] = name
             if agent_id:
                 attributes[attrs.AGENT_ID] = agent_id
             if project_id:
                 attributes[attrs.PROJECT_ID] = project_id
-            self._cm = start_span(
+            scope_token = _enter_task_scope(mode, behaviour_key)
+            cm = start_span(
                 name or behaviour_key,
                 span_type=SpanType.ENTRY_POINT,
                 attributes=attributes,
             )
-            return self._cm.__enter__()
+            try:
+                span = cm.__enter__()
+            except BaseException:
+                _ACTIVE_TASK.reset(scope_token)
+                raise
+            if entrypoint is not None:
+                _stamp_code_identity(span, entrypoint)
+            span_token = _ACTIVE_TASK_SPAN.set(span)
+            self._entries.set((*self._entries.get(), (scope_token, cm, span_token)))
+            return span
 
         def __exit__(self, *exc):
-            return self._cm.__exit__(*exc)
+            entries = self._entries.get()
+            if not entries:
+                raise RuntimeError("task context exited without an active task")
+            scope_token, cm, span_token = entries[-1]
+            self._entries.set(entries[:-1])
+            try:
+                return cm.__exit__(*exc)
+            finally:
+                _ACTIVE_TASK_SPAN.reset(span_token)
+                _ACTIVE_TASK.reset(scope_token)
 
     return _Task()
 
@@ -1081,6 +1219,7 @@ __all__ = [
     "set_workflow_name",
     "start_child_span",
     "start_span",
+    "task",
     "tool",
     "workflow",
 ]

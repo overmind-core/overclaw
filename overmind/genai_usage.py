@@ -137,6 +137,10 @@ def canonical_usage_updates(attributes: Mapping[str, Any]) -> dict[str, Any]:
     if model and attrs.LLM_MODEL not in attributes:
         updates[attrs.LLM_MODEL] = model
 
+    provider = _first_str(attributes, (attrs.LLM_PROVIDER, attrs.OTEL_LLM_SYSTEM))
+    if provider and attrs.LLM_PROVIDER not in attributes:
+        updates[attrs.LLM_PROVIDER] = provider
+
     if attrs.LLM_COST not in attributes:
         cost = compute_cost(model, prompt_tokens, completion_tokens)
         if cost is not None:

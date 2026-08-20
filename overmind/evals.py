@@ -18,7 +18,12 @@ from typing import Any
 from opentelemetry import trace
 
 from overmind import attrs
-from overmind.tracing import _coerce_to_otel_attribute, _json_dumps, _normalize_for_json
+from overmind.tracing import (
+    _coerce_to_otel_attribute,
+    _json_dumps,
+    _normalize_for_json,
+    get_active_task_span,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +32,14 @@ _EXPECT_SCOPES = frozenset({"span", "trace", "conversation"})
 
 
 def _emit(event_name: str, payload: dict[str, Any]) -> None:
-    span = trace.get_current_span()
+    span = get_active_task_span() or trace.get_current_span()
     if not span.is_recording():
         logger.debug("%s ignored: no recording span", event_name)
         return
+    if event_name == attrs.EVAL_CONVERSATION_END_EVENT:
+        if getattr(span, "_overmind_conversation_end_emitted", False):
+            return
+        setattr(span, "_overmind_conversation_end_emitted", True)
     span.add_event(
         event_name,
         {attrs.EVAL_SCHEMA_VERSION: 1, attrs.EVAL_PAYLOAD: _json_dumps(payload)},

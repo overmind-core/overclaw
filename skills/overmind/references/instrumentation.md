@@ -21,7 +21,7 @@ See [telemetry.md](telemetry.md).
 - [ ] 3. Initialise — greenfield OR fan-out onto the existing provider, with the agent's identity (Step 3a/3b)
 - [ ] 4. Auto-instrument the LLM providers in use
 - [ ] 5. Add custom spans where useful
-- [ ] 5a. Declare the task (`@overmind.task("<behaviour key>")` on the entry point) and emit the runtime eval envelope (intent / checkpoint / expect / eval_context / end_conversation)
+- [ ] 5a. Declare exactly one primary task per trace (`@overmind.task("<behaviour key>")` on the entry point) and emit the runtime envelope from that boundary (intent / checkpoint / expect / eval_context / end_conversation)
 - [ ] 5b. Scope everything to the ONE agent your task names — identity, files, verification
 - [ ] 5c. Multi-agent repos: run the systematic one-at-a-time pass
 - [ ] 6. Flush on shutdown, then run the app and audit traces via MCP
@@ -192,7 +192,7 @@ Decorators (sync and async) — use the type that matches the code:
 ```python
 @overmind.task(
     "behaviour-key"
-)  # declared key from list_behaviours; the task span is the entry point
+)  # one primary boundary; key from list_behaviours
 def run(payload: dict) -> dict: ...
 
 
@@ -212,14 +212,17 @@ def fetch_docs(q: str): ...
 def score(x): ...
 ```
 
-`@overmind.task("<behaviour key>")` (decorator, or the
-`with overmind.task("<behaviour key>"):` context-manager form) opens the
-task's `entry_point` unit span and stamps the declared key — copy the key
-from `list_behaviours(agent)`. `name=` on any decorator (`function`, `tool`,
-`workflow`, `retrieval`, `entry_point`, `task`) stamps `overmind.anchor.name` —
-a rename-proof anchor identity that survives module/function moves; without
-`name=` the qualname (`code.namespace` + `code.function.name`) stays the
-default.
+`@overmind.task("<behaviour key>")` opens the task's `entry_point` unit span,
+captures code identity and I/O, and stamps the declared key — copy the key from
+`list_behaviours(agent)`. A dispatcher must choose the key before entering this
+boundary. Nested work is a `workflow`, `function`, `retrieval`, or `tool` span;
+use `@overmind.task(..., mode="child")` only for an independent nested agent
+that should be scored separately. The context-manager form is supported for a
+dynamic boundary, but provide `entrypoint=<callable>` when possible and record
+I/O explicitly; it cannot infer callable identity or final output on its own.
+`name=` on decorators stamps `overmind.anchor.name`, a rename-proof semantic
+anchor. Without it, the qualname (`code.namespace` + `code.function.name`) is
+the diagnostic identity.
 
 Context manager and current-span helpers:
 
@@ -254,10 +257,11 @@ a human would use to describe the agent's work ("search", "lookup_policy",
 ## Step 5a — Runtime envelope: declare intent, milestones, expectations
 
 Decorators make a trace *visible*; the runtime envelope makes it *scorable*.
-First, bind the run to its task: decorate the task's entry point with
-`@overmind.task("<behaviour key from list_behaviours>")` (or wrap it in
-`with overmind.task("<behaviour key>"):`). The key is stamped on the
-`entry_point` unit span, and the trace binds to that Behaviour by contract.
+First, bind the run to its task by decorating the entry point with
+`@overmind.task("<behaviour key from list_behaviours>")`. The key is stamped on
+the primary `entry_point` unit span, and the trace binds to that Behaviour by
+contract. Only the primary task boundary owns the envelope and conversation
+completion; nested spans must not emit a second envelope.
 Then emit the envelope. Each call emits a pinned `overmind.eval.*` span
 event (see the baseline
 table). Exact signatures/semantics live in `overmind/evals.py` — read it if
@@ -276,7 +280,7 @@ def run(request: dict) -> dict:
         "contains", "USD", gate=True
     )  # hard fail: failure caps the execution score at 0
     overmind.expect("regex", r"\d{4}-\d{2}-\d{2}", id="date-format")
-    overmind.expect("schema", {"type": "object", "required": ["amount"]}, scope="trace")
+    overmind.expect("schema", {"type": "object", "required": ["amount"]}, scope="span")
     overmind.expect("checkpoints", ["plan_formed", "payment_confirmed", "receipt_sent"])
 
     overmind.checkpoint("plan_formed")  # named milestone / turn boundary
@@ -304,7 +308,8 @@ Semantics:
   like `set_tag`.
 - **`end_conversation()`** — signal the conversation is complete; triggers
   conversation-scope scoring (requires a conversation id from
-  `set_conversation_id` / `@conversation`).
+  `set_conversation_id` / `@conversation`). It is idempotent for the active
+  task boundary.
 
 ### Where to instrument — anchor priority
 
@@ -330,10 +335,11 @@ identities disambiguate.
 
 ### Declared keys vs the failsafe
 
-A declared key makes the binding a contract: the trace always binds
-(`declared`) even when the git sha is missing or unanalyzed. An unknown key
-is flagged `declared_key_unknown` and falls through to structural matching —
-never silently guessed.
+A declared key is the strongest binding evidence: a known key on the unit span
+binds even when the git sha is missing, but an unknown key falls through to
+structural matching and is flagged `declared_key_unknown`. A revision mismatch,
+unknown anchor, or missing evidence is still a verification failure; declaration
+does not make stale code current.
 
 Without a declared key the server structurally matches span identity against
 the registry: scored matched/expected coverage-fraction, binds only when the
@@ -342,8 +348,10 @@ best beats the runner-up by ≥1.5×, and is file-path-joined (a bare `run` in
 stay `unbound_ambiguous`; a sole candidate still binds but with zero evidence
 — flagged `bind_review` at confidence 0.0, never a silent overconfident bind.
 
-So verification checks `attribution_verdict` / `binding_confidence`, not
-just `binding_source`.
+So verification checks `attribution_verdict` / `binding_confidence`, plus
+unknown anchors, version match, primary-task count, entry I/O, and final output;
+`bound_structurally` means deterministic fallback evidence, not declared
+instrumentation compliance.
 
 ## Step 5b — Instrumenting ONE agent in a multi-agent repo
 
