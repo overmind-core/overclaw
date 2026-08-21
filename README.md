@@ -39,6 +39,8 @@ def search(query: str) -> list[dict]:
 
 Available decorators/helpers: `entry_point`, `workflow`, `tool`, `function`, plus `start_span` (context manager), `set_tag`, `set_user`, and `capture_exception` for Sentry-style annotations on the current span.
 
+Spans declare evidence provenance for the platform's evaluation judges: tool and retrieval spans are tagged `overmind.provenance = "environment"` and LLM spans `"agent"` automatically; pass `provenance=` (`user` / `agent` / `environment` / `harness`) on any decorator or `start_span` to override. `@entry_point` spans are marked as run roots (`overmind.unit_kind = "run"`); `overmind.mark_unit("turn")` marks the span beginning a user-visible turn. Mark the final answer with `overmind.deliver(answer, grounded_by=[...])` — it captures the payload on a span with `overmind.delivery = true`, grounded in the named evidence spans. See [`docs/tracing-attributes.md`](docs/tracing-attributes.md) for the full attribute contract.
+
 ## Optimise
 
 Set up and configure the experiment (agent, policy, dataset, iterations) in the [Console](https://console.overmindlab.ai/). Then, from the root of the repo you want optimised:

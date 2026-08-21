@@ -252,6 +252,17 @@ EVAL_SCHEMA_VERSION = "overmind.eval.schema_version"  # int, currently 1
 EVAL_PAYLOAD = "overmind.eval.payload"  # JSON-serialized payload string
 
 # ---------------------------------------------------------------------------
+# Evaluation evidence contract — the platform's judges read these exact keys
+# (pinned in tests/test_evidence_contract.py; see docs/tracing-attributes.md
+# §7).  ``unit_kind`` / ``grounded_by`` deliberately break the dotted-segments
+# naming rule above: the platform ingest is built against these literal keys.
+# ---------------------------------------------------------------------------
+PROVENANCE = "overmind.provenance"  # "user" | "agent" | "environment" | "harness"
+UNIT_KIND = "overmind.unit_kind"  # "turn" | "run" (ATSC agent-turn vocabulary)
+DELIVERY = "overmind.delivery"  # true on the span carrying the terminal deliverable
+GROUNDED_BY = "overmind.grounded_by"  # JSON array of span_id hex strings
+
+# ---------------------------------------------------------------------------
 # Evaluator (overmind/optimize/evaluator.py)
 # ---------------------------------------------------------------------------
 EVAL_BATCH_SIZE = "overmind.eval.batch_size"

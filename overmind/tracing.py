@@ -568,6 +568,33 @@ class SpanType(str, Enum):
     RETRIEVAL = "retrieval"
 
 
+_PROVENANCE_VALUES = frozenset({"user", "agent", "environment", "harness"})
+_UNIT_KINDS = frozenset({"turn", "run"})
+
+# Span types whose payloads have an unambiguous provenance class: tool results
+# and retrieved documents are environment observations, model completions are
+# agent-authored.  Everything else needs an explicit ``provenance=``.
+_SPAN_TYPE_PROVENANCE = {
+    SpanType.TOOL: "environment",
+    SpanType.RETRIEVAL: "environment",
+    SpanType.LLM: "agent",
+}
+
+
+def _validate_provenance(value: str | None) -> None:
+    if value is not None and value not in _PROVENANCE_VALUES:
+        raise ValueError(f"provenance must be one of {sorted(_PROVENANCE_VALUES)}, got {value!r}")
+
+
+def _stamp_evidence(otel_span, span_type: SpanType, provenance: str | None) -> None:
+    """Stamp the evaluation evidence contract: the provenance class of the
+    span's payloads, and ``unit_kind = "run"`` on entry points (run roots)."""
+    if provenance := provenance or _SPAN_TYPE_PROVENANCE.get(span_type):
+        otel_span.set_attribute(attrs.PROVENANCE, provenance)
+    if span_type is SpanType.ENTRY_POINT:
+        otel_span.set_attribute(attrs.UNIT_KIND, "run")
+
+
 # Type names never serialised into span attributes; matched by name to
 # avoid importing rich / opentelemetry for an isinstance check.
 _SKIP_INPUT_TYPES = frozenset({
@@ -690,9 +717,15 @@ def observe(
     type: SpanType = SpanType.FUNCTION,
     agent_id: str | None = None,
     project_id: str | None = None,
+    provenance: str | None = None,
 ) -> Callable[[Callable], Callable]:
     """Decorator (sync or async) that traces a function: captures ``inputs`` /
-    ``outputs`` and stamps canonical span type / status / duration."""
+    ``outputs`` and stamps canonical span type / status / duration.
+
+    ``provenance`` overrides the evidence provenance class
+    (``user`` / ``agent`` / ``environment`` / ``harness``); tool, retrieval
+    and LLM spans get their natural class automatically."""
+    _validate_provenance(provenance)
 
     def decorator(func: Callable) -> Callable:
         name = span_name or func.__name__
@@ -704,6 +737,7 @@ def observe(
                 tracer = get_tracer()
                 with tracer.start_as_current_span(name) as otel_span:
                     otel_span.set_attribute(attrs.SPAN_TYPE, type.value)
+                    _stamp_evidence(otel_span, type, provenance)
                     _stamp_code_identity(otel_span, func)
                     if project_id:
                         otel_span.set_attribute(attrs.PROJECT_ID, project_id)
@@ -731,6 +765,7 @@ def observe(
             tracer = get_tracer()
             with tracer.start_as_current_span(name) as otel_span:
                 otel_span.set_attribute(attrs.SPAN_TYPE, type.value)
+                _stamp_evidence(otel_span, type, provenance)
                 _stamp_code_identity(otel_span, func)
                 if project_id:
                     otel_span.set_attribute(attrs.PROJECT_ID, project_id)
@@ -761,12 +796,16 @@ def start_span(
     name: str,
     span_type: SpanType = SpanType.FUNCTION,
     attributes: dict[str, Any] | None = None,
+    *,
+    provenance: str | None = None,
 ):
     """Context-manager companion to :func:`observe`; stamps the same
     canonical span metadata."""
+    _validate_provenance(provenance)
     tracer = get_tracer()
     with tracer.start_as_current_span(name) as otel_span:
         otel_span.set_attribute(attrs.SPAN_TYPE, span_type.value)
+        _stamp_evidence(otel_span, span_type, provenance)
         if attributes:
             for key, value in attributes.items():
                 _safe_set_attribute(otel_span, key, value)
@@ -791,6 +830,7 @@ def start_child_span(
     *,
     span_type: SpanType = SpanType.FUNCTION,
     attributes: Mapping[str, Any] | None = None,
+    provenance: str | None = None,
 ):
     """Open a span as an explicit child of the current OTel span; re-attaching
     the parent keeps the tree stable across mixed instrumentation stacks."""
@@ -799,7 +839,7 @@ def start_child_span(
     try:
         if current is not None and current.get_span_context().is_valid:
             token = attach(trace.set_span_in_context(current))
-        with start_span(name, span_type=span_type, attributes=dict(attributes or {})) as span:
+        with start_span(name, span_type=span_type, attributes=dict(attributes or {}), provenance=provenance) as span:
             yield span
     finally:
         if token is not None:
@@ -853,6 +893,43 @@ def tool(name: str | None = None, **kwargs):
 def retrieval(name: str | None = None, **kwargs):
     """Decorator that traces a retrieval / RAG step span."""
     return observe(span_name=name, type=SpanType.RETRIEVAL, **kwargs)
+
+
+def mark_unit(kind: str) -> None:
+    """Stamp ``overmind.unit_kind`` on the current span: ``"turn"`` begins a
+    user-visible unit of work, ``"run"`` is the root of a full agent run.
+    ``@entry_point`` spans are marked ``"run"`` automatically; use this for
+    turn boundaries and for harness spans the SDK doesn't wrap."""
+    if kind not in _UNIT_KINDS:
+        raise ValueError(f"mark_unit() kind must be one of {sorted(_UNIT_KINDS)}, got {kind!r}")
+    set_tag(attrs.UNIT_KIND, kind)
+
+
+def _grounding_span_id(handle: Any) -> str:
+    """Accept a span_id hex string or any OTel span handle (e.g. the span
+    yielded by :func:`start_span`)."""
+    if isinstance(handle, str):
+        return handle
+    return format(handle.get_span_context().span_id, "016x")
+
+
+def deliver(
+    payload: Any,
+    *,
+    grounded_by: list[Any] | None = None,
+    name: str = "deliver",
+    provenance: str = "agent",
+) -> None:
+    """Capture the terminal deliverable of a run on its own child span:
+    the payload is serialised into ``outputs`` and the span carries
+    ``overmind.delivery = true``.  ``grounded_by`` names the evidence spans
+    the deliverable rests on (span_id hex strings or span handles)."""
+    _validate_provenance(provenance)
+    with start_child_span(name, provenance=provenance) as otel_span:
+        otel_span.set_attribute(attrs.DELIVERY, True)
+        if grounded_by:
+            otel_span.set_attribute(attrs.GROUNDED_BY, json.dumps([_grounding_span_id(h) for h in grounded_by]))
+        _capture_output(otel_span, payload)
 
 
 # ---------------------------------------------------------------------------
@@ -961,6 +1038,7 @@ __all__ = [
     "SpanType",
     "capture_exception",
     "conversation",
+    "deliver",
     "enable_agno",
     "enable_anthropic",
     "enable_google_genai",
@@ -972,6 +1050,7 @@ __all__ = [
     "get_api_settings",
     "get_tracer",
     "init",
+    "mark_unit",
     "observe",
     "observe_safe",
     "retrieval",
