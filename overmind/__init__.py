@@ -14,6 +14,7 @@ from .client import Client, ModelDeleted, OvermindInferenceError
 from .evals import checkpoint, end_conversation, eval_context, expect, intent
 from .tracing import (
     SpanType,
+    capability,
     capture_exception,
     conversation,
     deliver,
@@ -43,6 +44,7 @@ __all__ = [
     "OvermindInferenceError",
     "PromptString",
     "SpanType",
+    "capability",
     "capture_exception",
     "checkpoint",
     "conversation",

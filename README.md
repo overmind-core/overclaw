@@ -41,6 +41,15 @@ Available decorators/helpers: `entry_point`, `workflow`, `tool`, `function`, plu
 
 Spans declare evidence provenance for the platform's evaluation judges: tool and retrieval spans are tagged `overmind.provenance = "environment"` and LLM spans `"agent"` automatically; pass `provenance=` (`user` / `agent` / `environment` / `harness`) on any decorator or `start_span` to override. `@entry_point` spans are marked as run roots (`overmind.unit_kind = "run"`); `overmind.mark_unit("turn")` marks the span beginning a user-visible turn. Mark the final answer with `overmind.deliver(answer, grounded_by=[...])` — it captures the payload on a span with `overmind.delivery = true`, grounded in the named evidence spans. See [`docs/tracing-attributes.md`](docs/tracing-attributes.md) for the full attribute contract.
 
+Multi-capability agents scope identity with `overmind.capability` — a context manager or decorator that stamps `overmind.agent.name` / `.id` on every span created inside and restores the outer identity on exit:
+
+```python
+with overmind.capability("DOM Element Locator", id="..."):  # id optional
+    locate(prompt)  # every span here belongs to the locator capability
+```
+
+Entering a different capability mid-trace is a handoff: the first span of the new scope is stamped `overmind.unit_kind = "turn"`, so the platform scores it as a new unit against that capability's evals. Only declared identities are stamped — nothing is auto-created.
+
 ## Optimise
 
 Set up and configure the experiment (agent, policy, dataset, iterations) in the [Console](https://console.overmindlab.ai/). Then, from the root of the repo you want optimised:

@@ -11,7 +11,7 @@ import logging
 import os
 import time
 from collections.abc import Callable, Mapping
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from enum import Enum
 from functools import wraps
 from pathlib import Path, PurePath
@@ -208,6 +208,20 @@ def enable_tracing(providers: list[str] | None = None) -> None:
 # OTel context keys (canonical attribute strings double as keys).
 _CTX_KEY_WORKFLOW_NAME = attrs.WORKFLOW_NAME
 _CTX_KEY_CONVERSATION_ID = attrs.CONVERSATION_ID
+# Context-only key (never a span attribute): a one-shot _PendingTurn cell set
+# on entry into a handoff capability scope.
+_CTX_KEY_PENDING_TURN = "overmind.capability.pending_turn"
+
+
+class _PendingTurn:
+    """One-shot cell: the first span started inside a handoff capability scope
+    consumes it and becomes the new scoring unit's boundary (``unit_kind="turn"``).
+    Shared by reference across context copies, so exactly one span wins."""
+
+    __slots__ = ("consumed",)
+
+    def __init__(self) -> None:
+        self.consumed = False
 
 
 def _span_processor_on_start(span: trace.Span, parent_context: trace.Context | None = None):
@@ -223,6 +237,10 @@ def _span_processor_on_start(span: trace.Span, parent_context: trace.Context | N
         span.set_attribute(attrs.PROJECT_ID, str(project_id))
     if conversation_id := get_value(_CTX_KEY_CONVERSATION_ID):
         span.set_attribute("conversation.id", str(conversation_id))
+    pending = get_value(_CTX_KEY_PENDING_TURN)
+    if isinstance(pending, _PendingTurn) and not pending.consumed:
+        pending.consumed = True
+        span.set_attribute(attrs.UNIT_KIND, "turn")
 
 
 class _GenAiUsageSpanProcessor(SpanProcessor):
@@ -555,6 +573,93 @@ def set_conversation_id(conversation_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Capability scoping
+# ---------------------------------------------------------------------------
+
+
+def _is_handoff(name: str | None, id: str | None) -> bool:
+    """Entering a capability that differs from the active one, mid-trace.
+
+    Identity is compared on the finest shared grain: ids when both sides have
+    one, else names. Mixed grains (id-only scope under name-only identity)
+    are never treated as a handoff — a boundary is only declared when the
+    identities are provably different."""
+    if not trace.get_current_span().get_span_context().is_valid:
+        return False
+    active_id = get_value(attrs.AGENT_ID)
+    active_name = get_value(attrs.AGENT_NAME)
+    if id and active_id:
+        return str(id) != str(active_id)
+    if name and active_name:
+        return str(name) != str(active_name)
+    return False
+
+
+class _CapabilityScope:
+    """Context manager (sync or async) and decorator produced by
+    :func:`capability`. Entering attaches the capability identity to the OTel
+    context (async-safe via contextvars) so the on-start processor stamps it
+    on every span created inside; exiting restores the outer identity."""
+
+    def __init__(self, name: str | None, id: str | None) -> None:
+        if not name and not id:
+            raise ValueError("capability() requires a name and/or id")
+        self._name = str(name) if name else None
+        self._id = str(id) if id else None
+        self._token = None
+
+    def __enter__(self) -> _CapabilityScope:
+        ctx = set_value(_CTX_KEY_PENDING_TURN, _PendingTurn() if _is_handoff(self._name, self._id) else None)
+        # Both keys are always written: a name-only scope must not inherit the
+        # outer scope's id (the server resolves id before name).
+        ctx = set_value(attrs.AGENT_NAME, self._name, ctx)
+        ctx = set_value(attrs.AGENT_ID, self._id, ctx)
+        self._token = attach(ctx)
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        if self._token is not None:
+            detach(self._token)
+            self._token = None
+        return False
+
+    async def __aenter__(self) -> _CapabilityScope:
+        return self.__enter__()
+
+    async def __aexit__(self, *exc) -> bool:
+        return self.__exit__(*exc)
+
+    def __call__(self, func: F) -> F:
+        if inspect.iscoroutinefunction(func):
+
+            @wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                with _CapabilityScope(self._name, self._id):
+                    return await func(*args, **kwargs)
+
+            return async_wrapper  # type: ignore[return-value]
+
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            with _CapabilityScope(self._name, self._id):
+                return func(*args, **kwargs)
+
+        return sync_wrapper  # type: ignore[return-value]
+
+
+def capability(name: str | None = None, *, id: str | None = None) -> _CapabilityScope:
+    """Declare that all work inside belongs to the named capability.
+
+    Usable as a context manager (``with`` / ``async with``) or decorator.
+    Every span created inside carries ``overmind.agent.name`` / ``.id``; on
+    exit the outer identity is restored. Entering a *different* capability
+    mid-trace is a handoff: the first span of the new scope is stamped
+    ``overmind.unit_kind = "turn"`` so the platform opens a new scoring unit.
+    The identity must be one the project declared — nothing is auto-created."""
+    return _CapabilityScope(name, id)
+
+
+# ---------------------------------------------------------------------------
 # Span types and decorators
 # ---------------------------------------------------------------------------
 
@@ -592,7 +697,11 @@ def _stamp_evidence(otel_span, span_type: SpanType, provenance: str | None) -> N
     if provenance := provenance or _SPAN_TYPE_PROVENANCE.get(span_type):
         otel_span.set_attribute(attrs.PROVENANCE, provenance)
     if span_type is SpanType.ENTRY_POINT:
-        otel_span.set_attribute(attrs.UNIT_KIND, "run")
+        # A capability-handoff boundary already carries ``turn`` from the
+        # on-start processor; don't downgrade it to the run-root fallback.
+        existing = getattr(otel_span, "attributes", None)
+        if not existing or existing.get(attrs.UNIT_KIND) != "turn":
+            otel_span.set_attribute(attrs.UNIT_KIND, "run")
 
 
 # Type names never serialised into span attributes; matched by name to
@@ -724,8 +833,15 @@ def observe(
 
     ``provenance`` overrides the evidence provenance class
     (``user`` / ``agent`` / ``environment`` / ``harness``); tool, retrieval
-    and LLM spans get their natural class automatically."""
+    and LLM spans get their natural class automatically.
+
+    ``agent_id`` routes through :func:`capability`: the decorated span *and*
+    its children carry the identity, and calling into a different capability
+    mid-trace marks a handoff boundary."""
     _validate_provenance(provenance)
+
+    def _capability_scope():
+        return capability(id=agent_id) if agent_id else nullcontext()
 
     def decorator(func: Callable) -> Callable:
         name = span_name or func.__name__
@@ -735,7 +851,7 @@ def observe(
             @wraps(func)
             async def async_wrapper(*args, **kwargs):
                 tracer = get_tracer()
-                with tracer.start_as_current_span(name) as otel_span:
+                with _capability_scope(), tracer.start_as_current_span(name) as otel_span:
                     otel_span.set_attribute(attrs.SPAN_TYPE, type.value)
                     _stamp_evidence(otel_span, type, provenance)
                     _stamp_code_identity(otel_span, func)
@@ -763,7 +879,7 @@ def observe(
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
             tracer = get_tracer()
-            with tracer.start_as_current_span(name) as otel_span:
+            with _capability_scope(), tracer.start_as_current_span(name) as otel_span:
                 otel_span.set_attribute(attrs.SPAN_TYPE, type.value)
                 _stamp_evidence(otel_span, type, provenance)
                 _stamp_code_identity(otel_span, func)
@@ -1036,6 +1152,7 @@ def set_iteration_analytics(
 __all__ = [
     "DEFAULT_BASE_URL",
     "SpanType",
+    "capability",
     "capture_exception",
     "conversation",
     "deliver",

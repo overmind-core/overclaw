@@ -160,7 +160,52 @@ Payload shapes (v1):
 
 ---
 
-## 7. Server-ingest reconciliation (Phase 2 checklist)
+## 7. Evaluation evidence contract (`overmind.provenance` / `overmind.unit_kind` / `overmind.delivery`) — pinned
+
+The platform's evaluation judges read these keys to distinguish evidence by
+who produced it, find user-visible unit boundaries, and locate the terminal
+deliverable. All four are inert extras: old platforms ignore them, nothing
+requires them, and integrations that never call `deliver()` are unaffected.
+Pinned in `tests/test_evidence_contract.py` — do not rename.
+
+| Key | Type | When present | Meaning |
+|-----|------|-------------|---------|
+| `overmind.provenance` | string | auto on `@tool` / `@retrieval` (`environment`) and `llm_call` (`agent`) spans; any span via `provenance=` | Provenance class of the span's payloads: `user` \| `agent` \| `environment` \| `harness`. Tool results and observations are `environment`; model/agent-authored text is `agent`; real end-user input is `user`; scaffold/framework text is `harness`. |
+| `overmind.unit_kind` | string | auto (`run`) on `@entry_point` spans; auto (`turn`) on the first span of a capability handoff; any span via `mark_unit()` | Declared unit marker (ATSC agent-turn vocabulary): `turn` begins a user-visible unit of work, `run` is the root of a full agent run. A handoff-boundary `turn` is never downgraded: an `@entry_point` span that already carries `turn` keeps it. |
+| `overmind.delivery` | bool | `deliver()` span | `true` on the span carrying the terminal deliverable (payload serialised into `outputs`). |
+| `overmind.grounded_by` | JSON string | `deliver(grounded_by=)` | JSON array of span_id hex strings naming the evidence spans the deliverable rests on. |
+
+Emitters: the `provenance=` parameter on `@observe` (and the decorator
+shorthands) / `start_span` / `start_child_span`; `overmind.mark_unit(kind)`;
+`overmind.deliver(payload, *, grounded_by=None, name="deliver",
+provenance="agent")` — `grounded_by` accepts span_id hex strings or OTel span
+handles (e.g. the span yielded by `start_span`).
+
+### Capability scoping and handoffs
+
+`overmind.capability(name=..., id=...)` — context manager (`with` /
+`async with`) or decorator — declares that all work inside belongs to one
+capability. Every span created in the scope is stamped with the scope's
+`overmind.agent.name` / `overmind.agent.id` (via the OTel context, so
+auto-instrumented spans are covered too); on exit the outer identity is
+restored, async-safely. A name-only scope clears any outer `agent.id` so the
+server's id-first resolution can't bind inner spans to the outer capability.
+
+Entering a capability that differs from the currently active identity while a
+trace is open is a **handoff**: the first span of the new scope is stamped
+`overmind.unit_kind = "turn"`, opening a new scoring unit. No dedicated
+handoff wire attribute exists — the platform draws handoffs from consecutive
+units' capability bindings. Identities are compared on the finest shared
+grain (ids when both sides have one, else names); nothing is stamped that the
+app didn't declare, and unknown identities stay unbound server-side.
+
+`agent_id=` on `@observe` and the decorator shorthands routes through the
+same mechanism: the decorated span *and* its children carry the identity, and
+a differing identity mid-trace marks a handoff boundary.
+
+---
+
+## 8. Server-ingest reconciliation (Phase 2 checklist)
 
 The server **already reads** these keys today (`_build_span_usage` /
 `_resolve_agent` / `_classify_span_type`):
@@ -180,6 +225,8 @@ call out for Phase 2 server work if you want them surfaced:
 - `overmind.retrieval.query_chars` / `overmind.retrieval.result_count`
 - the `overmind.eval.*` span events (§6) — envelope parsing is the platform's
   Phase 1 ingest work
+- the evaluation evidence keys (§7) — the platform's evaluation-framework
+  ingest is being built against them in parallel
 
 These are all additive and namespaced; ingesting spans that carry them is safe
 today (unknown attributes are stored, just not aggregated).
