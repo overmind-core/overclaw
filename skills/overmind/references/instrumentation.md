@@ -309,6 +309,63 @@ unknown anchors, version match, primary-task count, entry I/O, and final output;
 `bound_structurally` means deterministic fallback evidence, not declared
 instrumentation compliance.
 
+## Step 5a — Runtime envelope: declare intent, milestones, expectations
+
+Decorators make a trace *visible*; the runtime envelope makes it *scorable*.
+First, bind the run to its task by decorating the entry point with
+`@overmind.task("<behaviour key from list_behaviours>")`. The key is stamped on
+the primary `entry_point` unit span, and the trace binds to that Behaviour by
+contract. Only the primary task boundary owns the envelope and conversation
+completion; nested spans must not emit a second envelope.
+Then emit the envelope. Each call emits a pinned `overmind.eval.*` span
+event (see the baseline
+table). Exact signatures/semantics live in `overmind/evals.py` — read it if
+in doubt. All five **no-op (debug log) when there is no recording span**, so
+call them inside a decorated span:
+
+```python
+@overmind.entry_point()
+def run(request: dict) -> dict:
+    overmind.intent(
+        request["user_message"]
+    )  # grounds the judge; omit -> server falls back to the first user message
+    overmind.eval_context(user_tier="premium", retries=3)  # facts for the judge
+
+    overmind.expect(
+        "contains", "USD", gate=True
+    )  # hard fail: failure caps the execution score at 0
+    overmind.expect("regex", r"\d{4}-\d{2}-\d{2}", id="date-format")
+    overmind.expect("schema", {"type": "object", "required": ["amount"]}, scope="span")
+    overmind.expect("checkpoints", ["plan_formed", "payment_confirmed", "receipt_sent"])
+
+    overmind.checkpoint("plan_formed")  # named milestone / turn boundary
+    ...
+    overmind.checkpoint("payment_confirmed")
+    ...
+    overmind.end_conversation()  # conversation-scope scoring; needs set_conversation_id / @conversation
+```
+
+Semantics:
+
+- **`intent(text, *, source="declared")`** — declare what the user asked for
+  this run; the platform grounds judge scoring in it. Declare it at every
+  turn boundary in multi-turn agents. When undeclared, the server falls back
+  to the first user message.
+- **`checkpoint(name)`** — named trajectory milestone / turn boundary;
+  `expect(..., kind="checkpoints")` can assert the expected ordered path.
+- **`expect(kind, spec, *, id=None, scope="trace", gate=False)`** — runtime
+  expectation. `kind` ∈ `contains | regex | schema | constraint | checkpoints`; `scope` ∈ `span | trace | conversation`. `id` auto-derives as
+  a stable short hash of kind+spec when omitted (the platform dedupes /
+  aggregates per expectation). `schema` takes a JSON schema object,
+  `checkpoints` an ordered list of names, `constraint` natural-language text.
+  `gate=True` makes a failure a hard fail that caps the execution's score at 0.
+- **`eval_context(**facts)`** — runtime facts for the judge; values coerced
+  like `set_tag`.
+- **`end_conversation()`** — signal the conversation is complete; triggers
+  conversation-scope scoring (requires a conversation id from
+  `set_conversation_id` / `@conversation`). It is idempotent for the active
+  task boundary.
+
 ## Step 5b — Instrumenting ONE agent in a multi-agent repo
 
 Most instrumentation tasks name **one specific agent**. Everything in this
