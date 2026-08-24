@@ -11,7 +11,7 @@ import logging
 import os
 import time
 from collections.abc import Callable, Mapping
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from enum import Enum
 from functools import wraps
@@ -225,6 +225,20 @@ def enable_tracing(providers: list[str] | None = None) -> None:
 # OTel context keys (canonical attribute strings double as keys).
 _CTX_KEY_WORKFLOW_NAME = attrs.WORKFLOW_NAME
 _CTX_KEY_CONVERSATION_ID = attrs.CONVERSATION_ID
+# Context-only key (never a span attribute): a one-shot _PendingTurn cell set
+# on entry into a handoff capability scope.
+_CTX_KEY_PENDING_TURN = "overmind.capability.pending_turn"
+
+
+class _PendingTurn:
+    """One-shot cell: the first span started inside a handoff capability scope
+    consumes it and becomes the new scoring unit's boundary (``unit_kind="turn"``).
+    Shared by reference across context copies, so exactly one span wins."""
+
+    __slots__ = ("consumed",)
+
+    def __init__(self) -> None:
+        self.consumed = False
 
 
 def _span_processor_on_start(span: trace.Span, parent_context: trace.Context | None = None):
@@ -240,6 +254,10 @@ def _span_processor_on_start(span: trace.Span, parent_context: trace.Context | N
         span.set_attribute(attrs.PROJECT_ID, str(project_id))
     if conversation_id := get_value(_CTX_KEY_CONVERSATION_ID):
         span.set_attribute("conversation.id", str(conversation_id))
+    pending = get_value(_CTX_KEY_PENDING_TURN)
+    if isinstance(pending, _PendingTurn) and not pending.consumed:
+        pending.consumed = True
+        span.set_attribute(attrs.UNIT_KIND, "turn")
 
 
 class _GenAiUsageSpanProcessor(SpanProcessor):
@@ -555,10 +573,7 @@ def get_active_task_span():
 def _ensure_task_scope_allowed(key: str) -> None:
     current = _ACTIVE_TASK.get()
     if current is not None:
-        raise RuntimeError(
-            f"cannot open task {key!r} inside task {current!r}; "
-            "use workflow/tool spans for nested work"
-        )
+        raise RuntimeError(f"cannot open task {key!r} inside task {current!r}; use workflow/tool spans for nested work")
 
 
 def _enter_task_scope(key: str):
@@ -607,6 +622,93 @@ def set_conversation_id(conversation_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Capability scoping
+# ---------------------------------------------------------------------------
+
+
+def _is_handoff(name: str | None, id: str | None) -> bool:
+    """Entering a capability that differs from the active one, mid-trace.
+
+    Identity is compared on the finest shared grain: ids when both sides have
+    one, else names. Mixed grains (id-only scope under name-only identity)
+    are never treated as a handoff — a boundary is only declared when the
+    identities are provably different."""
+    if not trace.get_current_span().get_span_context().is_valid:
+        return False
+    active_id = get_value(attrs.AGENT_ID)
+    active_name = get_value(attrs.AGENT_NAME)
+    if id and active_id:
+        return str(id) != str(active_id)
+    if name and active_name:
+        return str(name) != str(active_name)
+    return False
+
+
+class _CapabilityScope:
+    """Context manager (sync or async) and decorator produced by
+    :func:`capability`. Entering attaches the capability identity to the OTel
+    context (async-safe via contextvars) so the on-start processor stamps it
+    on every span created inside; exiting restores the outer identity."""
+
+    def __init__(self, name: str | None, id: str | None) -> None:
+        if not name and not id:
+            raise ValueError("capability() requires a name and/or id")
+        self._name = str(name) if name else None
+        self._id = str(id) if id else None
+        self._token = None
+
+    def __enter__(self) -> _CapabilityScope:
+        ctx = set_value(_CTX_KEY_PENDING_TURN, _PendingTurn() if _is_handoff(self._name, self._id) else None)
+        # Both keys are always written: a name-only scope must not inherit the
+        # outer scope's id (the server resolves id before name).
+        ctx = set_value(attrs.AGENT_NAME, self._name, ctx)
+        ctx = set_value(attrs.AGENT_ID, self._id, ctx)
+        self._token = attach(ctx)
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        if self._token is not None:
+            detach(self._token)
+            self._token = None
+        return False
+
+    async def __aenter__(self) -> _CapabilityScope:
+        return self.__enter__()
+
+    async def __aexit__(self, *exc) -> bool:
+        return self.__exit__(*exc)
+
+    def __call__(self, func: F) -> F:
+        if inspect.iscoroutinefunction(func):
+
+            @wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                with _CapabilityScope(self._name, self._id):
+                    return await func(*args, **kwargs)
+
+            return async_wrapper  # type: ignore[return-value]
+
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            with _CapabilityScope(self._name, self._id):
+                return func(*args, **kwargs)
+
+        return sync_wrapper  # type: ignore[return-value]
+
+
+def capability(name: str | None = None, *, id: str | None = None) -> _CapabilityScope:
+    """Declare that all work inside belongs to the named capability.
+
+    Usable as a context manager (``with`` / ``async with``) or decorator.
+    Every span created inside carries ``overmind.agent.name`` / ``.id``; on
+    exit the outer identity is restored. Entering a *different* capability
+    mid-trace is a handoff: the first span of the new scope is stamped
+    ``overmind.unit_kind = "turn"`` so the platform opens a new scoring unit.
+    The identity must be one the project declared — nothing is auto-created."""
+    return _CapabilityScope(name, id)
+
+
+# ---------------------------------------------------------------------------
 # Span types and decorators
 # ---------------------------------------------------------------------------
 
@@ -623,6 +725,37 @@ class SpanType(str, Enum):
 def _validate_anchor_name(name: str | None, kind: str) -> None:
     if name is not None and (not isinstance(name, str) or not name.strip()):
         raise ValueError(f"{kind} name must be non-empty when provided")
+
+
+_PROVENANCE_VALUES = frozenset({"user", "agent", "environment", "harness"})
+_UNIT_KINDS = frozenset({"turn", "run"})
+
+# Span types whose payloads have an unambiguous provenance class: tool results
+# and retrieved documents are environment observations, model completions are
+# agent-authored.  Everything else needs an explicit ``provenance=``.
+_SPAN_TYPE_PROVENANCE = {
+    SpanType.TOOL: "environment",
+    SpanType.RETRIEVAL: "environment",
+    SpanType.LLM: "agent",
+}
+
+
+def _validate_provenance(value: str | None) -> None:
+    if value is not None and value not in _PROVENANCE_VALUES:
+        raise ValueError(f"provenance must be one of {sorted(_PROVENANCE_VALUES)}, got {value!r}")
+
+
+def _stamp_evidence(otel_span, span_type: SpanType, provenance: str | None) -> None:
+    """Stamp the evaluation evidence contract: the provenance class of the
+    span's payloads, and ``unit_kind = "run"`` on entry points (run roots)."""
+    if provenance := provenance or _SPAN_TYPE_PROVENANCE.get(span_type):
+        otel_span.set_attribute(attrs.PROVENANCE, provenance)
+    if span_type is SpanType.ENTRY_POINT:
+        # A capability-handoff boundary already carries ``turn`` from the
+        # on-start processor; don't downgrade it to the run-root fallback.
+        existing = getattr(otel_span, "attributes", None)
+        if not existing or existing.get(attrs.UNIT_KIND) != "turn":
+            otel_span.set_attribute(attrs.UNIT_KIND, "run")
 
 
 # Type names never serialised into span attributes; matched by name to
@@ -762,6 +895,7 @@ def observe(
     anchor_name: str | None = None,
     _task_key: str | None = None,
     _task_key_from: Callable[..., str] | None = None,
+    provenance: str | None = None,
 ) -> Callable[[Callable], Callable]:
     """Decorator (sync or async) that traces a function: captures ``inputs`` /
     ``outputs`` and stamps canonical span type / status / duration. Set
@@ -772,7 +906,17 @@ def observe(
     it ahead of fuzzy anchor joining); ``anchor_name`` stamps an explicit
     rename-proof anchor identity (``overmind.anchor.name``) alongside the
     derived ``code.namespace`` / ``code.function.name``.
-    """
+    ``provenance`` overrides the evidence provenance class
+    (``user`` / ``agent`` / ``environment`` / ``harness``); tool, retrieval
+    and LLM spans get their natural class automatically.
+
+    ``agent_id`` routes through :func:`capability`: the decorated span *and*
+    its children carry the identity, and calling into a different capability
+    mid-trace marks a handoff boundary."""
+    _validate_provenance(provenance)
+
+    def _capability_scope():
+        return capability(id=agent_id) if agent_id else nullcontext()
 
     def decorator(func: Callable) -> Callable:
         name = span_name or func.__name__
@@ -787,16 +931,13 @@ def observe(
 
             @wraps(func)
             async def async_wrapper(*args, **kwargs):
-                task_key = (
-                    _resolve_task_key(_task_key_from, args, kwargs)
-                    if _task_key_from is not None
-                    else _task_key
-                )
+                task_key = _resolve_task_key(_task_key_from, args, kwargs) if _task_key_from is not None else _task_key
                 if task_key:
                     _ensure_task_scope_allowed(task_key)
                 tracer = get_tracer()
-                with tracer.start_as_current_span(name) as otel_span:
+                with _capability_scope(), tracer.start_as_current_span(name) as otel_span:
                     otel_span.set_attribute(attrs.SPAN_TYPE, type.value)
+                    _stamp_evidence(otel_span, type, provenance)
                     _stamp_code_identity(otel_span, func)
                     _stamp_binding(otel_span, anchor_name, behaviour_key or task_key)
                     if project_id:
@@ -808,11 +949,7 @@ def observe(
                     if capture_io:
                         _capture_inputs(otel_span, func, args, kwargs)
                     start = time.monotonic()
-                    task_token = (
-                        _enter_task_scope(task_key)
-                        if task_key
-                        else None
-                    )
+                    task_token = _enter_task_scope(task_key) if task_key else None
                     span_token = _ACTIVE_TASK_SPAN.set(otel_span) if task_key else None
                     try:
                         result = await func(*args, **kwargs)
@@ -836,16 +973,13 @@ def observe(
 
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
-            task_key = (
-                _resolve_task_key(_task_key_from, args, kwargs)
-                if _task_key_from is not None
-                else _task_key
-            )
+            task_key = _resolve_task_key(_task_key_from, args, kwargs) if _task_key_from is not None else _task_key
             if task_key:
                 _ensure_task_scope_allowed(task_key)
             tracer = get_tracer()
-            with tracer.start_as_current_span(name) as otel_span:
+            with _capability_scope(), tracer.start_as_current_span(name) as otel_span:
                 otel_span.set_attribute(attrs.SPAN_TYPE, type.value)
+                _stamp_evidence(otel_span, type, provenance)
                 _stamp_code_identity(otel_span, func)
                 _stamp_binding(otel_span, anchor_name, behaviour_key or task_key)
                 if project_id:
@@ -857,11 +991,7 @@ def observe(
                 if capture_io:
                     _capture_inputs(otel_span, func, args, kwargs)
                 start = time.monotonic()
-                task_token = (
-                    _enter_task_scope(task_key)
-                    if task_key
-                    else None
-                )
+                task_token = _enter_task_scope(task_key) if task_key else None
                 span_token = _ACTIVE_TASK_SPAN.set(otel_span) if task_key else None
                 try:
                     result = func(*args, **kwargs)
@@ -891,12 +1021,16 @@ def start_span(
     name: str,
     span_type: SpanType = SpanType.FUNCTION,
     attributes: dict[str, Any] | None = None,
+    *,
+    provenance: str | None = None,
 ):
     """Context-manager companion to :func:`observe`; stamps the same
     canonical span metadata."""
+    _validate_provenance(provenance)
     tracer = get_tracer()
     with tracer.start_as_current_span(name) as otel_span:
         otel_span.set_attribute(attrs.SPAN_TYPE, span_type.value)
+        _stamp_evidence(otel_span, span_type, provenance)
         if attributes:
             for key, value in attributes.items():
                 _safe_set_attribute(otel_span, key, value)
@@ -921,6 +1055,7 @@ def start_child_span(
     *,
     span_type: SpanType = SpanType.FUNCTION,
     attributes: Mapping[str, Any] | None = None,
+    provenance: str | None = None,
 ):
     """Open a span as an explicit child of the current OTel span; re-attaching
     the parent keeps the tree stable across mixed instrumentation stacks."""
@@ -929,7 +1064,7 @@ def start_child_span(
     try:
         if current is not None and current.get_span_context().is_valid:
             token = attach(trace.set_span_in_context(current))
-        with start_span(name, span_type=span_type, attributes=dict(attributes or {})) as span:
+        with start_span(name, span_type=span_type, attributes=dict(attributes or {}), provenance=provenance) as span:
             yield span
     finally:
         if token is not None:
@@ -1068,8 +1203,7 @@ def task(
     """
     if (key is None) == (key_from is None):
         raise ValueError(
-            "task() requires exactly one of static key or key_from; "
-            "static key must be a non-empty string key"
+            "task() requires exactly one of static key or key_from; static key must be a non-empty string key"
         )
     if key_from is not None and not callable(key_from):
         raise ValueError("task() key_from must be callable")
@@ -1143,6 +1277,43 @@ def task(
                 _ACTIVE_TASK.reset(scope_token)
 
     return _Task()
+
+
+def mark_unit(kind: str) -> None:
+    """Stamp ``overmind.unit_kind`` on the current span: ``"turn"`` begins a
+    user-visible unit of work, ``"run"`` is the root of a full agent run.
+    ``@entry_point`` spans are marked ``"run"`` automatically; use this for
+    turn boundaries and for harness spans the SDK doesn't wrap."""
+    if kind not in _UNIT_KINDS:
+        raise ValueError(f"mark_unit() kind must be one of {sorted(_UNIT_KINDS)}, got {kind!r}")
+    set_tag(attrs.UNIT_KIND, kind)
+
+
+def _grounding_span_id(handle: Any) -> str:
+    """Accept a span_id hex string or any OTel span handle (e.g. the span
+    yielded by :func:`start_span`)."""
+    if isinstance(handle, str):
+        return handle
+    return format(handle.get_span_context().span_id, "016x")
+
+
+def deliver(
+    payload: Any,
+    *,
+    grounded_by: list[Any] | None = None,
+    name: str = "deliver",
+    provenance: str = "agent",
+) -> None:
+    """Capture the terminal deliverable of a run on its own child span:
+    the payload is serialised into ``outputs`` and the span carries
+    ``overmind.delivery = true``.  ``grounded_by`` names the evidence spans
+    the deliverable rests on (span_id hex strings or span handles)."""
+    _validate_provenance(provenance)
+    with start_child_span(name, provenance=provenance) as otel_span:
+        otel_span.set_attribute(attrs.DELIVERY, True)
+        if grounded_by:
+            otel_span.set_attribute(attrs.GROUNDED_BY, json.dumps([_grounding_span_id(h) for h in grounded_by]))
+        _capture_output(otel_span, payload)
 
 
 # ---------------------------------------------------------------------------
@@ -1245,8 +1416,10 @@ def set_iteration_analytics(
 __all__ = [
     "DEFAULT_BASE_URL",
     "SpanType",
+    "capability",
     "capture_exception",
     "conversation",
+    "deliver",
     "enable_agno",
     "enable_anthropic",
     "enable_google_genai",
@@ -1258,6 +1431,7 @@ __all__ = [
     "get_api_settings",
     "get_tracer",
     "init",
+    "mark_unit",
     "observe",
     "observe_safe",
     "retrieval",
