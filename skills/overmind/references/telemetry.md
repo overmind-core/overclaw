@@ -7,7 +7,8 @@ for arguments.
 
 Adding tracing *code* (SDK init, decorators, flush) is
 [instrumentation.md](instrumentation.md). Once traces should be landing,
-verify them here with `list_traces` / `get_trace`.
+verify attribution with `verify_instrumentation_trace` and inspect raw spans
+with `list_traces` / `get_trace`.
 
 Conventions (names not ids, errors-as-values, mutations) live in
 [SKILL.md](../SKILL.md).
@@ -98,7 +99,9 @@ fetched the trace you just sent and it carries everything the baseline in
 
 1. Run the instrumented path end-to-end so a real trace is sent (flush
    short-lived processes first: `overmind.force_flush_traces()`).
-1. `list_traces` (newest) → `get_trace` on that `trace_id`. When the task
+1. Call `verify_instrumentation_trace` with the placement `plan_id` and exact
+   `trace_id`. A strict pass is the attribution gate.
+1. `list_traces` → `get_trace` on that exact `trace_id`. When the task
    names one agent in a multi-agent repo, filter `list_traces(agent=...)` to
    that agent's UUID — never the repo-wide newest trace, which may belong to
    a sibling agent.

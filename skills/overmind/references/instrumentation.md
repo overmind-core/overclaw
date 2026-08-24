@@ -16,12 +16,13 @@ See [telemetry.md](telemetry.md).
 
 ```
 - [ ] 0. Resolve the agent's identity — `get_agent` via MCP; copy its `id` (UUID) verbatim
+- [ ] 0a. Treat the MCP placement plan as the source of required and known targets for this pass, not a closed-world scanner allowlist; run `overmind instrumentation check --plan-file <path> [--root <path>] [--format json]` before editing
 - [ ] 1. Detect existing telemetry (OpenTelemetry, Traceloop, LangSmith, etc.)
 - [ ] 2. Install the SDK and set env vars
 - [ ] 3. Initialise — greenfield OR fan-out onto the existing provider, with the agent's identity (Step 3a/3b)
 - [ ] 4. Auto-instrument the LLM providers in use
-- [ ] 5. Add custom spans where useful
-- [ ] 5a. Declare exactly one primary task per trace (`@overmind.task("<behaviour key>")` on the entry point) and emit the runtime envelope from that boundary (intent / checkpoint / expect / eval_context / end_conversation)
+- [ ] 5. Add useful nested spans as appropriate; ordinary spans are not Behaviour anchors
+- [ ] 5a. Declare exactly one task root per trace (`@overmind.task("<behaviour key>")` on the planned entry point); shared helpers are never independent tasks
 - [ ] 5b. Scope everything to the ONE agent your task names — identity, files, verification
 - [ ] 5c. Multi-agent repos: run the systematic one-at-a-time pass
 - [ ] 6. Flush on shutdown, then run the app and audit traces via MCP
@@ -38,14 +39,13 @@ calling it done. Fetch a real trace with `list_traces` → `get_trace`
 | Agent identity          | `agent_id=` **and** `agent_name=` in `init()` (or `set_agent_id()` + `set_agent_name()`). Get BOTH from `get_agent` via MCP — copy `agent_id` verbatim (it is a UUID; never invent, truncate, or reformat it)                                                                  | The server resolves `overmind.agent.id` by direct UUID lookup (drift-proof); `agent_name` is display + fallback. Name-only stamps risk a slug mismatch with the code-scan agent, which mints a duplicate agent whose live trace scoring silently no-ops |
 | Per-agent scoping       | When your task names ONE agent in a multi-agent repo, stamp THAT agent's identity only — never the repo's, never a generic name                                                                                                                                                | Traces group under the right agent in the Console; sibling agents' spans are untouched                                                                                                                                                                  |
 | Model + token usage     | Automatic via provider auto-instrumentation (Step 4); raw-OTel spans should carry `gen_ai.request.model` / `gen_ai.usage.*`                                                                                                                                                    | Cost is computed server-side from these                                                                                                                                                                                                                 |
-| Inputs and outputs      | The decorators (Step 5) capture call args and return values automatically; make sure the entry point and key steps are decorated so the trace shows what the agent saw and produced                                                                                            | A trace without I/O can't be debugged or turned into eval data                                                                                                                                                                                          |
-| Sensitive data excluded | Not for agents — trace normally and mask credential fields (API keys, tokens, passwords) before they reach decorated functions. `@observe_safe()` (traces timing/status, no values) is a manual escape hatch for human implementation only                                     | Inputs/outputs are stored verbatim                                                                                                                                                                                                                      |
-| Session grouping        | `set_conversation_id(...)` per conversation/thread (stamped as `conversation.id`) whenever the app has multi-turn interactions; `@conversation` wraps a handler that owns a conversation. Session grain, conversation-scope `expect` and `end_conversation()` all depend on it | Groups traces into Sessions                                                                                                                                                                                                                             |
+| Inputs and outputs      | Decorators capture call args and return values by default, including `@overmind.task`; use `capture_io=False` only for an explicit no-payload requirement                                                                                                                        | A trace without I/O cannot be debugged or attributed reliably                                                                                                                                                                                           |
+| Payload policy          | Do not censor, summarize, truncate, or redact ordinary prompts, context, tool data, or model outputs. Mask only a clearly identifiable credential field, or use `capture_io=False` when no payload is explicitly required                                                                 | Over-redaction destroys attribution evidence                                                                                                                                                                                                            |
+| Session grouping        | `set_conversation_id(...)` per conversation/thread (stamped as `conversation.id`) whenever the app has multi-turn interactions; `@conversation` wraps a handler that owns a conversation | Groups traces into Sessions                                                                                                                                                                                                                             |
 | User attribution        | `set_user(user_id, email=...)` where the app has accounts                                                                                                                                                                                                                      | Per-user filtering and cost attribution                                                                                                                                                                                                                 |
-| Span hierarchy + types  | One `@entry_point` at the top; `@workflow` / `@tool` / `@retrieval` for the steps under it, with descriptive names                                                                                                                                                             | Shows which step failed or was slow, instead of one flat LLM call                                                                                                                                                                                       |
-| Behaviour anchor        | Every decorator auto-stamps `code.namespace` (`__module__`) + `code.function.name` (`__qualname__`) — the pair is the Behaviour Registry anchor the server binds spans to for task-execution scoring (`start_span` has no function to read, so no stamp)                       | Without the pair the server cannot bind spans to an anchor; executions land `unbound`                                                                                                                                                                   |
+| Span hierarchy + types  | One `@overmind.task("<behaviour key>")` at the planned task root; `@workflow` / `@tool` / `@retrieval` / `@function` for useful nested steps, with descriptive names                                                                                                                      | Shows which step failed or was slow, instead of one flat LLM call                                                                                                                                                                                       |
+| Behaviour anchor        | Only the MCP plan's task root and explicitly identified anchors are Behaviour anchors. Ordinary useful spans and shared helpers are nested telemetry, not independent task roots or anchors                                                                                  | Keeps attribution tied to the declared placement contract                                                                                                                                                                                             |
 | Git sha                 | `vcs.ref.head.revision` auto-stamped at `init()` — detects `OVERMIND_GIT_SHA` (explicit override), then CI env vars (`GIT_SHA`, `GITHUB_SHA`, …), then `.git/HEAD`; silently omitted when undetectable                                                                         | Lets the server pin executions to the exact code revision                                                                                                                                                                                               |
-| Runtime eval envelope   | The five `overmind.eval.*` span events (`intent`, `expectation`, `context`, `checkpoint`, `conversation_end`), each with `schema_version`=1 + JSON `payload` (Step 5a)                                                                                                         | The scoring inputs: declared intent grounds the judge, expectations become verdicts, checkpoints mark milestones                                                                                                                                        |
 
 ## Step 0 — Resolve the agent's identity
 
@@ -213,16 +213,15 @@ def score(x): ...
 ```
 
 `@overmind.task("<behaviour key>")` opens the task's `entry_point` unit span,
-captures code identity and I/O, and stamps the declared key — copy the key from
+captures code identity and I/O by default, and stamps the declared key — copy the key from
 `list_behaviours(agent)`. A dispatcher must choose the key before entering this
 boundary. Nested work is a `workflow`, `function`, `retrieval`, or `tool` span;
-use `@overmind.task(..., mode="child")` only for an independent nested agent
-that should be scored separately. The context-manager form is supported for a
-dynamic boundary, but provide `entrypoint=<callable>` when possible and record
+the context-manager form is supported for a fixed-key dynamic boundary, but provide `entrypoint=<callable>` when possible and record
 I/O explicitly; it cannot infer callable identity or final output on its own.
 `name=` on decorators stamps `overmind.anchor.name`, a rename-proof semantic
 anchor. Without it, the qualname (`code.namespace` + `code.function.name`) is
-the diagnostic identity.
+the diagnostic identity. Set `capture_io=False` only when the caller explicitly
+requires no payload; do not use it to censor ordinary private or domain data.
 
 Context manager and current-span helpers:
 
@@ -245,87 +244,44 @@ except Exception as exc:
 `start_span` and the decorators use the ambient tracer, so they attach to
 whichever provider is active — greenfield or fan-out.
 
-**Minimum for a good trace.** The entry point alone is NOT enough. For every
-function the agent's code path actually calls that is a meaningful step — a
-tool the agent can invoke, a policy lookup, a retrieval, a scoring step —
-decorate it with the matching type (`@tool`, `@retrieval`, `@function`,
-`@workflow`). A trace whose spans are all `entry_point` is flat: it cannot
-show which step failed or was slow. Rule of thumb: if the function has a name
-a human would use to describe the agent's work ("search", "lookup_policy",
-"rerank"), it should be a span.
+**Minimum for a good trace.** Instrument the planned task root and the
+placement plan's remaining anchors. Other useful model, tool, or helper spans
+are optional nested telemetry; they are not Behaviour anchors unless the plan
+explicitly identifies them. Do not add evaluator prompts, rubrics, judge
+logic, or scoring metadata as part of instrumentation.
 
-## Step 5a — Runtime envelope: declare intent, milestones, expectations
+### Shared-entry dynamic routes
 
-Decorators make a trace *visible*; the runtime envelope makes it *scorable*.
-First, bind the run to its task by decorating the entry point with
-`@overmind.task("<behaviour key from list_behaviours>")`. The key is stamped on
-the primary `entry_point` unit span, and the trace binds to that Behaviour by
-contract. Only the primary task boundary owns the envelope and conversation
-completion; nested spans must not emit a second envelope.
-Then emit the envelope. Each call emits a pinned `overmind.eval.*` span
-event (see the baseline
-table). Exact signatures/semantics live in `overmind/evals.py` — read it if
-in doubt. All five **no-op (debug log) when there is no recording span**, so
-call them inside a decorated span:
-
-```python
-@overmind.entry_point()
-def run(request: dict) -> dict:
-    overmind.intent(
-        request["user_message"]
-    )  # grounds the judge; omit -> server falls back to the first user message
-    overmind.eval_context(user_tier="premium", retries=3)  # facts for the judge
-
-    overmind.expect(
-        "contains", "USD", gate=True
-    )  # hard fail: failure caps the execution score at 0
-    overmind.expect("regex", r"\d{4}-\d{2}-\d{2}", id="date-format")
-    overmind.expect("schema", {"type": "object", "required": ["amount"]}, scope="span")
-    overmind.expect("checkpoints", ["plan_formed", "payment_confirmed", "receipt_sent"])
-
-    overmind.checkpoint("plan_formed")  # named milestone / turn boundary
-    ...
-    overmind.checkpoint("payment_confirmed")
-    ...
-    overmind.end_conversation()  # conversation-scope scoring; needs set_conversation_id / @conversation
-```
-
-Semantics:
-
-- **`intent(text, *, source="declared")`** — declare what the user asked for
-  this run; the platform grounds judge scoring in it. Declare it at every
-  turn boundary in multi-turn agents. When undeclared, the server falls back
-  to the first user message.
-- **`checkpoint(name)`** — named trajectory milestone / turn boundary;
-  `expect(..., kind="checkpoints")` can assert the expected ordered path.
-- **`expect(kind, spec, *, id=None, scope="trace", gate=False)`** — runtime
-  expectation. `kind` ∈ `contains | regex | schema | constraint | checkpoints`; `scope` ∈ `span | trace | conversation`. `id` auto-derives as
-  a stable short hash of kind+spec when omitted (the platform dedupes /
-  aggregates per expectation). `schema` takes a JSON schema object,
-  `checkpoints` an ordered list of names, `constraint` natural-language text.
-  `gate=True` makes a failure a hard fail that caps the execution's score at 0.
-- **`eval_context(**facts)`** — runtime facts for the judge; values coerced
-  like `set_tag`.
-- **`end_conversation()`** — signal the conversation is complete; triggers
-  conversation-scope scoring (requires a conversation id from
-  `set_conversation_id` / `@conversation`). It is idempotent for the active
-  task boundary.
+Keep fixed tasks as `@overmind.task("key")`. When several registered tasks
+share one entry function, use `@overmind.task(key_from=selector)`. The selector
+runs before span creation and must return a registered, non-empty key; a
+selector error or invalid result produces no task span. This is a
+decorator-only boundary, not a context-manager placement.
 
 ### Where to instrument — anchor priority
 
-`get_instrumentation_context(agent)` returns the agent's Behaviour anchors —
-the `code.namespace` + `code.function.name` span-identity pairs the server
-binds spans to — ranked `entry → discriminating → supplementary`. Each anchor
-carries an `instrumented` bool, an `import_line`, a `verification_hint`
-(tells you how to confirm the `code.namespace=…` / `code.function.name=…`
-pair really arrives on the trace), and the context bundles `remaining` (the
-anchors not yet instrumented) and `indistinguishable_pairs`.
+`get_instrumentation_context(agent)` returns a versioned placement plan: the
+canonical file, qualname, AST insertion point, task key or selector, allowed
+keys, analyzed revision, and placement constraints. It also returns the
+Behaviour anchors — the `code.namespace` + `code.function.name` identity pairs
+ranked `entry → discriminating → supplementary` — plus `remaining` and
+`indistinguishable_pairs`.
+
+The plan identifies required and known targets for this pass; it is not a
+closed-world scanner allowlist. Use it to place the task root and check known
+anchors without claiming that unlisted files or targets are forbidden.
+
+Save the returned `plan_id`. After editing, run the local
+`overmind instrumentation check --plan-file <path>` against that plan. After a
+real run, call the read-only MCP `verify_instrumentation_trace` with the agent,
+`plan_id`, and exact `trace_id`. It is the attribution gate for the declared
+task root and plan-identified anchors.
 
 Work `remaining` first, in priority order:
 
 1. **entry** — the task's entry point(s); the spine of the execution row.
 1. **discriminating** — steps that distinguish one execution/outcome from
-   another (scoring-critical).
+   another (outcome-critical).
 1. **supplementary** — supporting steps (nice-to-have structure).
 
 Honour each anchor's `verification_hint` when instrumenting it, and resolve
@@ -430,25 +386,18 @@ the agent:
 
 **a.** Run the instrumented path end-to-end so a real trace is sent.
 
-**b.** Fetch it via Overmind MCP — [telemetry.md](telemetry.md):
-`list_traces` (newest) → `get_trace` on that `trace_id`. Do not curl REST.
-When your task names one agent in a multi-agent repo, fetch filtered to that
-agent's UUID — never the repo-wide newest trace, which may belong to a
-sibling agent.
+**b.** Fetch the exact trace via Overmind MCP — [telemetry.md](telemetry.md):
+retain the `trace_id` for the exercised route, use `list_traces` only to
+identify that exact run (filtered to the agent UUID), then call `get_trace` on
+that `trace_id`. Do not accept an unrelated newest trace or curl REST.
 
-**b2.** Task-execution-first audit — execution rows are the primary
-observability row for trajectory instrumentation. `list_task_executions` on
-that agent → `get_task_execution(id)` on the row:
-`attribution_verdict` must be `bound_declared` or `bound_structurally`
-(never an `unbound_*` verdict or `bound_low_conf` — that means the declared
-key, code identity, or code path never matched the server's registry; fix
-it, don't move on) and `binding_confidence` should be high; on
-`get_task_execution` inspect `binding_provenance` (`rung`, `confidence`,
-`margin`, `version_mismatch`), confirm `user_intent` is the declared intent
-(or the expected first-user-message fallback), and that `success_score` /
-`session_score` are populated. Then pull `behaviour_coverage` on the agent
-to confirm every step evaluator got evidence and no `remaining` anchors are
-still silent.
+**b2.** Call the read-only MCP
+`verify_instrumentation_trace(agent, plan_id, trace_id)` on that exact run. A
+pass requires `bound_declared`, confidence `1.0`, the expected Behaviour
+version and SHA, the expected entry anchor, a raw `entry_point` unit span, and
+no route flags. A structural fallback is useful failsafe evidence but is not
+strict instrumentation success. Fix any failed or unverifiable check before
+moving on.
 
 **c.** Audit the raw spans against the [baseline table](#what-a-good-trace-carries)
 too — this is complementary to b2, not a replacement. On
@@ -486,5 +435,5 @@ If nothing shows up:
 | Invented / mangled `agent_id` (UUID)                                 | Traces attribute to the wrong or a brand-new agent       | Copy the UUID verbatim from `get_agent` (Step 0); if it is missing or not a UUID, stop and report                                                 |
 | Several agents share one process and one global identity             | All spans land under one agent                           | Stamp each agent's `agent_id`/`agent_name` at its own entry point (Step 5b)                                                                       |
 | Only auto-instrumentation, no decorators                             | Flat traces with no inputs/outputs and no step structure | Decorate the entry point and key steps (Step 5)                                                                                                   |
-| Credentials (API keys, tokens, passwords) in decorated function args | Stored verbatim in the trace                             | Mask them before passing; `@observe_safe()` only as a manual, human-maintained escape hatch — never preemptively for data that might be sensitive |
+| Credentials (API keys, tokens, passwords) in decorated function args | Stored verbatim in the trace                             | Mask the clearly identifiable credential field, or use `capture_io=False` when no payload is explicitly required; do not censor ordinary data merely because it might be sensitive |
 | No `set_conversation_id` in a chat app                               | Sessions view stays empty                                | Stamp the thread/conversation id per request                                                                                                      |

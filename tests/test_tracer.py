@@ -116,6 +116,23 @@ def test_observe_captures_outputs(mock_tracer):
         assert len(output_calls) > 0
 
 
+def test_observe_capture_io_false_preserves_span_without_payload(mock_tracer):
+    """The public opt-out keeps tracing metadata but omits payloads."""
+
+    mock_tracer_obj, mock_span = mock_tracer
+
+    with patch("overmind.tracing.get_tracer", return_value=mock_tracer_obj):
+
+        @observe(capture_io=False)
+        def process_secret(token: str):
+            return {"ok": True}
+
+        assert process_secret("sk-secret") == {"ok": True}
+        assert not any(
+            "inputs" in str(call) or "outputs" in str(call) for call in mock_span.set_attribute.call_args_list
+        )
+
+
 def test_observe_handles_exceptions(mock_tracer):
     """Test that exceptions are properly recorded."""
 
@@ -133,7 +150,7 @@ def test_observe_handles_exceptions(mock_tracer):
         # Check that exception was recorded
         mock_span.record_exception.assert_called_once()
         # Check that error status was set
-        status_calls = [c for c in mock_span.set_status.call_args_list]
+        status_calls = list(mock_span.set_status.call_args_list)
         assert len(status_calls) > 0
         # Verify error status
         error_call = status_calls[-1]
@@ -178,7 +195,7 @@ def test_observe_async_with_exception(mock_tracer):
             asyncio.run(async_fail())
 
         mock_span.record_exception.assert_called_once()
-        status_calls = [c for c in mock_span.set_status.call_args_list]
+        status_calls = list(mock_span.set_status.call_args_list)
         assert status_calls[-1][0][0].status_code == StatusCode.ERROR
 
 

@@ -50,6 +50,21 @@ def test_task_decorator_stamps_key_and_entry_point_type(inmem):
     span = _only_span(inmem)
     assert span.attributes[attrs.BEHAVIOUR_KEY] == "invoice-triage"
     assert span.attributes[attrs.SPAN_TYPE] == SpanType.ENTRY_POINT.value
+    assert span.attributes["inputs"] == '{"query": "q"}'
+    assert span.attributes["outputs"] == '"q"'
+
+
+def test_task_decorator_capture_io_false_preserves_binding_metadata(inmem):
+    @task("invoice-triage", capture_io=False)
+    def run_agent(query):
+        return query
+
+    assert run_agent("q") == "q"
+    span = _only_span(inmem)
+    assert span.attributes[attrs.BEHAVIOUR_KEY] == "invoice-triage"
+    assert span.attributes[attrs.SPAN_TYPE] == SpanType.ENTRY_POINT.value
+    assert "inputs" not in span.attributes
+    assert "outputs" not in span.attributes
 
 
 def test_task_decorator_stamps_key_on_async_function(inmem):
@@ -58,6 +73,31 @@ def test_task_decorator_stamps_key_on_async_function(inmem):
         return query
 
     assert asyncio.run(run_agent("q")) == "q"
+    span = _only_span(inmem)
+    assert span.attributes[attrs.BEHAVIOUR_KEY] == "invoice-triage"
+    assert span.attributes[attrs.SPAN_TYPE] == SpanType.ENTRY_POINT.value
+
+
+def test_task_decorator_selects_dynamic_key_and_preserves_identity_and_io(inmem):
+    @task(key_from=lambda request: request["task_key"])
+    def run_agent(request):
+        return request["query"]
+
+    assert run_agent({"task_key": "invoice-triage", "query": "q"}) == "q"
+    span = _only_span(inmem)
+    assert span.attributes[attrs.BEHAVIOUR_KEY] == "invoice-triage"
+    assert span.attributes[attrs.CODE_NAMESPACE] == __name__
+    assert span.attributes[attrs.CODE_FUNCTION_NAME].endswith("run_agent")
+    assert span.attributes["inputs"] == '{"request": {"task_key": "invoice-triage", "query": "q"}}'
+    assert span.attributes["outputs"] == '"q"'
+
+
+def test_task_decorator_selects_dynamic_key_on_async_function(inmem):
+    @task(key_from=lambda query: query["task_key"])
+    async def run_agent(query):
+        return query["value"]
+
+    assert asyncio.run(run_agent({"task_key": "invoice-triage", "value": "q"})) == "q"
     span = _only_span(inmem)
     assert span.attributes[attrs.BEHAVIOUR_KEY] == "invoice-triage"
     assert span.attributes[attrs.SPAN_TYPE] == SpanType.ENTRY_POINT.value
@@ -158,3 +198,51 @@ def test_task_rejects_empty_or_non_string_key():
         task("   ")
     with pytest.raises(ValueError, match="non-empty string key"):
         task(None)
+
+
+def test_task_requires_exactly_one_static_key_or_selector():
+    with pytest.raises(ValueError, match="exactly one"):
+        task()
+    with pytest.raises(ValueError, match="exactly one"):
+        task("invoice-triage", key_from=lambda: "other")
+    with pytest.raises(ValueError, match="callable"):
+        task(key_from="invoice-triage")
+
+
+def test_task_rejects_invalid_dynamic_key_before_exporting_a_span(inmem):
+    @task(key_from=lambda _query: " ")
+    def run_agent(_query):
+        return "unreachable"
+
+    with pytest.raises(ValueError, match="key_from must return a non-empty string"):
+        run_agent("q")
+    assert not inmem[1].get_finished_spans()
+
+
+def test_task_selector_failure_is_clear_and_before_span_creation(inmem):
+    def select_key(_query):
+        raise LookupError("missing task")
+
+    @task(key_from=select_key)
+    def run_agent(_query):
+        return "unreachable"
+
+    with pytest.raises(RuntimeError, match=r"task\(\) key_from failed: missing task"):
+        run_agent("q")
+    assert not inmem[1].get_finished_spans()
+
+
+def test_task_rejects_nested_dynamic_task(inmem):
+    @task("outer")
+    def run_outer():
+        @task(key_from=lambda value: value)
+        def run_inner(value):
+            return value
+
+        with pytest.raises(RuntimeError, match="cannot open task 'inner' inside task 'outer'"):
+            run_inner("inner")
+
+    run_outer()
+    spans = inmem[1].get_finished_spans()
+    assert len(spans) == 1
+    assert spans[0].attributes[attrs.BEHAVIOUR_KEY] == "outer"

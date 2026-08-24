@@ -45,16 +45,15 @@ Follow these for ALL Overmind MCP work:
    There is no confirmation gate, so verify arguments (and ask the user when
    destructive) before create/delete/cancel.
 1. **Verify with a real trace.** Instrumentation isn't done when the code
-   compiles — it's done when you have fetched the trace you just sent via
-   MCP (`list_traces` → `get_trace`) and it carries everything the baseline
-   in [references/instrumentation.md](references/instrumentation.md) requires.
-   For trajectory instrumentation the execution row is the gate, not just
-   raw spans: fetch it (`list_task_executions` → `get_task_execution`) and
-   confirm `binding_source` is `anchor_join`/`declared`/`structural` (not
-   `unbound`), check `attribution_verdict` / `binding_confidence` (never an
-   `unbound_*` verdict or `bound_low_conf`), `user_intent` is right, and
-   `success_score`/`session_score` populated; pull `behaviour_coverage` to
-   confirm every step evaluator got evidence.
+   compiles — treat the MCP placement plan as the source of required and
+   known targets for this pass, not a closed-world scanner allowlist. Run the
+   deterministic local check
+   `overmind instrumentation check --plan-file <path> [--root <path>] [--format json]`,
+   then retain the exact trace id and call the read-only MCP
+   `verify_instrumentation_trace(agent, plan_id, trace_id)`. It checks the
+   current plan, declared key, entry anchor, revision, raw entry span, and
+   strict declared attribution. Use `list_traces` → `get_trace` only for the
+   complementary raw-span audit, never an unrelated newest trace.
 1. **One agent at a time.** Instrumentation tasks map to agents. Resolve the
    agent's identity and capability card from `get_agent` (the `id` UUID
    verbatim) and scope changes to that agent's files
@@ -64,36 +63,32 @@ Follow these for ALL Overmind MCP work:
 1. **Trajectory-aware instrumentation.** The platform treats **task
    executions** as the primary observability rows: spans bind to Behaviour
    anchors by code identity (`code.namespace` + `code.function.name`) and git
-   sha (`vcs.ref.head.revision`), and a runtime envelope scores each
-   execution. Resolve the agent via `get_agent` (the capability card now also
-   carries trajectory paths), pull `get_instrumentation_context` to see which
-   anchors are still `remaining` vs already `instrumented`, instrument the
-   task entry points + remaining anchors, and emit the envelope from the
-   primary task boundary — `intent` at turn boundaries, `checkpoint` at
-   milestones, `expect` for stable runtime invariants, `eval_context` facts,
-   `end_conversation` at completion. Verify with
-   `list_task_executions` / `get_task_execution` (`binding_source`,
-   `user_intent`, `success_score`) + `behaviour_coverage` before moving to
-   the next agent.
-1. **Declare tasks, don't guess the binding.** Use exactly one primary task
-   boundary per trace. A dispatcher chooses the behaviour before entering that
-   boundary; nested work uses workflow/tool/function spans. Use
-   `mode="child"` only for a genuinely independent nested agent execution.
+   sha (`vcs.ref.head.revision`). Resolve the agent via `get_agent` (the
+   capability card now also carries trajectory paths), then use
+   `get_instrumentation_context` for the required and known task root and
+   remaining anchors. Verify with the placement plan, local checker, and
+   `verify_instrumentation_trace` before moving to the next agent.
+1. **Declare tasks, don't guess the binding.** Use exactly one task root per
+   trace. The plan's task root is required; zero or multiple task roots fail
+   verification. `@overmind.task("key")` is unchanged for fixed tasks. For a
+   shared-entry dynamic route, use `@overmind.task(key_from=selector)`; the
+   selector runs before span creation and must return one registered,
+   non-empty key from the plan's known key set. A dispatcher chooses the
+   behaviour before entering that root. Shared helpers and ordinary useful
+   spans are nested workflow/tool/function spans, never independent task
+   roots or Behaviour anchors unless the plan explicitly identifies them.
    The trace binds to the right task/trajectory by contract, not guesswork:
    resolve the agent with
    `get_agent` (copy the `id` verbatim), map it to its tasks with
    `list_behaviours`, and declare the behaviour key with
    `@overmind.task("<behaviour key>")` on the task entry point and `name=` on
-   stable separating anchors. The context-manager form is only for a dynamic
-   boundary with explicit `entrypoint=` metadata; it is not equivalent to the
+   stable separating anchors. The context-manager form is only for a fixed-key
+   dynamic boundary with explicit `entrypoint=` metadata; it is not equivalent to the
    decorator for code identity or I/O capture. A declared key is strong
    evidence, but revision mismatch and unknown anchors remain verification
    failures; without one the server falls back to structural matching, which
-   can stay `unbound`.
-
-   Instrumentation may use behaviour keys, entry anchors, tool interfaces, and
-   machine-readable output contracts. It must not copy evaluator prompts,
-   rubrics, or judge logic into the application.
+   can stay `unbound`. Decorators capture I/O by default; use
+   `capture_io=False` only for an explicit no-payload requirement.
 
 ## Use-case references
 

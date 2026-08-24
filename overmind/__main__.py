@@ -16,6 +16,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
+from overmind.instrumentation_checker import check_plan_file
 from overmind.optimizer import (
     API_KEY,
     API_URL,
@@ -83,6 +84,35 @@ app.command("optimise", help=OPTIMISE_HELP)(optimise)
 app.command("optimize", hidden=True, help=f"Deprecated alias for `optimise`. {OPTIMISE_HELP}")(optimise)
 
 app.add_typer(skills_app, name="skills")
+
+
+instrumentation_app = typer.Typer(name="instrumentation", help="Check local AST instrumentation placements.")
+
+
+def instrumentation_check(
+    plan_file: Annotated[Path, typer.Option("--plan-file", help="MCP placements plan JSON")],
+    root: Annotated[Path, typer.Option("--root", help="Source repository root")] = Path("."),
+    output_format: Annotated[str, typer.Option("--format", help="Output format: text or json")] = "text",
+):
+    if output_format not in {"text", "json"}:
+        raise typer.BadParameter("must be text or json", param_hint="--format")
+    result = check_plan_file(plan_file, root)
+    if output_format == "json":
+        typer.echo(json.dumps(result, sort_keys=True))
+    else:
+        for check in result["checks"]:
+            location = " ".join(str(check[field]) for field in ("file", "qualname") if check.get(field))
+            typer.echo(f"{check['status'].upper()} {check['code']} {location} {check['message']}".rstrip())
+        summary = result["summary"]
+        typer.echo(
+            f"{('PASS' if result['ok'] else 'FAIL')} {summary['passed']} passed, {summary['failed']} failed, {summary['skipped']} skipped"
+        )
+    if not result["ok"]:
+        raise typer.Exit(1)
+
+
+instrumentation_app.command("check")(instrumentation_check)
+app.add_typer(instrumentation_app)
 
 
 MCP_URLS = {
