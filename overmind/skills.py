@@ -93,4 +93,7 @@ def get_destination_dir(ide: str):
     if ide == "opencode":
         return ".opencode"
 
-    raise typer.BadParameter(f"use cursor, claude_code or opencode, got: {ide}", param_hint="--ide")
+    if ide == "codex":
+        return ".agents"
+
+    raise typer.BadParameter(f"use cursor, claude_code, opencode or codex, got: {ide}", param_hint="--ide")

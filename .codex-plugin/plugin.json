@@ -1,0 +1,34 @@
+{
+  "name": "overmind",
+  "version": "1.2.0",
+  "description": "Skills for working with Overmind — agent observability, tracing, and optimization.",
+  "author": {
+    "name": "Overmind",
+    "email": "hello@overmindlab.ai"
+  },
+  "homepage": "https://overmindlab.ai",
+  "repository": "https://github.com/overmind-core/overmind",
+  "license": "MIT",
+  "keywords": [
+    "overmind",
+    "llm",
+    "observability",
+    "tracing",
+    "agent",
+    "optimization"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Overmind",
+    "shortDescription": "Agent observability and tracing skills",
+    "longDescription": "Install Overmind skills for instrumenting, verifying, and improving AI agents.",
+    "developerName": "Overmind",
+    "category": "Developer Tools",
+    "capabilities": ["Read", "Write"],
+    "defaultPrompt": [
+      "Instrument this agent with Overmind telemetry.",
+      "Verify this agent's Overmind instrumentation.",
+      "Use Overmind traces to improve this agent."
+    ]
+  }
+}
