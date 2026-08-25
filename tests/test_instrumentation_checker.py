@@ -99,3 +99,37 @@ def test_revision_mismatch_is_reported_when_git_revision_is_available(tmp_path, 
     )
     assert not result["ok"]
     assert any(error["code"] == "revision.mismatch" for error in result["errors"])
+
+
+def test_check_plan_normalises_server_shaped_placement(tmp_path, monkeypatch):
+    (tmp_path / "dispatch.py").write_text(
+        "import overmind\n\n"
+        "@overmind.task(key_from=lambda request: request.task_key)\n"
+        "def dispatch(request):\n"
+        "    return request\n"
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args, 0, stdout="deadbeef\n", stderr=""),
+    )
+    plan = {
+        "analyzed_sha": "deadbeef",
+        "placements": [
+            {
+                "target": {
+                    "file": "dispatch.py",
+                    "qualname": "dispatch",
+                    "module": "dispatch",
+                    "import_line": "import overmind",
+                },
+                "placement_mode": "dynamic_key",
+                "required_task_decorator": "@overmind.task(key_from=lambda request: request.task_key)",
+                "allowed_keys": ["a", "b"],
+                "analyzed_sha": "deadbeef",
+            }
+        ],
+    }
+    result = check_plan(plan, tmp_path)
+    assert result["ok"], result["errors"]
+    assert result["revision"]["status"] == "pass"

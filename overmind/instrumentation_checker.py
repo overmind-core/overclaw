@@ -100,6 +100,22 @@ def _decorator_key(value: Any) -> str | None:
     return _literal_task_key(expression)
 
 
+def _decorator_key_from(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip().removeprefix("@").strip()
+    try:
+        expression = ast.parse(text, mode="eval").body
+    except SyntaxError:
+        return None
+    if not isinstance(expression, ast.Call) or not _is_task_ref(expression.func):
+        return None
+    key_from_expr = _task_key_from(expression)
+    if key_from_expr is None:
+        return None
+    return ast.dump(key_from_expr, annotate_fields=True, include_attributes=False)
+
+
 def _placements(plan: Any) -> tuple[list[Any], str | None]:
     if isinstance(plan, list):
         return plan, None
@@ -142,10 +158,12 @@ def _normalise_placement(raw: Any) -> tuple[_Placement | None, str | None]:
         key = _decorator_key(_first(raw, "task_decorator", "decorator"))
     key_from_value = _first(task, "key_from", "dynamic_key_from")
     dynamic = key_from_value is not None or "allowed_keys" in task
-    mode = str(_first(task, "mode", "kind", "placement") or "").lower()
+    mode = str(_first(task, "mode", "kind", "placement", "placement_mode") or "").lower()
     dynamic = dynamic or "dynamic" in mode or mode in {"context", "context_manager"}
     if dynamic:
         key_from = _expression_text(key_from_value)
+        if key_from is None:
+            key_from = _decorator_key_from(_first(raw, "required_task_decorator", "task_decorator", "decorator"))
         allowed = task.get("allowed_keys")
         if allowed is None and isinstance(task.get("allowed"), Mapping):
             allowed = _first(task["allowed"], "keys", "values")
@@ -326,6 +344,9 @@ def check_plan(plan: Any, root: str | Path = ".") -> dict[str, Any]:
         for field in ("revision", "source_revision", "git_sha", "analyzed_sha"):
             if (revision := _revision_value(plan.get(field))) is not None:
                 expected_revisions.append(revision)
+        version = plan.get("version")
+        if isinstance(version, Mapping) and (revision := _revision_value(version.get("analyzed_sha"))) is not None:
+            expected_revisions.append(revision)
     placements: list[_Placement] = []
     for raw in placements_raw:
         placement, error = _normalise_placement(raw)
@@ -334,8 +355,13 @@ def check_plan(plan: Any, root: str | Path = ".") -> dict[str, Any]:
             continue
         assert placement is not None
         placements.append(placement)
-        if isinstance(raw, Mapping) and (revision := _revision_value(raw.get("revision"))) is not None:
-            expected_revisions.append(revision)
+        if isinstance(raw, Mapping):
+            for field in ("revision", "analyzed_sha"):
+                if (revision := _revision_value(raw.get(field))) is not None:
+                    expected_revisions.append(revision)
+            version = raw.get("version")
+            if isinstance(version, Mapping) and (revision := _revision_value(version.get("analyzed_sha"))) is not None:
+                expected_revisions.append(revision)
 
     revision: dict[str, Any] = {"expected": sorted(set(expected_revisions)), "actual": None, "status": "skip"}
     if expected_revisions:

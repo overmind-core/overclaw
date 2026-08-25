@@ -12,6 +12,7 @@ Use --help with any command or subcommand for details.
 import json
 import os
 import re
+import subprocess
 from pathlib import Path
 from typing import Annotated
 
@@ -28,6 +29,7 @@ from overmind.optimizer import (
     configure_logging,
     run_optimizer,
 )
+from overmind.scanner import scan
 from overmind.skills import get_destination_dir, skills_app, sync_skills
 
 app = typer.Typer(
@@ -114,6 +116,57 @@ def instrumentation_check(
 
 
 instrumentation_app.command("check")(instrumentation_check)
+
+
+def instrumentation_scan(
+    root: Annotated[Path, typer.Option("--root", help="Source repository root")] = Path("."),
+    out: Annotated[Path | None, typer.Option("--out", help="Write JSON here instead of stdout")] = None,
+):
+    result = scan(str(root))
+    payload = json.dumps(result, sort_keys=True)
+    if out is not None:
+        out.write_text(payload)
+    else:
+        typer.echo(payload)
+
+
+instrumentation_app.command("scan")(instrumentation_scan)
+
+
+def instrumentation_smoke(
+    plan_file: Annotated[Path, typer.Option("--plan-file", help="MCP placements plan JSON")],
+    out: Annotated[Path, typer.Option("--out", help="Trace output file for smoke-tested placements")],
+    root: Annotated[Path, typer.Option("--root", help="Source repository root")] = Path("."),
+):
+    plan = json.loads(plan_file.read_text())
+    placements = plan.get("placements", plan) if isinstance(plan, dict) else plan
+    if not isinstance(placements, list):
+        placements = [placements]
+
+    failed = False
+    for placement in placements:
+        if not isinstance(placement, dict):
+            continue
+        smoke_script = placement.get("smoke_script")
+        smoke_hint = placement.get("smoke_hint")
+        if smoke_script:
+            script_path = Path(smoke_script)
+            if not script_path.is_absolute():
+                script_path = root / script_path
+            if not script_path.exists():
+                continue
+            env = {**os.environ, "OVERMIND_SMOKE": "1", "OVERMIND_TRACE_FILE": str(out)}
+            completed = subprocess.run([str(script_path)], cwd=root, env=env, check=False)
+            if completed.returncode != 0:
+                failed = True
+        elif smoke_hint:
+            typer.echo(f"TODO: {smoke_hint}")
+
+    if failed:
+        raise typer.Exit(1)
+
+
+instrumentation_app.command("smoke")(instrumentation_smoke)
 app.add_typer(instrumentation_app)
 
 
