@@ -42,3 +42,37 @@ def test_init_claude_alias_and_opencode_json(tmp_path, monkeypatch):
         "headers": {"X-Api-Key": "k"},
     }
     assert (tmp_path / ".opencode" / "skills" / "overmind" / "SKILL.md").is_file()
+
+
+def test_init_codex_writes_project_config_and_skill(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OVERMIND_API_KEY", "k")
+    result = runner.invoke(app, ["init", "--ide", "codex", "--env", "production"], catch_exceptions=False)
+
+    assert result.exit_code == 0, result.output
+    config = (tmp_path / ".codex" / "config.toml").read_text()
+    assert '[mcp_servers.overmind]\nurl = "https://api.overmindlab.ai/api/mcp/"' in config
+    assert 'env_http_headers = { "X-Api-Key" = "OVERMIND_API_KEY" }' in config
+    assert (tmp_path / ".agents" / "skills" / "overmind" / "SKILL.md").is_file()
+
+
+def test_init_codex_replaces_own_section_and_preserves_other_config(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OVERMIND_API_KEY", "k")
+    config_path = tmp_path / ".codex" / "config.toml"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        'model = "gpt-5"\n\n'
+        '[mcp_servers.overmind]\nurl = "https://old.example"\n\n'
+        '[mcp_servers.other]\nurl = "https://other.example"\n'
+    )
+
+    result = runner.invoke(app, ["init", "--ide", "codex"], catch_exceptions=False)
+
+    assert result.exit_code == 0, result.output
+    config = config_path.read_text()
+    assert 'model = "gpt-5"' in config
+    assert 'url = "https://other.example"' in config
+    assert config.count("[mcp_servers.overmind]") == 1
+    assert 'url = "https://old.example"' not in config
+    assert 'env_http_headers = { "X-Api-Key" = "OVERMIND_API_KEY" }' in config
