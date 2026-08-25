@@ -22,4 +22,15 @@ skills = [
         version="1.4",
         provider="overmind-core",
     ),
+    Skill(
+        name="Overmind platform",
+        slug="overmind-platform",
+        description=(
+            "Operate the Overmind platform via the overmind platform CLI — "
+            "discover tools with list/describe, execute with call, and poll "
+            "long jobs with job_status"
+        ),
+        version="1.0",
+        provider="overmind-core",
+    ),
 ]

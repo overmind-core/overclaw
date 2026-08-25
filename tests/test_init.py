@@ -56,6 +56,17 @@ def test_init_codex_writes_project_config_and_skill(tmp_path, monkeypatch):
     assert (tmp_path / ".agents" / "skills" / "overmind" / "SKILL.md").is_file()
 
 
+def test_sync_overmind_platform_skill(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        ["skills", "sync", "overmind-platform", "--ide", "cursor"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / ".cursor" / "skills" / "overmind-platform" / "SKILL.md").is_file()
+
+
 def test_init_codex_replaces_own_section_and_preserves_other_config(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("OVERMIND_API_KEY", "k")

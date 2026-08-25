@@ -30,6 +30,7 @@ dependencies = [
     "opentelemetry-instrumentation-openai>=0.53.1",
     "opentelemetry-overmind>=0.53.0",
     "litellm>=1.90.2",
+    "python-dotenv>=1.0.0",
 ]
 description = "Overmind — autonomous agent optimisation through structured experimentation"
 keywords = ["overmind", "ai", "api", "client", "policy", "enforcement"]
@@ -37,11 +38,11 @@ name = "overmind"
 readme = "README.md"
 requires-python = ">=3.10,<4" # todo; remove the upper bound
 urls = { Homepage = "https://github.com/overmind-core/overmind", Repository = "https://github.com/overmind-core/overmind" }
-version = "0.1.68"
+version = "0.1.71"
 
 
     [project.scripts]
-    overmind = "overmind.__main__:app"
+    overmind = "overmind.__main__:main"
 
 
     [project.optional-dependencies]

@@ -3,6 +3,7 @@
 Commands:
     init                      Configure an IDE with Overmind MCP and skills.
     optimise                  Run the optimisation loop on a registered agent.
+    platform                  List, describe, and call platform tools.
     skills                    Manage Overmind agent skills.
 
 Use --help with any command or subcommand for details.
@@ -27,6 +28,8 @@ from overmind.optimizer import (
     configure_logging,
     run_optimizer,
 )
+from overmind.commands.platform import platform_app
+from overmind.env import load_project_env
 from overmind.skills import get_destination_dir, skills_app, sync_skills
 
 app = typer.Typer(
@@ -69,6 +72,7 @@ def optimise(
     queued commands (from the server-side experiment FSM), run them against
     the repo in ``cwd``, and report results back.
     """
+    load_project_env(cwd or WORK_DIR)
     configure_logging(log_level)
     run_optimizer(
         api_url=api_url,
@@ -85,6 +89,7 @@ app.command("optimise", help=OPTIMISE_HELP)(optimise)
 app.command("optimize", hidden=True, help=f"Deprecated alias for `optimise`. {OPTIMISE_HELP}")(optimise)
 
 app.add_typer(skills_app, name="skills")
+app.add_typer(platform_app, name="platform")
 
 
 MCP_URLS = {
@@ -173,5 +178,10 @@ def overmind_init(
 app.command("init")(overmind_init)
 
 
-if __name__ == "__main__":
+def main() -> None:
+    load_project_env()
     app()
+
+
+if __name__ == "__main__":
+    main()

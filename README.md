@@ -51,6 +51,7 @@ repository (e.g. `npx skills add overmind-core/overmind`).
 ```bash
 overmind skills list --verbose
 overmind skills sync overmind
+overmind skills sync overmind-platform --ide cursor
 overmind init --ide codex
 ```
 
@@ -58,15 +59,19 @@ Codex setup writes `.codex/config.toml`, installs the skill under
 `.agents/skills`, and requires `OVERMIND_API_KEY` in the environment. Codex
 loads project configuration only for trusted repositories.
 
-| Skill      | What it does                                                                                        |
-| ---------- | --------------------------------------------------------------------------------------------------- |
-| `Overmind` | Instrument tracing, inspect telemetry via MCP, upload datasets, run evals, fine-tune, and optimize. |
+| Skill                 | What it does                                                                                        |
+| --------------------- | --------------------------------------------------------------------------------------------------- |
+| `Overmind`            | Instrument tracing, inspect telemetry via MCP, upload datasets, run evals, fine-tune, and optimize. |
+| `overmind-platform`   | Operate the platform via `overmind platform` CLI (list / describe / call).                          |
 
 ## CLI reference
 
 ```text
 overmind optimise [OPTIONS]         Register this machine and run the optimisation loop
 overmind init [OPTIONS]             Configure Overmind for Cursor, Claude Code, OpenCode or Codex
+overmind platform list [--json]     List platform tools (compact catalog)
+overmind platform describe <tool>   Show one tool's input schema
+overmind platform call <tool>       Execute a platform tool (--args or --args-file)
 overmind skills list [--verbose]    List installed/available skills
 overmind skills sync <name>...      Sync one or more skills to the latest version
 ```
