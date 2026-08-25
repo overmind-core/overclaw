@@ -339,15 +339,16 @@ def check_plan(plan: Any, root: str | Path = ".") -> dict[str, Any]:
     if not root_path.is_dir():
         return _result([_issue("root.missing", "fail", f"root directory does not exist: {root_path}")])
 
-    expected_revisions: list[str] = []
+    plan_revisions: list[str] = []
     if isinstance(plan, Mapping):
         for field in ("revision", "source_revision", "git_sha", "analyzed_sha"):
             if (revision := _revision_value(plan.get(field))) is not None:
-                expected_revisions.append(revision)
+                plan_revisions.append(revision)
         version = plan.get("version")
         if isinstance(version, Mapping) and (revision := _revision_value(version.get("analyzed_sha"))) is not None:
-            expected_revisions.append(revision)
+            plan_revisions.append(revision)
     placements: list[_Placement] = []
+    placement_revisions: list[tuple[_Placement, list[str]]] = []
     for raw in placements_raw:
         placement, error = _normalise_placement(raw)
         if error:
@@ -355,14 +356,17 @@ def check_plan(plan: Any, root: str | Path = ".") -> dict[str, Any]:
             continue
         assert placement is not None
         placements.append(placement)
+        revisions: list[str] = []
         if isinstance(raw, Mapping):
             for field in ("revision", "analyzed_sha"):
                 if (revision := _revision_value(raw.get(field))) is not None:
-                    expected_revisions.append(revision)
+                    revisions.append(revision)
             version = raw.get("version")
             if isinstance(version, Mapping) and (revision := _revision_value(version.get("analyzed_sha"))) is not None:
-                expected_revisions.append(revision)
+                revisions.append(revision)
+        placement_revisions.append((placement, revisions))
 
+    expected_revisions = plan_revisions + [rev for _, revs in placement_revisions for rev in revs]
     revision: dict[str, Any] = {"expected": sorted(set(expected_revisions)), "actual": None, "status": "skip"}
     if expected_revisions:
         actual = _git_revision(root_path)
@@ -373,12 +377,28 @@ def check_plan(plan: Any, root: str | Path = ".") -> dict[str, Any]:
                     "revision.unavailable", "skip", "plan revision is present but the local git revision is unavailable"
                 )
             )
-        elif all(actual == expected for expected in set(expected_revisions)):
-            revision["status"] = "pass"
-            checks.append(_issue("revision.match", "pass", "local revision matches the plan"))
         else:
-            revision["status"] = "fail"
-            checks.append(_issue("revision.mismatch", "fail", "local revision does not match the plan"))
+            mismatched = any(actual != expected for expected in plan_revisions)
+            if mismatched:
+                checks.append(_issue("revision.mismatch", "fail", "local revision does not match the plan"))
+            for placement, revs in placement_revisions:
+                if any(actual != expected for expected in revs):
+                    mismatched = True
+                    checks.append(
+                        _issue(
+                            "revision.mismatch",
+                            "fail",
+                            f"local revision does not match the plan for this placement "
+                            f"(expected {sorted(set(revs))!r}, actual {actual!r})",
+                            placement.file,
+                            placement.qualname,
+                        )
+                    )
+            if mismatched:
+                revision["status"] = "fail"
+            else:
+                revision["status"] = "pass"
+                checks.append(_issue("revision.match", "pass", "local revision matches the plan"))
 
     cache: dict[Path, _Source | dict[str, Any]] = {}
     import_checked: set[Path] = set()

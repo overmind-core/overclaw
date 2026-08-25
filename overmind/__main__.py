@@ -160,7 +160,10 @@ def instrumentation_smoke(
             if completed.returncode != 0:
                 failed = True
         elif smoke_hint:
-            typer.echo(f"TODO: {smoke_hint}")
+            target = placement.get("target") if isinstance(placement.get("target"), dict) else placement
+            location = " ".join(str(target.get(field)) for field in ("file", "qualname") if target.get(field))
+            prefix = f"TODO {location}" if location else "TODO"
+            typer.echo(f"{prefix}: {smoke_hint}")
 
     if failed:
         raise typer.Exit(1)

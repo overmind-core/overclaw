@@ -129,19 +129,24 @@ edit / validate) and report the table at the end.
    Pure-AST, no imports of user code, no network. Emits
    `{schema_version, repo_sha, frameworks_detected, files: [{path, symbols: [{qualname, kind, signature, docstring, decorators, lineno}]}]}`.
 
-1. **Plan.** MCP `plan_instrumentation(capability_name_or_slug, candidates)`
-   with the scan JSON as `candidates`. One call: labels behaviours, mints
-   Behaviour/BehaviourVersion server-side pre-traffic, and returns
-   `{plan: {placements: [...]}, ambiguous: [entry_qualname, ...], minted: {...}}`.
+1. **Plan.** One MCP `plan_instrumentation(candidates)` call for the whole
+   repo — no capability argument. Labels behaviours, mints
+   Behaviour/BehaviourVersion server-side pre-traffic across every
+   capability, and returns
+   `{placements: [...], plans: [{capability, capability_id, plan_id, placement_count}, ...], ambiguous: [...], dropped: [{key, reason}, ...], minted: {...}}`.
    Each placement carries `placement_id`, `key`, `placement_mode`
    (`fixed | dynamic_key`), `allowed_keys`, `analyzed_sha`,
    `target: {file, qualname, module, import_line}`,
-   `required_task_decorator`, `constraints`, `why`, `tier`, `smoke_hint`.
+   `required_task_decorator`, `constraints`, `capability`, `capability_id`,
+   `plan_id`, `why`, `tier`, `smoke_hint`. Read `dropped` and report it to the
+   user — do not discard it silently.
 
-1. **Parallel subagent fan-out.** Spawn one subagent per placement **file**
-   (placements touching the same file go to the same subagent, so two edits
-   never race on one file). Prompt each subagent with the placement JSON
-   verbatim, plus this fixed instruction block:
+1. **Parallel subagent fan-out.** One wave, covering every placement from
+   that single plan call regardless of which capability it belongs to. Spawn
+   one subagent per placement **file** — placements for the same file always
+   go to the same subagent, so two edits never race on one file. Prompt each
+   subagent with the placement JSON verbatim, plus this fixed instruction
+   block:
 
    > Apply exactly the `required_task_decorator` at `target.qualname` in
    > `target.file`. Add `target.import_line` if it isn't already imported.
@@ -166,8 +171,8 @@ edit / validate) and report the table at the end.
      ```bash
      uv run overmind instrumentation smoke --plan-file plan.json --out spans.jsonl [--root .]
      ```
-     This iterates `plan.placements`, and for each one with a `smoke_script`
-     runs it as a subprocess with `OVERMIND_SMOKE=1` and
+     This iterates the plan's top-level `placements`, and for each one with a
+     `smoke_script` runs it as a subprocess with `OVERMIND_SMOKE=1` and
      `OVERMIND_TRACE_FILE=<out>` set; a placement with only `smoke_hint` (no
      script yet) is echoed as a `TODO` and skipped.
    - Or run the scripts directly with the same two env vars:
@@ -181,13 +186,15 @@ edit / validate) and report the table at the end.
    (no API key required) instead of exporting over OTLP. `spans.jsonl` ends
    up as one JSON span per line.
 
-1. **Verify.** MCP `verify_instrumentation_spans(capability_name_or_slug, spans)`
-   with the JSONL content (parsed into a list of span dicts) from the smoke
-   run. Runs the real server binder as a dry run — zero ingestion. Returns
-   `{tasks: [{behaviour_key, binding_source, binding_confidence, route_flags, unit_span_id, trace_id}], grades: {task, units, tool_ops, provenance, observations, delivery}, punch_list: [{grade, instruction}], errors: []}`.
+1. **Verify.** MCP `verify_instrumentation_spans(spans)` with the JSONL
+   content (parsed into a list of span dicts) from the smoke run — one call
+   for every capability's spans together. Runs the real server binder as a
+   dry run — zero ingestion. Returns
+   `{tasks: [{capability, capability_id, behaviour_key, binding_source, binding_confidence, route_flags, unit_span_id, trace_id}], capabilities: [{capability, capability_id, grades: {task, units, tool_ops, provenance, observations, delivery}, punch_list: [{grade, instruction}]}], errors: []}`.
    Acceptance gate: every task's `binding_source == "declared"`. Act on
-   punch-list items that are fixable now (Tier 1 gaps — a missing task root,
-   a wrong key); park Tier 2 items (evidence gaps) for the ratchet loop.
+   `capabilities[].punch_list` items that are fixable now (Tier 1 gaps — a
+   missing task root, a wrong key); park Tier 2 items (evidence gaps) for the
+   ratchet loop.
 
 1. **Report the timing table** (scan / plan / edit / validate wall-clock)
    alongside the pass/fail state of the static gate and the verify call.

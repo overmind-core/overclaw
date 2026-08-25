@@ -53,8 +53,8 @@ Follow these for ALL Overmind MCP work:
 1. **Verify before calling it done.** The static gate is
    `overmind instrumentation check --plan-file <path> [--root <path>] [--format json]`
    (deterministic, no network). The pre-traffic gate is MCP
-   `verify_instrumentation_spans(capability_name_or_slug, spans)` against a
-   smoke-run JSONL — every task's `binding_source` must be `"declared"`.
+   `verify_instrumentation_spans(spans)` against a smoke-run JSONL — every
+   task's `binding_source` must be `"declared"`.
    Against real traffic, retain the exact trace id and call the read-only
    MCP `verify_instrumentation_trace(agent, plan_id, trace_id)`; use
    `list_traces` → `get_trace` only for the complementary raw-span audit,
