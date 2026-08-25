@@ -37,11 +37,7 @@ name = "overmind"
 readme = "README.md"
 requires-python = ">=3.10,<4" # todo; remove the upper bound
 urls = { Homepage = "https://github.com/overmind-core/overmind", Repository = "https://github.com/overmind-core/overmind" }
-<<<<<<< HEAD
-version = "0.1.67"
-=======
 version = "0.1.68"
->>>>>>> origin/main
 
 
     [project.scripts]
