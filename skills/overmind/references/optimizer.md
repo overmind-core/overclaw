@@ -7,22 +7,32 @@ and code search against an **eval** dataset — not weight training (that's
 
 The dataset **must** be eval intent. See
 [SKILL.md](../SKILL.md#dataset-types-intent--read-first-it-gates-every-workflow)
-and [datasets.md](datasets.md). A baseline eval run first gives you a
-comparison point after the experiment — [evals.md](evals.md).
+and [datasets.md](datasets.md).
+
+Do **not** create a manual baseline eval run before the experiment. The
+experiment generates and scores its own baseline iteration (`order=0`) —
+that is what the improvement delta and the PR gate use.
 
 All of this is Overmind MCP. Poll `job_status` for the experiment (see
 conventions in [SKILL.md](../SKILL.md)). Inspect each tool's schema for
 arguments.
+
+**Modes.** `create_optimizer_experiment` accepts `mode`
+(`optimize` | `model_comparison` | `hybrid`), `model_ids` (1–5 slugs for
+comparison/hybrid), and `openrouter_key_source` (`platform` | `local`).
+Default is harness-only `optimize`. `create_optimizer_pr` remains
+optimize-mode only.
 
 ## Workflow
 
 ```
 - [ ] 1. optimizer_prerequisites — ALWAYS; note eval datasets, active eval set, executioner
 - [ ] 2. If disconnected: show executioner_start_command, then optimizer_connection
-- [ ] 3. Confirm eval-intent dataset + active eval set; baseline create_eval_run
-- [ ] 4. create_optimizer_experiment — creates AND launches
-- [ ] 5. Poll job_status; optimizer_iterations / optimizer_candidate_detail
-- [ ] 6. create_optimizer_pr when best score beat baseline (needs linked GitHub repo)
+- [ ] 3. Confirm eval-intent dataset + active eval set
+- [ ] 4. create_optimizer_experiment — creates AND launches (pass mode / model_ids for comparison or hybrid)
+- [ ] 5. Poll job_status; get_optimizer_experiment / optimizer_iterations / optimizer_candidate_detail
+- [ ] 6. create_optimizer_pr when best score beat the experiment's own baseline
+         (needs linked GitHub repo; optimize-mode only)
 ```
 
 ## Steps
@@ -38,23 +48,22 @@ arguments.
    (run from the agent's repo), then re-check with `optimizer_connection`.
    Do not invent the command — use the one from prerequisites.
 1. Confirm the dataset is **eval** intent (`list_datasets`) and that the eval
-   set you want is active (`list_eval_sets` / `activate_eval_set`). A
-   baseline `create_eval_run` on that dataset first gives you a comparison
-   point after the experiment.
-1. `create_optimizer_experiment(agent_name_or_slug, dataset_name,
-   eval_set_name?, num_iterations? [2–5, default 5],
-   num_candidates_per_iteration? [2–3, default 3],
-   max_iterations_without_improvement? [default 3])` — eval set defaults to
-   the agent's active set. Returns `experiment_id`.
+   set you want is active (`list_eval_sets` / `activate_eval_set`).
+1. `create_optimizer_experiment(agent_name_or_slug, dataset_name, eval_set_name?, mode?, model_ids?, openrouter_key_source?, num_iterations? [2–5, default 5], num_candidates_per_iteration? [2–3, default 3], max_iterations_without_improvement? [default 3])` — eval set defaults to
+   the agent's active set. Returns `experiment_id`. Default `mode` is
+   `optimize`; comparison/hybrid need `model_ids`.
 1. Monitor: `job_status(kind="optimizer_experiment", id=experiment_id)` for
-   iteration progress; `optimizer_iterations(experiment_id)` for per-round
-   scores and every candidate (index, score, baseline flag);
+   iteration progress; `get_optimizer_experiment(experiment_id)` for mode,
+   model list, `state`, scores, `failure_reason`, entrypoint;
+   `optimizer_iterations(experiment_id)` for per-round scores and every
+   candidate (index, score, baseline flag);
    `optimizer_candidate_detail(candidate_id)` for a candidate's scores,
    eval-run linkage, and the iteration's winning patch.
    `cancel_optimizer_experiment(experiment_id)` to stop.
 1. Land it: `create_optimizer_pr(experiment_id)` — opens a GitHub PR with
    the winning diff. Requires a COMPLETED optimize-mode experiment whose
-   best score beat baseline and a linked GitHub repo (`analyze_github_repo`
-   / `analyze_github_repo_url` if none is linked). An experiment that never
-   ran (no executioner) has nothing to ship; no executioner is needed just
-   to open the PR once a winning diff exists.
+   best score beat the experiment's own baseline and a linked GitHub repo
+   (`analyze_github_repo` / `analyze_github_repo_url` if none is linked —
+   [agents.md](agents.md)).
+   An experiment that never ran (no executioner) has nothing to ship; no
+   executioner is needed just to open the PR once a winning diff exists.

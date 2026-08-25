@@ -90,4 +90,10 @@ def get_destination_dir(ide: str):
     if ide == "claude_code" or ide == "claude" or ide == "claude-code":
         return ".claude"
 
-    raise typer.BadParameter(f"use cursor or claude_code, got: {ide}", param_hint="--ide")
+    if ide == "opencode":
+        return ".opencode"
+
+    if ide == "codex":
+        return ".agents"
+
+    raise typer.BadParameter(f"use cursor, claude_code, opencode or codex, got: {ide}", param_hint="--ide")
