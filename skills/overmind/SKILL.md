@@ -44,57 +44,46 @@ Follow these for ALL Overmind MCP work:
    `{"error": "..."}` instead of raising — follow the `hint` when present.
    There is no confirmation gate, so verify arguments (and ask the user when
    destructive) before create/delete/cancel.
-1. **Verify with a real trace.** Instrumentation isn't done when the code
-   compiles — treat the MCP placement plan as the source of required and
-   known targets for this pass, not a closed-world scanner allowlist. Run the
-   deterministic local check
-   `overmind instrumentation check --plan-file <path> [--root <path>] [--format json]`,
-   then retain the exact trace id and call the read-only MCP
-   `verify_instrumentation_trace(agent, plan_id, trace_id)`. It checks the
-   current plan, declared key, entry anchor, revision, raw entry span, and
-   strict declared attribution. Use `list_traces` → `get_trace` only for the
-   complementary raw-span audit, never an unrelated newest trace.
-1. **One agent at a time.** Instrumentation tasks map to agents. Resolve the
-   agent's identity and capability card from `get_agent` (the `id` UUID
-   verbatim) and scope changes to that agent's files
-   ([references/instrumentation.md](references/instrumentation.md) Step 0 /
-   5b). For repo-wide tasks, run the systematic one-at-a-time pass (Step 5c)
-   — never a giant all-agents-at-once edit.
-1. **Trajectory-aware instrumentation.** The platform treats **task
-   executions** as the primary observability rows: spans bind to Behaviour
-   anchors by code identity (`code.namespace` + `code.function.name`) and git
-   sha (`vcs.ref.head.revision`). Resolve the agent via `get_agent` (the
-   capability card now also carries trajectory paths), then use
-   `get_instrumentation_context` for the required and known task root and
-   remaining anchors. Verify with the placement plan, local checker, and
-   `verify_instrumentation_trace` before moving to the next agent.
+1. **Fast path, then ratchet.** Instrumentation runs `scan` → MCP
+   `plan_instrumentation` → parallel subagent fan-out per placement file →
+   local `check` → smoke run → MCP `verify_instrumentation_spans`, targeting
+   under 10 minutes for Tier 0 + Tier 1. Tier 2 evidence gaps close
+   afterward via the punch-list ratchet loop against real traffic. Full
+   detail: [references/instrumentation.md](references/instrumentation.md).
+1. **Verify before calling it done.** The static gate is
+   `overmind instrumentation check --plan-file <path> [--root <path>] [--format json]`
+   (deterministic, no network). The pre-traffic gate is MCP
+   `verify_instrumentation_spans(capability_name_or_slug, spans)` against a
+   smoke-run JSONL — every task's `binding_source` must be `"declared"`.
+   Against real traffic, retain the exact trace id and call the read-only
+   MCP `verify_instrumentation_trace(agent, plan_id, trace_id)`; use
+   `list_traces` → `get_trace` only for the complementary raw-span audit,
+   never an unrelated newest trace.
 1. **Declare tasks, don't guess the binding.** Use exactly one task root per
    trace. The plan's task root is required; zero or multiple task roots fail
-   verification. `@overmind.task("key")` is unchanged for fixed tasks. For a
-   shared-entry dynamic route, use `@overmind.task(key_from=selector)`; the
-   selector runs before span creation and must return one registered,
-   non-empty key from the plan's known key set. A dispatcher chooses the
-   behaviour before entering that root. Shared helpers and ordinary useful
-   spans are nested workflow/tool/function spans, never independent task
-   roots or Behaviour anchors unless the plan explicitly identifies them.
-   The trace binds to the right task/trajectory by contract, not guesswork:
-   resolve the agent with
-   `get_agent` (copy the `id` verbatim), map it to its tasks with
-   `list_behaviours`, and declare the behaviour key with
-   `@overmind.task("<behaviour key>")` on the task entry point and `name=` on
-   stable separating anchors. The context-manager form is only for a fixed-key
-   dynamic boundary with explicit `entrypoint=` metadata; it is not equivalent to the
-   decorator for code identity or I/O capture. A declared key is strong
-   evidence, but revision mismatch and unknown anchors remain verification
-   failures; without one the server falls back to structural matching, which
-   can stay `unbound`. Decorators capture I/O by default; use
-   `capture_io=False` only for an explicit no-payload requirement.
+   verification. `@overmind.task("key")` for fixed tasks; for a shared-entry
+   dynamic route, `@overmind.task(key_from=selector)` — the selector runs
+   before span creation and must return one registered, non-empty key from
+   the plan's known key set. Shared helpers and ordinary useful spans are
+   nested workflow/tool/function spans, never independent task roots or
+   Behaviour anchors unless the plan explicitly identifies them. Identity
+   boundaries use `overmind.capability(name=..., id=...)`; `name=` on
+   `workflow`/`tool`/`retrieval`/`function` anchors stable separating
+   symbols. The context-manager form of `task()` is only for a fixed-key
+   dynamic boundary with explicit `entrypoint=` metadata; it is not
+   equivalent to the decorator for code identity or I/O capture. A declared
+   key is strong evidence, but revision mismatch and unknown anchors remain
+   verification failures; without one the server falls back to structural
+   matching, which can stay `unbound`. Decorators capture I/O by default;
+   use `capture_io=False` only for an explicit no-payload requirement.
 
 ## Use-case references
 
 - Instrumenting an application (greenfield or alongside existing telemetry):
   [references/instrumentation.md](references/instrumentation.md)
-  (`get_instrumentation_context` shows which behaviour anchors are `remaining`)
+  (fast-path: `scan` → `plan_instrumentation` → subagent fan-out → `check` →
+  smoke → `verify_instrumentation_spans`; ratchet loop against real traffic
+  after)
 - Inspecting traces, sessions, agent health, failures, the context graph, and
   connectors (including the post-setup verification loop):
   [references/telemetry.md](references/telemetry.md)
@@ -174,9 +163,10 @@ Typical loop, always via MCP:
    task-execution rows via `list_task_executions` / `get_task_execution`).
    Add
    tracing first if nothing is landing:
-   [instrumentation.md](references/instrumentation.md) — resolve each
-   agent's identity with `get_agent`, see which anchors are uninstrumented
-   via `get_instrumentation_context`, and instrument one at a time.
+   [instrumentation.md](references/instrumentation.md) — run the fast path
+   (`scan` → `plan_instrumentation` → subagent fan-out → `check` → smoke →
+   `verify_instrumentation_spans`), then ratchet Tier 2 evidence against
+   real traffic.
 1. **Turn traces into data** — [datasets.md](references/datasets.md)
    (`create_dataset_from_failures` or `create_dataset_from_file`).
 1. **Clean it** — workshop in [datasets.md](references/datasets.md).

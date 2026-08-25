@@ -42,7 +42,7 @@ Conventions (names not ids, errors-as-values, mutations) live in
    bundle: behaviours with anchors ranked `entry → discriminating → supplementary`, each anchor carrying `instrumented`, `import_line`,
    `verification_hint`; plus `remaining` (uninstrumented anchors) and
    `indistinguishable_pairs`. Ask for this before instrumenting an agent
-   (see [instrumentation.md](instrumentation.md) Step 5a).
+   (see [instrumentation.md](instrumentation.md) Tier 1 API reference).
 1. `behaviour_coverage(agent)` — per-behaviour and per-step eval coverage and
    gaps.
 1. `behaviour_deviations(project, agent?)` — deviation clusters across
@@ -94,8 +94,9 @@ copy trace ids from this result into `create_dataset_from_traces`.
 ### Verification after instrumenting
 
 Instrumentation isn't done when the code compiles — it's done when you have
-fetched the trace you just sent and it carries everything the baseline in
-[instrumentation.md](instrumentation.md#what-a-good-trace-carries) requires.
+fetched the trace you just sent and it carries everything the
+[instrumentation.md](instrumentation.md#ratchet-loop-after-real-traffic)
+EvidenceProfile grades require.
 
 1. Run the instrumented path end-to-end so a real trace is sent (flush
    short-lived processes first: `overmind.force_flush_traces()`).

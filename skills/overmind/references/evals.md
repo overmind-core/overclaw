@@ -51,7 +51,7 @@ arguments.
 ## Runtime eval envelope as an evaluation input
 
 Traces instrumented with the runtime envelope
-([instrumentation.md](instrumentation.md) Step 5a) feed evaluation directly:
+([instrumentation.md](instrumentation.md) Tier 2 API reference) feed evaluation directly:
 
 - **Deterministic verdicts.** `expect(...)` declarations check mechanically —
   `contains` / `regex` / `schema` are verified without a judge; `constraint`
