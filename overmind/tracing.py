@@ -23,8 +23,8 @@ from opentelemetry import trace
 from opentelemetry.context import attach, detach, get_value, set_value
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, SpanExporter, SpanExportResult
 from opentelemetry.semconv_ai import SpanAttributes
 from opentelemetry.trace import Status, StatusCode
 
@@ -392,6 +392,61 @@ def _seed_identity_context(
         set_project_id(project_id)
 
 
+class FileSpanExporter(SpanExporter):
+    """Append one JSON object per line to *path* for each exported span.
+
+    Used when ``OVERMIND_TRACE_FILE`` is set (no network, no API key needed) —
+    e.g. local dev or a subprocess whose parent reads the file back.
+    """
+
+    def __init__(self, path: str | os.PathLike) -> None:
+        self._path = Path(path)
+
+    def export(self, spans) -> SpanExportResult:
+        try:
+            with self._path.open("a", encoding="utf-8") as f:
+                for span in spans:
+                    f.write(_json_dumps(self._span_to_dict(span)))
+                    f.write("\n")
+                f.flush()
+        except Exception:
+            logger.debug("FileSpanExporter failed to write spans", exc_info=True)
+            return SpanExportResult.FAILURE
+        return SpanExportResult.SUCCESS
+
+    @staticmethod
+    def _span_to_dict(span: ReadableSpan) -> dict:
+        ctx = span.get_span_context()
+        parent_span_id = format(span.parent.span_id, "016x") if span.parent else None
+        attributes = dict(span.attributes or {})
+        return {
+            "trace_id": format(ctx.trace_id, "032x"),
+            "span_id": format(ctx.span_id, "016x"),
+            "parent_span_id": parent_span_id,
+            "name": span.name,
+            "span_type": attributes.get(attrs.SPAN_TYPE),
+            "start_time_ns": span.start_time,
+            "end_time_ns": span.end_time,
+            "status_code": span.status.status_code.name if span.status else None,
+            "attributes": attributes,
+            "events": [
+                {
+                    "name": event.name,
+                    "timestamp_ns": event.timestamp,
+                    "attributes": dict(event.attributes or {}),
+                }
+                for event in span.events
+            ],
+            "resource_attrs": dict(span.resource.attributes) if span.resource else {},
+        }
+
+    def shutdown(self) -> None:
+        return
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        return True
+
+
 def init(
     overmind_api_key: str | None = None,
     *,
@@ -428,31 +483,19 @@ def init(
         enable_tracing(providers)
         return
 
-    # Optimise-step subprocess: the runner wrapper set up a file-exporter
-    # provider (OVERMIND_TRACE_FILE) and stripped the API key — reuse it
-    # instead of crashing or replacing the exporter.
-    if os.environ.get("OVERMIND_TRACE_FILE") and not (overmind_api_key or os.environ.get("OVERMIND_API_KEY")):
-        from overmind import __version__ as sdk_version
-
-        logger.debug(
-            "Overmind SDK init() skipped: OVERMIND_TRACE_FILE is set and no "
-            "OVERMIND_API_KEY available; reusing the local file-exporter "
-            "TracerProvider configured by the optimise runner wrapper.",
-        )
-        _tracer = trace.get_tracer("overmind", sdk_version)
-        _seed_identity_context(agent_id, agent_name, project_id)
-        enable_tracing(providers)
-        _attach_remote_parent_if_present()
-        _initialized = True
-        return
-
     environment = (
         environment or os.environ.get("OVERMIND_ENVIRONMENT") or os.environ.get("ENVIRONMENT") or "development"
     )
 
-    overmind_api_key, overmind_base_url = get_api_settings(overmind_api_key, overmind_base_url)
+    trace_file = os.environ.get("OVERMIND_TRACE_FILE")
+    has_api_key = bool(overmind_api_key or os.environ.get("OVERMIND_API_KEY"))
 
-    endpoint = f"{overmind_base_url}/api/v1/traces"
+    # Local file exporter: no network, so the API key is optional. Used for
+    # local dev and subprocesses whose parent reads the file back.
+    if trace_file and not has_api_key:
+        overmind_base_url = overmind_base_url or DEFAULT_BASE_URL
+    else:
+        overmind_api_key, overmind_base_url = get_api_settings(overmind_api_key, overmind_base_url)
 
     from overmind import __version__ as sdk_version
 
@@ -480,16 +523,22 @@ def init(
     # Must run before the exporting processor so its on-end mutation is exported.
     provider.add_span_processor(_GenAiUsageSpanProcessor())
 
-    otlp_exporter = OTLPSpanExporter(endpoint=endpoint, headers={"X-Api-Key": overmind_api_key})
+    if trace_file and not has_api_key:
+        # Deterministic ordering, no batching — the file is often read back
+        # right after the process exits.
+        span_processor = SimpleSpanProcessor(FileSpanExporter(trace_file))
+    else:
+        endpoint = f"{overmind_base_url}/api/v1/traces"
+        otlp_exporter = OTLPSpanExporter(endpoint=endpoint, headers={"X-Api-Key": overmind_api_key})
 
-    # Flush every ~2s (OTel default 5s) so progress streams while spans are open.
-    schedule_delay_millis = int(os.environ.get("OVERMIND_SPAN_FLUSH_INTERVAL_MS", "2000"))
-    max_export_batch_size = int(os.environ.get("OVERMIND_SPAN_MAX_EXPORT_BATCH_SIZE", "256"))
-    span_processor = BatchSpanProcessor(
-        otlp_exporter,
-        schedule_delay_millis=schedule_delay_millis,
-        max_export_batch_size=max_export_batch_size,
-    )
+        # Flush every ~2s (OTel default 5s) so progress streams while spans are open.
+        schedule_delay_millis = int(os.environ.get("OVERMIND_SPAN_FLUSH_INTERVAL_MS", "2000"))
+        max_export_batch_size = int(os.environ.get("OVERMIND_SPAN_MAX_EXPORT_BATCH_SIZE", "256"))
+        span_processor = BatchSpanProcessor(
+            otlp_exporter,
+            schedule_delay_millis=schedule_delay_millis,
+            max_export_batch_size=max_export_batch_size,
+        )
     provider.add_span_processor(span_processor)
     span_processor.on_start = _span_processor_on_start
 
@@ -498,6 +547,10 @@ def init(
     _tracer = trace.get_tracer("overmind", sdk_version)
     _seed_identity_context(agent_id, agent_name, project_id)
     enable_tracing(providers)
+    if os.environ.get("OVERMIND_SMOKE") == "1":
+        from overmind.smoke import activate_smoke_mode
+
+        activate_smoke_mode()
     _attach_remote_parent_if_present()
 
     _initialized = True
