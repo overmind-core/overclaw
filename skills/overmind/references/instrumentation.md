@@ -160,7 +160,10 @@ edit / validate) and report the table at the end.
    `{schema_version, repo_sha, frameworks_detected, files: [{path, symbols: [{qualname, kind, signature, docstring, decorators, lineno}]}]}`.
 
 1. **Plan.** One MCP `plan_instrumentation(candidates)` call for the whole
-   repo — no capability argument. Labels behaviours, mints
+   repo — no capability argument. Pass the scan file's content verbatim
+   (read candidates.json and send it unmodified as the `candidates`
+   argument) — never retype, trim, or reclassify symbols by hand; a
+   hand-edited payload fails validation and wastes a round trip. Labels behaviours, mints
    Behaviour/BehaviourVersion server-side pre-traffic across every
    capability, and returns
    `{placements: [...], plans: [{capability, capability_id, plan_id, placement_count}, ...], ambiguous: [...], dropped: [{key, reason}, ...], minted: {...}}`.
