@@ -221,7 +221,9 @@ edit / validate) and report the table at the end.
    anthropic, google.genai) one layer below the instrumentors with canned
    responses — instrumentor spans still fire, no network call is made.
    `OVERMIND_TRACE_FILE` makes `overmind.init()` write spans to that file
-   (no API key required) instead of exporting over OTLP. `spans.jsonl` ends
+   (no API key required) instead of exporting over OTLP. These two env vars
+   are the whole smoke contract — do not read the SDK source to verify how
+   they interact; set them and run. `spans.jsonl` ends
    up as one JSON span per line.
 
 1. **Verify.** MCP `verify_instrumentation_spans(spans)` with the JSONL
