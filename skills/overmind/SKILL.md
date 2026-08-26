@@ -77,6 +77,30 @@ Follow these for ALL Overmind MCP work:
    matching, which can stay `unbound`. Decorators capture I/O by default;
    use `capture_io=False` only for an explicit no-payload requirement.
 
+## Instrumentation fast path (digest)
+
+The complete command sequence; details in references/instrumentation.md —
+read it once, not per step.
+
+1. `list_behaviours` per capability. Populated registry → placements come
+   from `get_instrumentation_context`; empty → steps 2-3.
+2. `overmind instrumentation scan --root . --out candidates.json`
+3. MCP `plan_instrumentation(candidates)` — send candidates.json content
+   verbatim. Returns placements (with `required_identity`) + `ambiguous` +
+   `dropped` (report dropped).
+4. One subagent per placement file, all at once: apply
+   `required_task_decorator` at `target.qualname`, add `target.import_line`,
+   wire `required_identity` (init with agent_id/agent_name, or
+   `overmind.capability(id=...)`). Lead handles `ambiguous` (key_from).
+5. `overmind instrumentation check --plan-file plan.json`
+6. Smoke scripts per task from `smoke_hint`; run with `OVERMIND_SMOKE=1
+   OVERMIND_TRACE_FILE=spans.jsonl` (in-repo paths; no API key needed;
+   never the real app).
+7. MCP `verify_instrumentation_spans(spans)` — gate: every task
+   `binding_source == "declared"`. Tier 2 items go to the punch list, not
+   this pass.
+8. Report the per-stage timing table.
+
 ## Use-case references
 
 - Instrumenting an application (greenfield or alongside existing telemetry):
