@@ -2,6 +2,8 @@
 
 # Overmind
 
+> **Development has moved.** Active work on this package now lives in [`overmind-core/platform`](https://github.com/overmind-core/platform) on the `oss` branch, under `overmind/`. This repository is frozen except for PyPI releases until the OSS cut is stable.
+
 Overmind is two things in one package:
 
 - **Tracing SDK** — drop-in observability for LLM agents. Decorate your code, get structured traces of every LLM call and tool invocation.
