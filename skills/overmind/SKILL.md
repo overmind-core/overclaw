@@ -102,6 +102,22 @@ read it once, not per step.
    the pass signal. Tier 2 items go to the punch list, not this pass.
 8. Report the per-stage timing table.
 
+API signatures (verbatim — do NOT read the SDK source for these):
+
+```python
+overmind.init(overmind_api_key=None, *, service_name=None, environment=None,
+              providers=None,   # [] = all installed; None = none
+              overmind_base_url=None, agent_id=None, agent_name=None, project_id=None)
+@overmind.task(key)                      # or @overmind.task(key_from=lambda *a, **k: "<key>")
+overmind.capability(name=None, *, id=None)   # context manager or decorator
+@overmind.tool(name=None) / @overmind.workflow(name=None) / @overmind.retrieval(name=None)
+overmind.force_flush_traces()
+```
+
+`init(...)` must run before the decorated entry executes; `providers=[]` plus
+`agent_id`/`agent_name` from the placement's `required_identity` is the whole
+identity story. Nothing else in the SDK needs reading for this workflow.
+
 ## Use-case references
 
 - Instrumenting an application (greenfield or alongside existing telemetry):
