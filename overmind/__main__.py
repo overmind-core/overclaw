@@ -274,6 +274,30 @@ def overmind_init(
     sync_skills(["overmind"], ide=ide)
     console.print(f"overmind skill installed to {dest}/skills/overmind")
 
+    # A wrong or revoked key is indistinguishable from "MCP not configured" once
+    # inside a coding agent, so validate it while a human can still see the error.
+    try:
+        import urllib.request
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).encode(),
+            headers={"Content-Type": "application/json", "X-Api-Key": api_key or ""},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            status = resp.status
+    except Exception as exc:  # noqa: BLE001 — report, never block config writing
+        status = getattr(exc, "code", None)
+        if status is None:
+            console.print(f"[yellow]could not reach {url}: {exc}[/yellow]")
+    if status == 200:
+        console.print("MCP key check: ok")
+    elif status is not None:
+        console.print(
+            f"[red]MCP key check FAILED (HTTP {status}) — the configured API key is not "
+            f"valid for {url}. Fix OVERMIND_API_KEY before starting the coding agent.[/red]"
+        )
+
     # claude mcp add --transport http corridor https://app.corridor.dev/api/mcp --header "Authorization: Bearer ..."
 
 
