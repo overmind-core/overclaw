@@ -226,9 +226,15 @@ edit / validate) and report the table at the end.
    they interact; set them and run. `spans.jsonl` ends
    up as one JSON span per line.
 
-1. **Verify.** MCP `verify_instrumentation_spans(spans)` with the JSONL
-   content (parsed into a list of span dicts) from the smoke run — one call
-   for every capability's spans together. Runs the real server binder as a
+1. **Verify.**
+   ```bash
+   uv run overmind instrumentation verify --spans-file spans.jsonl
+   ```
+   Posts the smoke spans to the server's `verify_instrumentation_spans`
+   binder dry-run and prints the verdict; exit 0 means every task bound
+   `declared`. Use the CLI — never paste a large span array inline into an
+   MCP tool call. (The MCP tool itself remains available for small span
+   sets.) One call covers every capability's spans together. Runs the real server binder as a
    dry run — zero ingestion. Returns
    `{tasks: [{capability, capability_id, behaviour_key, binding_source, binding_confidence, route_flags, unit_span_id, trace_id}], capabilities: [{capability, capability_id, grades: {task, units, tool_ops, provenance, observations, delivery}, punch_list: [{grade, instruction}]}], errors: []}`.
    Acceptance gate: every task's `binding_source == "declared"`. A task with

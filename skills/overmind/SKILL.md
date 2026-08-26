@@ -96,9 +96,10 @@ read it once, not per step.
 6. Smoke scripts per task from `smoke_hint`; run with `OVERMIND_SMOKE=1
    OVERMIND_TRACE_FILE=spans.jsonl` (in-repo paths; no API key needed;
    never the real app).
-7. MCP `verify_instrumentation_spans(spans)` — gate: every task
-   `binding_source == "declared"`. Tier 2 items go to the punch list, not
-   this pass.
+7. `overmind instrumentation verify --spans-file spans.jsonl` — posts the
+   spans to the server binder for you (never inline a large span array into
+   a tool call). Gate: every task `binding_source == "declared"`; exit 0 is
+   the pass signal. Tier 2 items go to the punch list, not this pass.
 8. Report the per-stage timing table.
 
 ## Use-case references

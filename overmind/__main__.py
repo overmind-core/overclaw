@@ -191,6 +191,44 @@ def instrumentation_smoke(
 
 
 instrumentation_app.command("smoke")(instrumentation_smoke)
+
+
+def instrumentation_verify(
+    spans_file: Annotated[Path, typer.Option("--spans-file", help="JSONL spans from a smoke run")],
+    capability: Annotated[str, typer.Option("--capability", help="Capability name or slug fallback")] = "",
+    api_url: Annotated[str, typer.Option(envvar="OVERMIND_API_URL", help="Overmind backend base URL")] = "https://api.overmindlab.ai",
+    api_key: Annotated[str, typer.Option(envvar="OVERMIND_API_KEY", help="Project API key", show_default=False)] = "",
+):
+    """Send smoke-run spans to verify_instrumentation_spans over MCP and print the verdict."""
+    import urllib.request
+
+    spans = [json.loads(line) for line in spans_file.read_text().splitlines() if line.strip()]
+    arguments: dict = {"spans": spans}
+    if capability:
+        arguments["capability_name_or_slug"] = capability
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "verify_instrumentation_spans", "arguments": arguments},
+    }
+    req = urllib.request.Request(
+        api_url.rstrip("/") + "/api/mcp/",
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json", "X-Api-Key": api_key},
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        payload = json.load(resp)
+    text = payload["result"]["content"][0]["text"]
+    result = json.loads(text)
+    typer.echo(json.dumps(result, indent=1))
+    tasks = result.get("tasks") or []
+    ok = bool(tasks) and all(t.get("binding_source") == "declared" for t in tasks)
+    if not ok:
+        raise typer.Exit(1)
+
+
+instrumentation_app.command("verify")(instrumentation_verify)
 app.add_typer(instrumentation_app)
 
 
