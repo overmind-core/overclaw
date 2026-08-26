@@ -180,6 +180,11 @@ edit / validate) and report the table at the end.
 
    > Apply exactly the `required_task_decorator` at `target.qualname` in
    > `target.file`. Add `target.import_line` if it isn't already imported.
+   > Wire the placement's `required_identity`: the process must call
+   > `overmind.init(providers=[], agent_id=..., agent_name=...)` with those
+   > values before the entry runs, or the entry must be wrapped in
+   > `overmind.capability(id=...)`. Without identity on the spans the server
+   > cannot bind ANY task, whatever the key says.
    > Keep local code style (quotes, import grouping, line length). Make no
    > other edits — no renames, no reformatting outside the touched lines, no
    > speculative anchors. Report the diff.
@@ -221,7 +226,10 @@ edit / validate) and report the table at the end.
    for every capability's spans together. Runs the real server binder as a
    dry run — zero ingestion. Returns
    `{tasks: [{capability, capability_id, behaviour_key, binding_source, binding_confidence, route_flags, unit_span_id, trace_id}], capabilities: [{capability, capability_id, grades: {task, units, tool_ops, provenance, observations, delivery}, punch_list: [{grade, instruction}]}], errors: []}`.
-   Acceptance gate: every task's `binding_source == "declared"`. Act on
+   Acceptance gate: every task's `binding_source == "declared"`. A task with
+   `capability: null` means the spans carry no `overmind.agent.id` — fix the
+   identity wiring (see fan-out block); as a stopgap for a single-capability
+   repo, re-call with `capability_name_or_slug` to force the fallback. Act on
    `capabilities[].punch_list` items that are fixable now (Tier 1 gaps — a
    missing task root, a wrong key); park Tier 2 items (evidence gaps) for the
    ratchet loop.
