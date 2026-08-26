@@ -22,6 +22,16 @@ _SKIP_DIRS = {
     "dist",
     "__pycache__",
     ".worktrees",
+    "tests",
+    "test",
+    "testing",
+    "e2e",
+    "fixtures",
+    "docs",
+    "examples",
+    "benchmarks",
+    "scripts",
+    "migrations",
 }
 
 
@@ -31,6 +41,10 @@ def _skip_dir(name: str) -> bool:
     if name in _SKIP_DIRS:
         return True
     return name.startswith("venv") or name.startswith(".venv")
+
+
+def _skip_file(name: str) -> bool:
+    return name == "conftest.py" or name.startswith("test_") or name.endswith("_test.py")
 
 
 _ROUTE_DECORATOR_METHODS = {
@@ -52,6 +66,8 @@ _LLM_CALL_CHAINS = {
     ("generate_content",),
     ("responses", "create"),
 }
+
+_LLM_CLIENT_MODULE_PREFIXES = ("openai", "anthropic", "google.genai", "google.generativeai", "litellm", "agno")
 
 _TOOL_DECORATOR_NAMES = {"tool", "function_tool"}
 
@@ -138,8 +154,56 @@ def _call_chain_matches(call: ast.Call) -> bool:
     return False
 
 
-def _function_has_llm_call(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    return any(isinstance(child, ast.Call) and _call_chain_matches(child) for child in ast.walk(node))
+def _call_tail_name(func: ast.expr) -> str:
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    if isinstance(func, ast.Name):
+        return func.id
+    return ""
+
+
+def _call_base_names(func: ast.expr) -> set[str]:
+    return {n.id for n in ast.walk(func) if isinstance(n, ast.Name)}
+
+
+def _is_llm_client_module(module: str) -> bool:
+    for prefix in _LLM_CLIENT_MODULE_PREFIXES:
+        if module == prefix or module.startswith(prefix + "."):
+            return True
+    return module.startswith("langchain")
+
+
+def _collect_llm_imports(tree: ast.Module) -> tuple[set[str], bool]:
+    """Names imported from known LLM client packages, plus whether litellm was imported."""
+    names: set[str] = set()
+    litellm_imported = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if _is_llm_client_module(alias.name):
+                    names.add(alias.asname or alias.name.split(".")[0])
+                    litellm_imported = litellm_imported or alias.name.split(".")[0] == "litellm"
+        elif isinstance(node, ast.ImportFrom) and node.module and _is_llm_client_module(node.module):
+            names.update(alias.asname or alias.name for alias in node.names)
+            litellm_imported = litellm_imported or node.module.split(".")[0] == "litellm"
+    return names, litellm_imported
+
+
+def _function_has_llm_call(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    imported_names: set[str],
+    litellm_imported: bool,
+) -> bool:
+    for child in ast.walk(node):
+        if not isinstance(child, ast.Call):
+            continue
+        if _call_chain_matches(child):
+            return True
+        if imported_names and _call_base_names(child.func) & imported_names:
+            return True
+        if litellm_imported and _call_tail_name(child.func) in {"completion", "acompletion"}:
+            return True
+    return False
 
 
 def _referenced_in_tools_list(tree: ast.Module, name: str) -> bool:
@@ -219,6 +283,7 @@ def _scan_file(path: Path, root: Path) -> tuple[list[dict[str, Any]], set[str]]:
 
     frameworks = _detect_frameworks(tree)
     main_guard_callable = _main_guard_callable(tree)
+    llm_imports, litellm_imported = _collect_llm_imports(tree)
     symbols: list[dict[str, Any]] = []
 
     def _add(qualname: str, kind: str, node: ast.FunctionDef | ast.AsyncFunctionDef, decorators: list[str]) -> None:
@@ -255,7 +320,9 @@ def _scan_file(path: Path, root: Path) -> tuple[list[dict[str, Any]], set[str]]:
                 qualname = ".".join((*scope, child.name))
                 decorator_names = [_decorator_name(d) for d in child.decorator_list]
 
-                if any(_is_entry_decorator(name) for name in decorator_names) or child.name == "main":
+                if any(_is_entry_decorator(name) for name in decorator_names) or (
+                    child.name == "main" and not scope
+                ):
                     _add(qualname, "entry", child, decorator_names)
                 elif any(_is_route_decorator(d) for d in child.decorator_list):
                     _add(qualname, "route", child, decorator_names)
@@ -263,7 +330,7 @@ def _scan_file(path: Path, root: Path) -> tuple[list[dict[str, Any]], set[str]]:
                     tree, child.name
                 ):
                     _add(qualname, "tool", child, decorator_names)
-                elif _function_has_llm_call(child):
+                elif _function_has_llm_call(child, llm_imports, litellm_imported):
                     _add(qualname, "llm_call", child, decorator_names)
 
                 _visit(child, (*scope, child.name))
@@ -288,14 +355,31 @@ def _scan_file(path: Path, root: Path) -> tuple[list[dict[str, Any]], set[str]]:
     return symbols, frameworks
 
 
+def _count_py_files(path: Path) -> int:
+    return sum(1 for _, _, filenames in os.walk(path) for f in filenames if f.endswith(".py"))
+
+
 def scan(root: str = ".") -> dict[str, Any]:
     root_path = Path(root).resolve()
     py_files: list[Path] = []
+    skipped_dirs = 0
+    skipped_files = 0
     for dirpath, dirnames, filenames in os.walk(root_path):
-        dirnames[:] = [d for d in dirnames if not _skip_dir(d)]
+        kept: list[str] = []
+        for d in dirnames:
+            if _skip_dir(d):
+                skipped_dirs += 1
+                skipped_files += _count_py_files(Path(dirpath) / d)
+            else:
+                kept.append(d)
+        dirnames[:] = kept
         for filename in filenames:
-            if filename.endswith(".py"):
-                py_files.append(Path(dirpath) / filename)
+            if not filename.endswith(".py"):
+                continue
+            if _skip_file(filename):
+                skipped_files += 1
+                continue
+            py_files.append(Path(dirpath) / filename)
     py_files.sort()
 
     files_result: list[dict[str, Any]] = []
@@ -315,4 +399,5 @@ def scan(root: str = ".") -> dict[str, Any]:
         "repo_sha": _git_revision(root_path),
         "frameworks_detected": sorted(frameworks),
         "files": files_result,
+        "skipped": {"directories": skipped_dirs, "files": skipped_files},
     }

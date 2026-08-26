@@ -103,3 +103,59 @@ def test_scan_omits_files_with_no_symbols(tmp_path):
     _write(tmp_path, "plain.py", "x = 1\n")
     result = scan(str(tmp_path))
     assert result["files"] == []
+
+
+def test_scan_excludes_test_files(tmp_path):
+    (tmp_path / "tests").mkdir()
+    _write(
+        tmp_path,
+        "tests/test_thing.py",
+        "def main():\n    pass\n\nif __name__ == '__main__':\n    main()\n",
+    )
+    _write(tmp_path, "app.py", "def main():\n    pass\n")
+
+    result = scan(str(tmp_path))
+
+    by_path = {f["path"]: f for f in result["files"]}
+    assert "tests/test_thing.py" not in by_path
+    assert "app.py" in by_path
+    assert result["skipped"]["files"] >= 1
+
+
+def test_scan_llm_call_via_litellm_import(tmp_path):
+    _write(
+        tmp_path,
+        "llm.py",
+        "import litellm\n\n"
+        "def ask():\n"
+        "    return litellm.completion(model='gpt', messages=[])\n",
+    )
+    result = scan(str(tmp_path))
+    symbols = {s["qualname"]: s["kind"] for s in result["files"][0]["symbols"]}
+    assert symbols["ask"] == "llm_call"
+
+
+def test_scan_llm_call_via_langchain_import(tmp_path):
+    _write(
+        tmp_path,
+        "llm.py",
+        "from langchain_openai import ChatOpenAI\n\n"
+        "def ask():\n"
+        "    return ChatOpenAI(model='gpt-4').invoke('hi')\n",
+    )
+    result = scan(str(tmp_path))
+    symbols = {s["qualname"]: s["kind"] for s in result["files"][0]["symbols"]}
+    assert symbols["ask"] == "llm_call"
+
+
+def test_scan_entry_excludes_nested_main(tmp_path):
+    _write(
+        tmp_path,
+        "m.py",
+        "class Runner:\n"
+        "    def main(self):\n"
+        "        pass\n",
+    )
+    result = scan(str(tmp_path))
+    by_path = {f["path"]: f for f in result["files"]}
+    assert "m.py" not in by_path
