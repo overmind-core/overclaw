@@ -131,6 +131,11 @@ Call `list_behaviours` for each capability before anything else.
   scan → plan → fan-out → gates.
 
 Constraints for both routes:
+- Setup check: the Overmind MCP tools being visible IS the confirmation that
+  setup is done. Do not probe the CLI (`overmind --version`, bare `overmind`)
+  and do not read config outside the repository (`~/.config`, `/tmp`) — a
+  sandboxed agent gets a permission error there, and that error does NOT mean
+  the tooling is missing.
 - Write every artifact (candidates.json, plan.json, smoke scripts,
   spans.jsonl) **inside the repository**. Sandboxed coding agents cannot
   write `/tmp` or read outside the project; an absolute path outside the

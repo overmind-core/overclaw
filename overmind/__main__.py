@@ -42,6 +42,24 @@ app = typer.Typer(
 
 console = Console()
 
+
+@app.callback(invoke_without_command=True)
+def _main(
+    ctx: typer.Context,
+    version: Annotated[
+        bool, typer.Option("--version", help="Print the SDK version and exit")
+    ] = False,
+) -> None:
+    if version:
+        from importlib.metadata import version as pkg_version
+
+        console.print(pkg_version("overmind"))
+        raise typer.Exit()
+    if ctx.invoked_subcommand is None:
+        console.print(ctx.get_help())
+        raise typer.Exit()
+
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
 
