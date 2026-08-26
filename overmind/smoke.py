@@ -140,9 +140,13 @@ def activate_smoke_mode() -> None:
     if _patched:
         logger.debug("Smoke mode already active")
         return
-    _patch_openai()
-    _patch_anthropic()
-    _patch_google_genai()
+    # A provider lib may be absent or an unsupported major version (e.g. legacy
+    # openai<1 has no openai.resources); smoke mode still covers the rest.
+    for patch in (_patch_openai, _patch_anthropic, _patch_google_genai):
+        try:
+            patch()
+        except (ImportError, AttributeError) as exc:
+            logger.debug("smoke patch skipped: %s", exc)
 
 
 def deactivate_smoke_mode() -> None:
