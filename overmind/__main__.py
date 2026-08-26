@@ -12,12 +12,15 @@ Use --help with any command or subcommand for details.
 import json
 import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Annotated
 
 import typer
 from rich.console import Console
 
+from overmind.instrumentation_checker import check_plan_file
 from overmind.optimizer import (
     API_KEY,
     API_URL,
@@ -27,6 +30,7 @@ from overmind.optimizer import (
     configure_logging,
     run_optimizer,
 )
+from overmind.scanner import scan
 from overmind.skills import get_destination_dir, skills_app, sync_skills
 
 app = typer.Typer(
@@ -38,6 +42,24 @@ app = typer.Typer(
 )
 
 console = Console()
+
+
+@app.callback(invoke_without_command=True)
+def _main(
+    ctx: typer.Context,
+    version: Annotated[
+        bool, typer.Option("--version", help="Print the SDK version and exit")
+    ] = False,
+) -> None:
+    if version:
+        from importlib.metadata import version as pkg_version
+
+        console.print(pkg_version("overmind"))
+        raise typer.Exit()
+    if ctx.invoked_subcommand is None:
+        console.print(ctx.get_help())
+        raise typer.Exit()
+
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -85,6 +107,177 @@ app.command("optimise", help=OPTIMISE_HELP)(optimise)
 app.command("optimize", hidden=True, help=f"Deprecated alias for `optimise`. {OPTIMISE_HELP}")(optimise)
 
 app.add_typer(skills_app, name="skills")
+
+
+instrumentation_app = typer.Typer(name="instrumentation", help="Check local AST instrumentation placements.")
+
+
+def instrumentation_check(
+    plan_file: Annotated[Path, typer.Option("--plan-file", help="MCP placements plan JSON")],
+    root: Annotated[Path, typer.Option("--root", help="Source repository root")] = Path("."),
+    output_format: Annotated[str, typer.Option("--format", help="Output format: text or json")] = "text",
+):
+    if output_format not in {"text", "json"}:
+        raise typer.BadParameter("must be text or json", param_hint="--format")
+    result = check_plan_file(plan_file, root)
+    if output_format == "json":
+        typer.echo(json.dumps(result, sort_keys=True))
+    else:
+        for check in result["checks"]:
+            location = " ".join(str(check[field]) for field in ("file", "qualname") if check.get(field))
+            typer.echo(f"{check['status'].upper()} {check['code']} {location} {check['message']}".rstrip())
+        summary = result["summary"]
+        typer.echo(
+            f"{('PASS' if result['ok'] else 'FAIL')} {summary['passed']} passed, {summary['failed']} failed, {summary['skipped']} skipped"
+        )
+    if not result["ok"]:
+        raise typer.Exit(1)
+
+
+instrumentation_app.command("check")(instrumentation_check)
+
+
+def instrumentation_scan(
+    root: Annotated[Path, typer.Option("--root", help="Source repository root")] = Path("."),
+    out: Annotated[Path | None, typer.Option("--out", help="Write JSON here instead of stdout")] = None,
+):
+    result = scan(str(root))
+    payload = json.dumps(result, sort_keys=True)
+    if out is not None:
+        out.write_text(payload)
+    else:
+        typer.echo(payload)
+
+
+instrumentation_app.command("scan")(instrumentation_scan)
+
+
+def instrumentation_smoke(
+    plan_file: Annotated[Path, typer.Option("--plan-file", help="MCP placements plan JSON")],
+    out: Annotated[Path, typer.Option("--out", help="Trace output file for smoke-tested placements")],
+    root: Annotated[Path, typer.Option("--root", help="Source repository root")] = Path("."),
+):
+    plan = json.loads(plan_file.read_text())
+    placements = plan.get("placements", plan) if isinstance(plan, dict) else plan
+    if not isinstance(placements, list):
+        placements = [placements]
+
+    failed = False
+    for placement in placements:
+        if not isinstance(placement, dict):
+            continue
+        smoke_script = placement.get("smoke_script")
+        smoke_hint = placement.get("smoke_hint")
+        if smoke_script:
+            script_path = Path(smoke_script)
+            if not script_path.is_absolute():
+                script_path = root / script_path
+            if not script_path.exists():
+                continue
+            env = {**os.environ, "OVERMIND_SMOKE": "1", "OVERMIND_TRACE_FILE": str(out)}
+            # Run through the interpreter: agent-written scripts have no shebang/exec bit.
+            runner = [sys.executable, str(script_path)] if script_path.suffix == ".py" else [str(script_path)]
+            completed = subprocess.run(runner, cwd=root, env=env, check=False)
+            if completed.returncode != 0:
+                failed = True
+        elif smoke_hint:
+            target = placement.get("target") if isinstance(placement.get("target"), dict) else placement
+            location = " ".join(str(target.get(field)) for field in ("file", "qualname") if target.get(field))
+            prefix = f"TODO {location}" if location else "TODO"
+            typer.echo(f"{prefix}: {smoke_hint}")
+
+    if failed:
+        raise typer.Exit(1)
+
+
+instrumentation_app.command("smoke")(instrumentation_smoke)
+
+
+def instrumentation_plan(
+    root: Annotated[Path, typer.Option("--root", help="Source repository root")] = Path("."),
+    out: Annotated[Path, typer.Option("--out", help="Write the placement plan JSON here")] = Path("plan.json"),
+    candidates_out: Annotated[Path, typer.Option("--candidates-out", help="Also write the scan output here")] = Path("candidates.json"),
+    capability: Annotated[str, typer.Option("--capability", help="Restrict planning to one capability")] = "",
+    api_url: Annotated[str, typer.Option(envvar="OVERMIND_API_URL", help="Overmind backend base URL")] = "https://api.overmindlab.ai",
+    api_key: Annotated[str, typer.Option(envvar="OVERMIND_API_KEY", help="Project API key", show_default=False)] = "",
+):
+    """Scan the repo and mint the whole-repo placement plan over MCP in one step."""
+    import urllib.request
+
+    candidates = scan(str(root))
+    candidates_out.write_text(json.dumps(candidates, sort_keys=True))
+    arguments: dict = {"candidates": candidates}
+    if capability:
+        arguments["capability_name_or_slug"] = capability
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "plan_instrumentation", "arguments": arguments},
+    }
+    req = urllib.request.Request(
+        api_url.rstrip("/") + "/api/mcp/",
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json", "X-Api-Key": api_key},
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        payload = json.load(resp)
+    result = json.loads(payload["result"]["content"][0]["text"])
+    if result.get("errors"):
+        typer.echo(json.dumps(result, indent=1))
+        raise typer.Exit(1)
+    out.write_text(json.dumps(result, indent=1))
+    summary = {
+        "placements": len(result.get("placements") or []),
+        "plans": result.get("plans"),
+        "ambiguous": result.get("ambiguous"),
+        "dropped": result.get("dropped"),
+        "minted": result.get("minted"),
+        "plan_file": str(out),
+    }
+    typer.echo(json.dumps(summary, indent=1))
+
+
+instrumentation_app.command("plan")(instrumentation_plan)
+
+
+def instrumentation_verify(
+    spans_file: Annotated[Path, typer.Option("--spans-file", help="JSONL spans from a smoke run")],
+    capability: Annotated[str, typer.Option("--capability", help="Capability name or slug fallback")] = "",
+    api_url: Annotated[str, typer.Option(envvar="OVERMIND_API_URL", help="Overmind backend base URL")] = "https://api.overmindlab.ai",
+    api_key: Annotated[str, typer.Option(envvar="OVERMIND_API_KEY", help="Project API key", show_default=False)] = "",
+):
+    """Send smoke-run spans to verify_instrumentation_spans over MCP and print the verdict."""
+    import urllib.request
+
+    spans = [json.loads(line) for line in spans_file.read_text().splitlines() if line.strip()]
+    arguments: dict = {"spans": spans}
+    if capability:
+        arguments["capability_name_or_slug"] = capability
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "verify_instrumentation_spans", "arguments": arguments},
+    }
+    req = urllib.request.Request(
+        api_url.rstrip("/") + "/api/mcp/",
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json", "X-Api-Key": api_key},
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        payload = json.load(resp)
+    text = payload["result"]["content"][0]["text"]
+    result = json.loads(text)
+    typer.echo(json.dumps(result, indent=1))
+    tasks = result.get("tasks") or []
+    ok = bool(tasks) and all(t.get("binding_source") == "declared" for t in tasks)
+    if not ok:
+        raise typer.Exit(1)
+
+
+instrumentation_app.command("verify")(instrumentation_verify)
+app.add_typer(instrumentation_app)
 
 
 MCP_URLS = {
@@ -166,6 +359,30 @@ def overmind_init(
 
     sync_skills(["overmind"], ide=ide)
     console.print(f"overmind skill installed to {dest}/skills/overmind")
+
+    # A wrong or revoked key is indistinguishable from "MCP not configured" once
+    # inside a coding agent, so validate it while a human can still see the error.
+    try:
+        import urllib.request
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).encode(),
+            headers={"Content-Type": "application/json", "X-Api-Key": api_key or ""},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            status = resp.status
+    except Exception as exc:  # noqa: BLE001 — report, never block config writing
+        status = getattr(exc, "code", None)
+        if status is None:
+            console.print(f"[yellow]could not reach {url}: {exc}[/yellow]")
+    if status == 200:
+        console.print("MCP key check: ok")
+    elif status is not None:
+        console.print(
+            f"[red]MCP key check FAILED (HTTP {status}) — the configured API key is not "
+            f"valid for {url}. Fix OVERMIND_API_KEY before starting the coding agent.[/red]"
+        )
 
     # claude mcp add --transport http corridor https://app.corridor.dev/api/mcp --header "Authorization: Bearer ..."
 

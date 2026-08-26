@@ -11,18 +11,20 @@ import logging
 import os
 import time
 from collections.abc import Callable, Mapping
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 from enum import Enum
 from functools import wraps
-from pathlib import PurePath
+from pathlib import Path, PurePath
+from threading import Lock
 from typing import Any, TypeVar
 
 from opentelemetry import trace
 from opentelemetry.context import attach, detach, get_value, set_value
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, SpanExporter, SpanExportResult
 from opentelemetry.semconv_ai import SpanAttributes
 from opentelemetry.trace import Status, StatusCode
 
@@ -38,6 +40,10 @@ _strict_mode = os.environ.get("OVERMIND_STRICT_MODE", "false").lower() == "true"
 _initialized = False
 _tracer: trace.Tracer | None = None
 _providers: set[str] = set()
+_provider_lock = Lock()
+_quiet_missing_providers = False
+_ACTIVE_TASK: ContextVar[str | None] = ContextVar("overmind_active_task", default=None)
+_ACTIVE_TASK_SPAN: ContextVar[Any | None] = ContextVar("overmind_active_task_span", default=None)
 
 DEFAULT_BASE_URL = os.getenv("OVERMIND_API_URL", "https://api.overmindlab.ai")
 
@@ -52,7 +58,7 @@ def get_api_settings(
             "Missing OVERMIND_API_KEY. Set the environment variable to use Overmind services. "
             "Create a key at https://console.overmindlab.ai/projects"
         )
-    return overmind_api_key, (base_url or DEFAULT_BASE_URL).rstrip("/")
+    return overmind_api_key, (base_url or os.getenv("OVERMIND_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
 
 
 # Guards against cyclic / mock-heavy inputs that recurse forever.
@@ -125,21 +131,34 @@ def _default_serializer(obj):
 def _enable_provider(name: str, module: str, instrumentor_factory) -> None:
     """Instrument *module* if installed. Idempotent; missing module raises
     only in strict mode. Factories import lazily to avoid upfront cost."""
-    if name in _providers:
-        logger.debug(f"{name} already enabled")
-        return
+    with _provider_lock:
+        if name in _providers:
+            logger.debug(f"{name} already enabled")
+            return
 
-    if importlib.util.find_spec(module) is None:
-        install_name = module.replace(".", "-")
-        msg = f"{install_name} is not installed. Please install it with `pip install {install_name}`."
-        if _strict_mode:
-            raise ImportError(msg)
-        logger.warning(msg)
-        return
+        try:
+            installed = importlib.util.find_spec(module) is not None
+        except ModuleNotFoundError:
+            installed = False
+        if not installed:
+            install_name = module.replace(".", "-")
+            msg = f"{install_name} is not installed. Please install it with `pip install {install_name}`."
+            if _strict_mode:
+                raise ImportError(msg)
+            # providers=[] expands to "all installed": absence there is expected.
+            (logger.debug if _quiet_missing_providers else logger.warning)(msg)
+            return
 
-    instrumentor_factory().instrument()
-    _providers.add(name)
-    logger.info(f"{name} instrumentation enabled")
+        try:
+            instrumentor_factory().instrument()
+        except Exception as exc:  # noqa: BLE001 — strict mode controls provider failures
+            msg = f"{name} instrumentation could not be enabled: {exc}"
+            if _strict_mode:
+                raise RuntimeError(msg) from exc
+            logger.warning(msg, exc_info=True)
+            return
+        _providers.add(name)
+        logger.info(f"{name} instrumentation enabled")
 
 
 def _agno_factory():
@@ -191,23 +210,42 @@ _PROVIDER_ENABLERS = {
 
 
 def enable_tracing(providers: list[str] | None = None) -> None:
+    global _quiet_missing_providers
+    _quiet_missing_providers = providers == []
     if providers == []:  # empty list means "all"
         providers = list(_PROVIDER_ENABLERS.keys())
     logger.info(f"Enabling tracing for providers: {providers}")
 
     if providers is None:
         return
-    for name in providers:
-        enabler = _PROVIDER_ENABLERS.get(name)
-        if enabler is None:
-            logger.warning(f"Unknown tracing provider: {name!r}")
-            continue
-        enabler()
+    try:
+        for name in providers:
+            enabler = _PROVIDER_ENABLERS.get(name)
+            if enabler is None:
+                logger.warning(f"Unknown tracing provider: {name!r}")
+                continue
+            enabler()
+    finally:
+        _quiet_missing_providers = False
 
 
 # OTel context keys (canonical attribute strings double as keys).
 _CTX_KEY_WORKFLOW_NAME = attrs.WORKFLOW_NAME
 _CTX_KEY_CONVERSATION_ID = attrs.CONVERSATION_ID
+# Context-only key (never a span attribute): a one-shot _PendingTurn cell set
+# on entry into a handoff capability scope.
+_CTX_KEY_PENDING_TURN = "overmind.capability.pending_turn"
+
+
+class _PendingTurn:
+    """One-shot cell: the first span started inside a handoff capability scope
+    consumes it and becomes the new scoring unit's boundary (``unit_kind="turn"``).
+    Shared by reference across context copies, so exactly one span wins."""
+
+    __slots__ = ("consumed",)
+
+    def __init__(self) -> None:
+        self.consumed = False
 
 
 def _span_processor_on_start(span: trace.Span, parent_context: trace.Context | None = None):
@@ -223,6 +261,10 @@ def _span_processor_on_start(span: trace.Span, parent_context: trace.Context | N
         span.set_attribute(attrs.PROJECT_ID, str(project_id))
     if conversation_id := get_value(_CTX_KEY_CONVERSATION_ID):
         span.set_attribute("conversation.id", str(conversation_id))
+    pending = get_value(_CTX_KEY_PENDING_TURN)
+    if isinstance(pending, _PendingTurn) and not pending.consumed:
+        pending.consumed = True
+        span.set_attribute(attrs.UNIT_KIND, "turn")
 
 
 class _GenAiUsageSpanProcessor(SpanProcessor):
@@ -287,6 +329,57 @@ def _attach_remote_parent_if_present() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Git commit sha auto-detection (resource attribute ``vcs.ref.head.revision``)
+# ---------------------------------------------------------------------------
+
+
+_GIT_SHA_ENV_VARS = (
+    "OVERMIND_GIT_SHA",  # explicit override, checked first
+    "GIT_SHA",
+    "GIT_COMMIT",
+    "GITHUB_SHA",
+    "RENDER_GIT_COMMIT",
+    "VERCEL_GIT_COMMIT_SHA",
+    "HEROKU_SLUG_COMMIT",
+    "CI_COMMIT_SHA",
+)
+
+
+def _detect_git_sha(start: Path | None = None) -> str | None:
+    """Best-effort commit sha of the running code: env vars first, then
+    ``.git/HEAD`` walking up from *start* (default cwd). Never raises,
+    never shells out to git."""
+    for var in _GIT_SHA_ENV_VARS:
+        if sha := os.environ.get(var, "").strip():
+            return sha
+    try:
+        start = start or Path.cwd()
+        for directory in (start, *start.parents):
+            # ponytail: ``.git`` as a *file* (worktree / submodule) is not
+            # resolved; upgrade path is following its ``gitdir:`` pointer.
+            head = directory / ".git" / "HEAD"
+            if not head.is_file():
+                continue
+            content = head.read_text(encoding="utf-8").strip()
+            if not content.startswith("ref:"):
+                return content or None  # detached HEAD holds the sha itself
+            ref_name = content[4:].strip()
+            ref_file = directory / ".git" / ref_name
+            if ref_file.is_file():
+                return ref_file.read_text(encoding="utf-8").strip() or None
+            packed = directory / ".git" / "packed-refs"
+            if packed.is_file():
+                for line in packed.read_text(encoding="utf-8").splitlines():
+                    sha, _, name = line.partition(" ")
+                    if name == ref_name:
+                        return sha
+            return None
+    except Exception:
+        logger.debug("git sha detection failed", exc_info=True)
+    return None
+
+
+# ---------------------------------------------------------------------------
 # SDK initialisation
 # ---------------------------------------------------------------------------
 
@@ -304,6 +397,61 @@ def _seed_identity_context(
         set_agent_name(agent_name)
     if project_id:
         set_project_id(project_id)
+
+
+class FileSpanExporter(SpanExporter):
+    """Append one JSON object per line to *path* for each exported span.
+
+    Used when ``OVERMIND_TRACE_FILE`` is set (no network, no API key needed) —
+    e.g. local dev or a subprocess whose parent reads the file back.
+    """
+
+    def __init__(self, path: str | os.PathLike) -> None:
+        self._path = Path(path)
+
+    def export(self, spans) -> SpanExportResult:
+        try:
+            with self._path.open("a", encoding="utf-8") as f:
+                for span in spans:
+                    f.write(_json_dumps(self._span_to_dict(span)))
+                    f.write("\n")
+                f.flush()
+        except Exception:
+            logger.debug("FileSpanExporter failed to write spans", exc_info=True)
+            return SpanExportResult.FAILURE
+        return SpanExportResult.SUCCESS
+
+    @staticmethod
+    def _span_to_dict(span: ReadableSpan) -> dict:
+        ctx = span.get_span_context()
+        parent_span_id = format(span.parent.span_id, "016x") if span.parent else None
+        attributes = dict(span.attributes or {})
+        return {
+            "trace_id": format(ctx.trace_id, "032x"),
+            "span_id": format(ctx.span_id, "016x"),
+            "parent_span_id": parent_span_id,
+            "name": span.name,
+            "span_type": attributes.get(attrs.SPAN_TYPE),
+            "start_time_ns": span.start_time,
+            "end_time_ns": span.end_time,
+            "status_code": span.status.status_code.name if span.status else None,
+            "attributes": attributes,
+            "events": [
+                {
+                    "name": event.name,
+                    "timestamp_ns": event.timestamp,
+                    "attributes": dict(event.attributes or {}),
+                }
+                for event in span.events
+            ],
+            "resource_attrs": dict(span.resource.attributes) if span.resource else {},
+        }
+
+    def shutdown(self) -> None:
+        return
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        return True
 
 
 def init(
@@ -342,31 +490,19 @@ def init(
         enable_tracing(providers)
         return
 
-    # Optimise-step subprocess: the runner wrapper set up a file-exporter
-    # provider (OVERMIND_TRACE_FILE) and stripped the API key — reuse it
-    # instead of crashing or replacing the exporter.
-    if os.environ.get("OVERMIND_TRACE_FILE") and not (overmind_api_key or os.environ.get("OVERMIND_API_KEY")):
-        from overmind import __version__ as sdk_version
-
-        logger.debug(
-            "Overmind SDK init() skipped: OVERMIND_TRACE_FILE is set and no "
-            "OVERMIND_API_KEY available; reusing the local file-exporter "
-            "TracerProvider configured by the optimise runner wrapper.",
-        )
-        _tracer = trace.get_tracer("overmind", sdk_version)
-        _seed_identity_context(agent_id, agent_name, project_id)
-        enable_tracing(providers)
-        _attach_remote_parent_if_present()
-        _initialized = True
-        return
-
     environment = (
         environment or os.environ.get("OVERMIND_ENVIRONMENT") or os.environ.get("ENVIRONMENT") or "development"
     )
 
-    overmind_api_key, overmind_base_url = get_api_settings(overmind_api_key, overmind_base_url)
+    trace_file = os.environ.get("OVERMIND_TRACE_FILE")
+    has_api_key = bool(overmind_api_key or os.environ.get("OVERMIND_API_KEY"))
 
-    endpoint = f"{overmind_base_url}/api/v1/traces"
+    # Local file exporter: no network, so the API key is optional. Used for
+    # local dev and subprocesses whose parent reads the file back.
+    if trace_file and not has_api_key:
+        overmind_base_url = overmind_base_url or DEFAULT_BASE_URL
+    else:
+        overmind_api_key, overmind_base_url = get_api_settings(overmind_api_key, overmind_base_url)
 
     from overmind import __version__ as sdk_version
 
@@ -384,6 +520,9 @@ def init(
         resource_attributes[attrs.AGENT_NAME] = agent_name
     if project_id:
         resource_attributes[attrs.PROJECT_ID] = project_id
+    # Commit sha binds every trace to the exact code the process runs.
+    if git_sha := _detect_git_sha():
+        resource_attributes[attrs.VCS_REF_HEAD_REVISION] = git_sha
 
     resource = Resource.create(resource_attributes)
 
@@ -391,16 +530,22 @@ def init(
     # Must run before the exporting processor so its on-end mutation is exported.
     provider.add_span_processor(_GenAiUsageSpanProcessor())
 
-    otlp_exporter = OTLPSpanExporter(endpoint=endpoint, headers={"X-Api-Key": overmind_api_key})
+    if trace_file and not has_api_key:
+        # Deterministic ordering, no batching — the file is often read back
+        # right after the process exits.
+        span_processor = SimpleSpanProcessor(FileSpanExporter(trace_file))
+    else:
+        endpoint = f"{overmind_base_url}/api/v1/traces"
+        otlp_exporter = OTLPSpanExporter(endpoint=endpoint, headers={"X-Api-Key": overmind_api_key})
 
-    # Flush every ~2s (OTel default 5s) so progress streams while spans are open.
-    schedule_delay_millis = int(os.environ.get("OVERMIND_SPAN_FLUSH_INTERVAL_MS", "2000"))
-    max_export_batch_size = int(os.environ.get("OVERMIND_SPAN_MAX_EXPORT_BATCH_SIZE", "256"))
-    span_processor = BatchSpanProcessor(
-        otlp_exporter,
-        schedule_delay_millis=schedule_delay_millis,
-        max_export_batch_size=max_export_batch_size,
-    )
+        # Flush every ~2s (OTel default 5s) so progress streams while spans are open.
+        schedule_delay_millis = int(os.environ.get("OVERMIND_SPAN_FLUSH_INTERVAL_MS", "2000"))
+        max_export_batch_size = int(os.environ.get("OVERMIND_SPAN_MAX_EXPORT_BATCH_SIZE", "256"))
+        span_processor = BatchSpanProcessor(
+            otlp_exporter,
+            schedule_delay_millis=schedule_delay_millis,
+            max_export_batch_size=max_export_batch_size,
+        )
     provider.add_span_processor(span_processor)
     span_processor.on_start = _span_processor_on_start
 
@@ -409,6 +554,10 @@ def init(
     _tracer = trace.get_tracer("overmind", sdk_version)
     _seed_identity_context(agent_id, agent_name, project_id)
     enable_tracing(providers)
+    if os.environ.get("OVERMIND_SMOKE") == "1":
+        from overmind.smoke import activate_smoke_mode
+
+        activate_smoke_mode()
     _attach_remote_parent_if_present()
 
     _initialized = True
@@ -475,6 +624,33 @@ def capture_exception(exception: Exception) -> None:
         span.set_status(trace.Status(trace.StatusCode.ERROR, str(exception)))
 
 
+def get_active_task_span():
+    """Return the current task boundary span, if one is open."""
+    span = _ACTIVE_TASK_SPAN.get()
+    return span if span is not None and span.is_recording() else None
+
+
+def _ensure_task_scope_allowed(key: str) -> None:
+    current = _ACTIVE_TASK.get()
+    if current is not None:
+        raise RuntimeError(f"cannot open task {key!r} inside task {current!r}; use workflow/tool spans for nested work")
+
+
+def _enter_task_scope(key: str):
+    _ensure_task_scope_allowed(key)
+    return _ACTIVE_TASK.set(key)
+
+
+def _stamp_context_span(key: str, value: Any) -> None:
+    spans = [trace.get_current_span(), _ACTIVE_TASK_SPAN.get()]
+    seen: set[int] = set()
+    for span in spans:
+        if span is None or id(span) in seen or not span.is_recording():
+            continue
+        seen.add(id(span))
+        _safe_set_attribute(span, key, value)
+
+
 def set_workflow_name(workflow_name: str) -> None:
     """Attach a Traceloop-compatible workflow label to every subsequent span."""
     attach(set_value(attrs.WORKFLOW_NAME, workflow_name))
@@ -483,21 +659,113 @@ def set_workflow_name(workflow_name: str) -> None:
 def set_agent_name(agent_name: str) -> None:
     """Stamp ``overmind.agent.name`` on every span created downstream."""
     attach(set_value(attrs.AGENT_NAME, agent_name))
+    _stamp_context_span(attrs.AGENT_NAME, agent_name)
 
 
 def set_agent_id(agent_id: str) -> None:
     """Stamp ``overmind.agent.id`` (server UUID) on every downstream span."""
     attach(set_value(attrs.AGENT_ID, agent_id))
+    _stamp_context_span(attrs.AGENT_ID, agent_id)
 
 
 def set_project_id(project_id: str) -> None:
     """Stamp ``overmind.project.id`` on every downstream span."""
     attach(set_value(attrs.PROJECT_ID, project_id))
+    _stamp_context_span(attrs.PROJECT_ID, project_id)
 
 
-def set_conversation_id(conversation_id: str) -> None:
+def set_conversation_id(conversation_id: str):
     """Tag downstream spans with a stable ``conversation.id`` for session grouping."""
-    attach(set_value(attrs.CONVERSATION_ID, conversation_id))
+    token = attach(set_value(attrs.CONVERSATION_ID, conversation_id))
+    _stamp_context_span(attrs.CONVERSATION_ID, conversation_id)
+    return token
+
+
+# ---------------------------------------------------------------------------
+# Capability scoping
+# ---------------------------------------------------------------------------
+
+
+def _is_handoff(name: str | None, id: str | None) -> bool:
+    """Entering a capability that differs from the active one, mid-trace.
+
+    Identity is compared on the finest shared grain: ids when both sides have
+    one, else names. Mixed grains (id-only scope under name-only identity)
+    are never treated as a handoff — a boundary is only declared when the
+    identities are provably different."""
+    if not trace.get_current_span().get_span_context().is_valid:
+        return False
+    active_id = get_value(attrs.AGENT_ID)
+    active_name = get_value(attrs.AGENT_NAME)
+    if id and active_id:
+        return str(id) != str(active_id)
+    if name and active_name:
+        return str(name) != str(active_name)
+    return False
+
+
+class _CapabilityScope:
+    """Context manager (sync or async) and decorator produced by
+    :func:`capability`. Entering attaches the capability identity to the OTel
+    context (async-safe via contextvars) so the on-start processor stamps it
+    on every span created inside; exiting restores the outer identity."""
+
+    def __init__(self, name: str | None, id: str | None) -> None:
+        if not name and not id:
+            raise ValueError("capability() requires a name and/or id")
+        self._name = str(name) if name else None
+        self._id = str(id) if id else None
+        self._token = None
+
+    def __enter__(self) -> _CapabilityScope:
+        ctx = set_value(_CTX_KEY_PENDING_TURN, _PendingTurn() if _is_handoff(self._name, self._id) else None)
+        # Both keys are always written: a name-only scope must not inherit the
+        # outer scope's id (the server resolves id before name).
+        ctx = set_value(attrs.AGENT_NAME, self._name, ctx)
+        ctx = set_value(attrs.AGENT_ID, self._id, ctx)
+        self._token = attach(ctx)
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        if self._token is not None:
+            detach(self._token)
+            self._token = None
+        return False
+
+    async def __aenter__(self) -> _CapabilityScope:
+        return self.__enter__()
+
+    async def __aexit__(self, *exc) -> bool:
+        return self.__exit__(*exc)
+
+    def __call__(self, func: F) -> F:
+        if inspect.iscoroutinefunction(func):
+
+            @wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                with _CapabilityScope(self._name, self._id):
+                    return await func(*args, **kwargs)
+
+            return async_wrapper  # type: ignore[return-value]
+
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            with _CapabilityScope(self._name, self._id):
+                return func(*args, **kwargs)
+
+        return sync_wrapper  # type: ignore[return-value]
+
+
+def capability(name: str | None = None, *, id: str | None = None) -> _CapabilityScope:
+    """Declare that all work inside belongs to the named capability.
+
+    Usable as a context manager (``with`` / ``async with``) or decorator.
+    Every span created inside carries ``overmind.agent.name`` / ``.id``; on
+    exit the outer identity is restored. Entering a *different* capability
+    mid-trace is a handoff: the first span of the new scope is stamped
+    ``overmind.unit_kind = "turn"`` so the platform opens a new scoring unit.
+    The identity must be one the project declared — nothing is auto-created."""
+    return _CapabilityScope(name, id)
 
 
 # ---------------------------------------------------------------------------
@@ -512,6 +780,42 @@ class SpanType(str, Enum):
     TOOL = "tool_call"
     LLM = "llm_call"
     RETRIEVAL = "retrieval"
+
+
+def _validate_anchor_name(name: str | None, kind: str) -> None:
+    if name is not None and (not isinstance(name, str) or not name.strip()):
+        raise ValueError(f"{kind} name must be non-empty when provided")
+
+
+_PROVENANCE_VALUES = frozenset({"user", "agent", "environment", "harness"})
+_UNIT_KINDS = frozenset({"turn", "run"})
+
+# Span types whose payloads have an unambiguous provenance class: tool results
+# and retrieved documents are environment observations, model completions are
+# agent-authored.  Everything else needs an explicit ``provenance=``.
+_SPAN_TYPE_PROVENANCE = {
+    SpanType.TOOL: "environment",
+    SpanType.RETRIEVAL: "environment",
+    SpanType.LLM: "agent",
+}
+
+
+def _validate_provenance(value: str | None) -> None:
+    if value is not None and value not in _PROVENANCE_VALUES:
+        raise ValueError(f"provenance must be one of {sorted(_PROVENANCE_VALUES)}, got {value!r}")
+
+
+def _stamp_evidence(otel_span, span_type: SpanType, provenance: str | None) -> None:
+    """Stamp the evaluation evidence contract: the provenance class of the
+    span's payloads, and ``unit_kind = "run"`` on entry points (run roots)."""
+    if provenance := provenance or _SPAN_TYPE_PROVENANCE.get(span_type):
+        otel_span.set_attribute(attrs.PROVENANCE, provenance)
+    if span_type is SpanType.ENTRY_POINT:
+        # A capability-handoff boundary already carries ``turn`` from the
+        # on-start processor; don't downgrade it to the run-root fallback.
+        existing = getattr(otel_span, "attributes", None)
+        if not existing or existing.get(attrs.UNIT_KIND) != "turn":
+            otel_span.set_attribute(attrs.UNIT_KIND, "run")
 
 
 # Type names never serialised into span attributes; matched by name to
@@ -601,6 +905,30 @@ def _capture_output(otel_span, result: Any) -> None:
         logger.debug("observe(): output capture failed", exc_info=True)
 
 
+def _stamp_code_identity(otel_span, func: Callable) -> None:
+    """Stamp ``code.namespace`` / ``code.function.name`` from the *unwrapped*
+    function so the server can bind the span to a code-symbol anchor
+    (``module.qualname``). Best-effort, never raises."""
+    try:
+        target = inspect.unwrap(func)
+        if module := getattr(target, "__module__", None):
+            otel_span.set_attribute(attrs.CODE_NAMESPACE, module)
+        if qualname := getattr(target, "__qualname__", None):
+            otel_span.set_attribute(attrs.CODE_FUNCTION_NAME, qualname)
+    except Exception:
+        logger.debug("observe(): code identity capture failed", exc_info=True)
+
+
+def _resolve_task_key(key_from: Callable[..., str], args: tuple, kwargs: dict) -> str:
+    try:
+        key = key_from(*args, **kwargs)
+    except Exception as exc:
+        raise RuntimeError(f"task() key_from failed: {exc}") from exc
+    if not isinstance(key, str) or not key.strip():
+        raise ValueError("task() key_from must return a non-empty string")
+    return key.strip()
+
+
 def _stamp_tool_metadata(otel_span, tool_name: str, func: Callable, args: tuple, kwargs: dict) -> None:
     """Stamp ``tool.name`` / ``tool.arg_keys`` (keys only) on a tool span."""
     try:
@@ -622,31 +950,67 @@ def observe(
     type: SpanType = SpanType.FUNCTION,
     agent_id: str | None = None,
     project_id: str | None = None,
-    _capture_io: bool = True,
+    capture_io: bool = True,
+    behaviour_key: str | None = None,
+    anchor_name: str | None = None,
+    _task_key: str | None = None,
+    _task_key_from: Callable[..., str] | None = None,
+    provenance: str | None = None,
 ) -> Callable[[Callable], Callable]:
     """Decorator (sync or async) that traces a function: captures ``inputs`` /
     ``outputs`` and stamps canonical span type / status / duration. Set
-    ``_capture_io=False`` to skip input/output capture (see ``observe_safe``)."""
+    ``capture_io=False`` only when payload capture is explicitly unwanted.
+
+    ``behaviour_key`` declares the Behaviour-registry task this entry point
+    executes (stamped as ``overmind.behaviour.key`` — the platform binds to
+    it ahead of fuzzy anchor joining); ``anchor_name`` stamps an explicit
+    rename-proof anchor identity (``overmind.anchor.name``) alongside the
+    derived ``code.namespace`` / ``code.function.name``.
+    ``provenance`` overrides the evidence provenance class
+    (``user`` / ``agent`` / ``environment`` / ``harness``); tool, retrieval
+    and LLM spans get their natural class automatically.
+
+    ``agent_id`` routes through :func:`capability`: the decorated span *and*
+    its children carry the identity, and calling into a different capability
+    mid-trace marks a handoff boundary."""
+    _validate_provenance(provenance)
+
+    def _capability_scope():
+        return capability(id=agent_id) if agent_id else nullcontext()
 
     def decorator(func: Callable) -> Callable:
         name = span_name or func.__name__
+
+        def _stamp_binding(otel_span, anchor: str | None, key: str | None) -> None:
+            if anchor:
+                otel_span.set_attribute(attrs.ANCHOR_NAME, anchor)
+            if key:
+                otel_span.set_attribute(attrs.BEHAVIOUR_KEY, key)
 
         if inspect.iscoroutinefunction(func):
 
             @wraps(func)
             async def async_wrapper(*args, **kwargs):
+                task_key = _resolve_task_key(_task_key_from, args, kwargs) if _task_key_from is not None else _task_key
+                if task_key:
+                    _ensure_task_scope_allowed(task_key)
                 tracer = get_tracer()
-                with tracer.start_as_current_span(name) as otel_span:
+                with _capability_scope(), tracer.start_as_current_span(name) as otel_span:
                     otel_span.set_attribute(attrs.SPAN_TYPE, type.value)
+                    _stamp_evidence(otel_span, type, provenance)
+                    _stamp_code_identity(otel_span, func)
+                    _stamp_binding(otel_span, anchor_name, behaviour_key or task_key)
                     if project_id:
                         otel_span.set_attribute(attrs.PROJECT_ID, project_id)
                     if agent_id:
                         otel_span.set_attribute(attrs.AGENT_ID, agent_id)
                     if type == SpanType.TOOL:
                         _stamp_tool_metadata(otel_span, name, func, args, kwargs)
-                    if _capture_io:
+                    if capture_io:
                         _capture_inputs(otel_span, func, args, kwargs)
                     start = time.monotonic()
+                    task_token = _enter_task_scope(task_key) if task_key else None
+                    span_token = _ACTIVE_TASK_SPAN.set(otel_span) if task_key else None
                     try:
                         result = await func(*args, **kwargs)
                     except BaseException as exc:
@@ -654,27 +1018,41 @@ def observe(
                             otel_span.set_attribute(attrs.TOOL_ERROR, exc.__class__.__name__)
                         _finalize_span(otel_span, exc, start)
                         raise
-                    if _capture_io:
-                        _capture_output(otel_span, result)
-                    _finalize_span(otel_span, None, start)
-                    return result
+                    else:
+                        if capture_io:
+                            _capture_output(otel_span, result)
+                        _finalize_span(otel_span, None, start)
+                        return result
+                    finally:
+                        if span_token is not None:
+                            _ACTIVE_TASK_SPAN.reset(span_token)
+                        if task_token is not None:
+                            _ACTIVE_TASK.reset(task_token)
 
             return async_wrapper
 
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
+            task_key = _resolve_task_key(_task_key_from, args, kwargs) if _task_key_from is not None else _task_key
+            if task_key:
+                _ensure_task_scope_allowed(task_key)
             tracer = get_tracer()
-            with tracer.start_as_current_span(name) as otel_span:
+            with _capability_scope(), tracer.start_as_current_span(name) as otel_span:
                 otel_span.set_attribute(attrs.SPAN_TYPE, type.value)
+                _stamp_evidence(otel_span, type, provenance)
+                _stamp_code_identity(otel_span, func)
+                _stamp_binding(otel_span, anchor_name, behaviour_key or task_key)
                 if project_id:
                     otel_span.set_attribute(attrs.PROJECT_ID, project_id)
                 if agent_id:
                     otel_span.set_attribute(attrs.AGENT_ID, agent_id)
                 if type == SpanType.TOOL:
                     _stamp_tool_metadata(otel_span, name, func, args, kwargs)
-                if _capture_io:
+                if capture_io:
                     _capture_inputs(otel_span, func, args, kwargs)
                 start = time.monotonic()
+                task_token = _enter_task_scope(task_key) if task_key else None
+                span_token = _ACTIVE_TASK_SPAN.set(otel_span) if task_key else None
                 try:
                     result = func(*args, **kwargs)
                 except BaseException as exc:
@@ -682,10 +1060,16 @@ def observe(
                         otel_span.set_attribute(attrs.TOOL_ERROR, exc.__class__.__name__)
                     _finalize_span(otel_span, exc, start)
                     raise
-                if _capture_io:
-                    _capture_output(otel_span, result)
-                _finalize_span(otel_span, None, start)
-                return result
+                else:
+                    if capture_io:
+                        _capture_output(otel_span, result)
+                    _finalize_span(otel_span, None, start)
+                    return result
+                finally:
+                    if span_token is not None:
+                        _ACTIVE_TASK_SPAN.reset(span_token)
+                    if task_token is not None:
+                        _ACTIVE_TASK.reset(task_token)
 
         return sync_wrapper
 
@@ -697,12 +1081,16 @@ def start_span(
     name: str,
     span_type: SpanType = SpanType.FUNCTION,
     attributes: dict[str, Any] | None = None,
+    *,
+    provenance: str | None = None,
 ):
     """Context-manager companion to :func:`observe`; stamps the same
     canonical span metadata."""
+    _validate_provenance(provenance)
     tracer = get_tracer()
     with tracer.start_as_current_span(name) as otel_span:
         otel_span.set_attribute(attrs.SPAN_TYPE, span_type.value)
+        _stamp_evidence(otel_span, span_type, provenance)
         if attributes:
             for key, value in attributes.items():
                 _safe_set_attribute(otel_span, key, value)
@@ -727,6 +1115,7 @@ def start_child_span(
     *,
     span_type: SpanType = SpanType.FUNCTION,
     attributes: Mapping[str, Any] | None = None,
+    provenance: str | None = None,
 ):
     """Open a span as an explicit child of the current OTel span; re-attaching
     the parent keeps the tree stable across mixed instrumentation stacks."""
@@ -735,7 +1124,7 @@ def start_child_span(
     try:
         if current is not None and current.get_span_context().is_valid:
             token = attach(trace.set_span_in_context(current))
-        with start_span(name, span_type=span_type, attributes=dict(attributes or {})) as span:
+        with start_span(name, span_type=span_type, attributes=dict(attributes or {}), provenance=provenance) as span:
             yield span
     finally:
         if token is not None:
@@ -750,45 +1139,241 @@ def conversation(conversation_id: str):
 
             @wraps(fn)
             async def async_wrapper(*args, **kwargs):
-                set_conversation_id(conversation_id)
-                return await fn(*args, **kwargs)
+                token = set_conversation_id(conversation_id)
+                try:
+                    return await fn(*args, **kwargs)
+                finally:
+                    detach(token)
 
             return async_wrapper
         else:
 
             @wraps(fn)
             def sync_wrapper(*args, **kwargs):
-                set_conversation_id(conversation_id)
-                return fn(*args, **kwargs)
+                token = set_conversation_id(conversation_id)
+                try:
+                    return fn(*args, **kwargs)
+                finally:
+                    detach(token)
 
             return sync_wrapper
 
     return decorator
 
 
-def function(name: str | None = None, **kwargs):
-    """Decorator that traces a function span."""
-    return observe(span_name=name, type=SpanType.FUNCTION, **kwargs)
+def function(name: str | None = None, *, capture_io: bool = True, **kwargs):
+    """Decorator that traces a function span. ``name`` renames the span and
+    stamps an explicit anchor identity (``overmind.anchor.name``)."""
+    _validate_anchor_name(name, "function")
+    return observe(
+        span_name=name,
+        type=SpanType.FUNCTION,
+        anchor_name=name,
+        capture_io=capture_io,
+        **kwargs,
+    )
 
 
-def entry_point(name: str | None = None, **kwargs):
-    """Decorator that traces an entry point span."""
-    return observe(span_name=name, type=SpanType.ENTRY_POINT, **kwargs)
+def entry_point(name: str | None = None, *, capture_io: bool = True, **kwargs):
+    """Decorator that traces an entry point span. ``name`` renames the span and
+    stamps an explicit anchor identity (``overmind.anchor.name``)."""
+    _validate_anchor_name(name, "entry_point")
+    return observe(
+        span_name=name,
+        type=SpanType.ENTRY_POINT,
+        anchor_name=name,
+        capture_io=capture_io,
+        **kwargs,
+    )
 
 
-def workflow(name: str | None = None, **kwargs):
-    """Decorator that traces a workflow span."""
-    return observe(span_name=name, type=SpanType.WORKFLOW, **kwargs)
+def workflow(name: str | None = None, *, capture_io: bool = True, **kwargs):
+    """Decorator that traces a workflow span. ``name`` renames the span and
+    stamps an explicit anchor identity (``overmind.anchor.name``)."""
+    _validate_anchor_name(name, "workflow")
+    return observe(
+        span_name=name,
+        type=SpanType.WORKFLOW,
+        anchor_name=name,
+        capture_io=capture_io,
+        **kwargs,
+    )
 
 
-def tool(name: str | None = None, **kwargs):
-    """Decorator that traces a tool span (adds ``tool.name`` / ``tool.arg_keys``)."""
-    return observe(span_name=name, type=SpanType.TOOL, **kwargs)
+def tool(name: str | None = None, *, capture_io: bool = True, **kwargs):
+    """Decorator that traces a tool span (adds ``tool.name`` / ``tool.arg_keys``).
+    ``name`` renames the span and stamps an explicit anchor identity
+    (``overmind.anchor.name``)."""
+    _validate_anchor_name(name, "tool")
+    return observe(
+        span_name=name,
+        type=SpanType.TOOL,
+        anchor_name=name,
+        capture_io=capture_io,
+        **kwargs,
+    )
 
 
-def retrieval(name: str | None = None, **kwargs):
-    """Decorator that traces a retrieval / RAG step span."""
-    return observe(span_name=name, type=SpanType.RETRIEVAL, **kwargs)
+def retrieval(name: str | None = None, *, capture_io: bool = True, **kwargs):
+    """Decorator that traces a retrieval / RAG step span. ``name`` renames the
+    span and stamps an explicit anchor identity (``overmind.anchor.name``)."""
+    _validate_anchor_name(name, "retrieval")
+    return observe(
+        span_name=name,
+        type=SpanType.RETRIEVAL,
+        anchor_name=name,
+        capture_io=capture_io,
+        **kwargs,
+    )
+
+
+def task(
+    key: str | None = None,
+    *,
+    key_from: Callable[..., str] | None = None,
+    name: str | None = None,
+    agent_id: str | None = None,
+    project_id: str | None = None,
+    entrypoint: Callable | None = None,
+    capture_io: bool = True,
+):
+    """Declare the Behaviour-registry task an entry point executes.
+
+    Usable as a decorator (sync/async, like :func:`entry_point`). Pass either
+    a static ``key`` or ``key_from=`` to select the key from the decorated
+    function's arguments. The
+    context-manager form is for a dynamic boundary and should provide
+    ``entrypoint=`` when code identity is available::
+
+        @overmind.task("invoice-triage")
+        def run_agent(query): ...
+
+        with overmind.task("invoice-triage", entrypoint=run_agent):
+            run_agent(query)
+
+    Opens a ``SpanType.ENTRY_POINT`` unit span and stamps
+    ``overmind.behaviour.key`` (plus ``overmind.anchor.name`` when ``name=``
+    is given) on it. The platform binds the trace to this task ahead of any
+    fuzzy anchor joining, so the declared key is the contract. A task cannot
+    be nested inside another task; use workflow/tool spans for ordinary nested
+    work. ``name=`` overrides both the span name and the anchor identity.
+    ``agent_id`` and ``project_id`` apply to both forms. ``capture_io``
+    controls automatic input/output capture for the decorator form; the
+    context-manager form has no callable arguments or return value to capture.
+    """
+    if (key is None) == (key_from is None):
+        raise ValueError(
+            "task() requires exactly one of static key or key_from; static key must be a non-empty string key"
+        )
+    if key_from is not None and not callable(key_from):
+        raise ValueError("task() key_from must be callable")
+    if key is not None and (not isinstance(key, str) or not key.strip()):
+        raise ValueError("task() requires a non-empty string key")
+    behaviour_key = key.strip() if key is not None else None
+    if name is not None and (not isinstance(name, str) or not name.strip()):
+        raise ValueError("task() name must be non-empty when provided")
+
+    class _Task:
+        """Ambivalent: called with a function it decorates; used via ``with``
+        it behaves as the context manager for a task-scoped entry span."""
+
+        def __init__(self):
+            self._entries: ContextVar[tuple[tuple[Any, ...], ...]] = ContextVar(
+                f"overmind_task_entries_{id(self)}", default=()
+            )
+
+        def __call__(self, func: Callable) -> Callable:
+            span_name = name or getattr(func, "__name__", None) or behaviour_key or "task"
+            return observe(
+                span_name=span_name,
+                type=SpanType.ENTRY_POINT,
+                behaviour_key=behaviour_key,
+                anchor_name=name,
+                agent_id=agent_id,
+                project_id=project_id,
+                capture_io=capture_io,
+                _task_key=behaviour_key,
+                _task_key_from=key_from,
+            )(func)
+
+        def __enter__(self):
+            if key_from is not None:
+                raise RuntimeError("task(key_from=...) is only supported as a decorator")
+            attributes = {}
+            attributes[attrs.BEHAVIOUR_KEY] = behaviour_key
+            if name:
+                attributes[attrs.ANCHOR_NAME] = name
+            if agent_id:
+                attributes[attrs.AGENT_ID] = agent_id
+            if project_id:
+                attributes[attrs.PROJECT_ID] = project_id
+            scope_token = _enter_task_scope(behaviour_key)
+            cm = start_span(
+                name or behaviour_key,
+                span_type=SpanType.ENTRY_POINT,
+                attributes=attributes,
+            )
+            try:
+                span = cm.__enter__()
+            except BaseException:
+                _ACTIVE_TASK.reset(scope_token)
+                raise
+            if entrypoint is not None:
+                _stamp_code_identity(span, entrypoint)
+            span_token = _ACTIVE_TASK_SPAN.set(span)
+            self._entries.set((*self._entries.get(), (scope_token, cm, span_token)))
+            return span
+
+        def __exit__(self, *exc):
+            entries = self._entries.get()
+            if not entries:
+                raise RuntimeError("task context exited without an active task")
+            scope_token, cm, span_token = entries[-1]
+            self._entries.set(entries[:-1])
+            try:
+                return cm.__exit__(*exc)
+            finally:
+                _ACTIVE_TASK_SPAN.reset(span_token)
+                _ACTIVE_TASK.reset(scope_token)
+
+    return _Task()
+
+
+def mark_unit(kind: str) -> None:
+    """Stamp ``overmind.unit_kind`` on the current span: ``"turn"`` begins a
+    user-visible unit of work, ``"run"`` is the root of a full agent run.
+    ``@entry_point`` spans are marked ``"run"`` automatically; use this for
+    turn boundaries and for harness spans the SDK doesn't wrap."""
+    if kind not in _UNIT_KINDS:
+        raise ValueError(f"mark_unit() kind must be one of {sorted(_UNIT_KINDS)}, got {kind!r}")
+    set_tag(attrs.UNIT_KIND, kind)
+
+
+def _grounding_span_id(handle: Any) -> str:
+    """Accept a span_id hex string or any OTel span handle (e.g. the span
+    yielded by :func:`start_span`)."""
+    if isinstance(handle, str):
+        return handle
+    return format(handle.get_span_context().span_id, "016x")
+
+
+def deliver(
+    payload: Any,
+    *,
+    grounded_by: list[Any] | None = None,
+    name: str = "deliver",
+    provenance: str = "agent",
+) -> None:
+    """Capture the terminal deliverable of a run on its own child span:
+    the payload is serialised into ``outputs`` and the span carries
+    ``overmind.delivery = true``.  ``grounded_by`` names the evidence spans
+    the deliverable rests on (span_id hex strings or span handles)."""
+    _validate_provenance(provenance)
+    with start_child_span(name, provenance=provenance) as otel_span:
+        otel_span.set_attribute(attrs.DELIVERY, True)
+        if grounded_by:
+            otel_span.set_attribute(attrs.GROUNDED_BY, json.dumps([_grounding_span_id(h) for h in grounded_by]))
+        _capture_output(otel_span, payload)
 
 
 # ---------------------------------------------------------------------------
@@ -806,15 +1391,16 @@ def observe_safe(
     """Like :func:`observe` but never captures arguments or return values;
     use :func:`set_tag` inside the function for specific metadata.
 
-    Manual escape hatch for code that handles credentials (API keys, auth
-    tokens, passwords); prefer masking values before they reach traced
-    functions over dropping input/output capture."""
+    Legacy convenience wrapper for a span that must not capture payloads.
+    Prefer ``capture_io=False`` on the matching public decorator, especially
+    for a task boundary. Mask clearly identifiable credentials before traced
+    functions when the payload is otherwise useful."""
     return observe(
         span_name=span_name,
         type=type,
         agent_id=agent_id,
         project_id=project_id,
-        _capture_io=False,
+        capture_io=False,
     )
 
 
@@ -890,8 +1476,10 @@ def set_iteration_analytics(
 __all__ = [
     "DEFAULT_BASE_URL",
     "SpanType",
+    "capability",
     "capture_exception",
     "conversation",
+    "deliver",
     "enable_agno",
     "enable_anthropic",
     "enable_google_genai",
@@ -903,6 +1491,7 @@ __all__ = [
     "get_api_settings",
     "get_tracer",
     "init",
+    "mark_unit",
     "observe",
     "observe_safe",
     "retrieval",
@@ -920,6 +1509,7 @@ __all__ = [
     "set_workflow_name",
     "start_child_span",
     "start_span",
+    "task",
     "tool",
     "workflow",
 ]

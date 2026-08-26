@@ -116,6 +116,23 @@ def test_observe_captures_outputs(mock_tracer):
         assert len(output_calls) > 0
 
 
+def test_observe_capture_io_false_preserves_span_without_payload(mock_tracer):
+    """The public opt-out keeps tracing metadata but omits payloads."""
+
+    mock_tracer_obj, mock_span = mock_tracer
+
+    with patch("overmind.tracing.get_tracer", return_value=mock_tracer_obj):
+
+        @observe(capture_io=False)
+        def process_secret(token: str):
+            return {"ok": True}
+
+        assert process_secret("sk-secret") == {"ok": True}
+        assert not any(
+            "inputs" in str(call) or "outputs" in str(call) for call in mock_span.set_attribute.call_args_list
+        )
+
+
 def test_observe_handles_exceptions(mock_tracer):
     """Test that exceptions are properly recorded."""
 
@@ -133,7 +150,7 @@ def test_observe_handles_exceptions(mock_tracer):
         # Check that exception was recorded
         mock_span.record_exception.assert_called_once()
         # Check that error status was set
-        status_calls = [c for c in mock_span.set_status.call_args_list]
+        status_calls = list(mock_span.set_status.call_args_list)
         assert len(status_calls) > 0
         # Verify error status
         error_call = status_calls[-1]
@@ -178,7 +195,7 @@ def test_observe_async_with_exception(mock_tracer):
             asyncio.run(async_fail())
 
         mock_span.record_exception.assert_called_once()
-        status_calls = [c for c in mock_span.set_status.call_args_list]
+        status_calls = list(mock_span.set_status.call_args_list)
         assert status_calls[-1][0][0].status_code == StatusCode.ERROR
 
 
@@ -427,3 +444,21 @@ def test_observe_safe_exported_from_package():
     from overmind import observe_safe
 
     assert callable(observe_safe)
+
+
+def test_get_api_settings_honors_overmind_base_url_env(monkeypatch):
+    """Self-hosting: init() export endpoint follows OVERMIND_BASE_URL from the env
+    (like Client already does) so a local platform needs no code change."""
+    from overmind.tracing import get_api_settings
+
+    monkeypatch.setenv("OVERMIND_API_KEY", "ovr_test")
+    monkeypatch.setenv("OVERMIND_BASE_URL", "http://localhost:8000/")
+    key, base = get_api_settings()
+    assert base == "http://localhost:8000"
+
+    key, base = get_api_settings(base_url="https://explicit.example.com")
+    assert base == "https://explicit.example.com"
+
+    monkeypatch.delenv("OVERMIND_BASE_URL")
+    key, base = get_api_settings()
+    assert base == "https://api.overmindlab.ai"
