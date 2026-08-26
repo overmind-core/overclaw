@@ -13,6 +13,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -174,7 +175,9 @@ def instrumentation_smoke(
             if not script_path.exists():
                 continue
             env = {**os.environ, "OVERMIND_SMOKE": "1", "OVERMIND_TRACE_FILE": str(out)}
-            completed = subprocess.run([str(script_path)], cwd=root, env=env, check=False)
+            # Run through the interpreter: agent-written scripts have no shebang/exec bit.
+            runner = [sys.executable, str(script_path)] if script_path.suffix == ".py" else [str(script_path)]
+            completed = subprocess.run(runner, cwd=root, env=env, check=False)
             if completed.returncode != 0:
                 failed = True
         elif smoke_hint:
