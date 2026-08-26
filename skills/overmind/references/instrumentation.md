@@ -154,7 +154,14 @@ Constraints for both routes:
 Target under 10 minutes total. Record wall-clock per stage (scan / plan /
 edit / validate) and report the table at the end.
 
-1. **Scan.**
+1. **Scan + Plan (one command).**
+   ```bash
+   uv run overmind instrumentation plan --root . --out plan.json
+   ```
+   Runs the AST scan and posts it to the server's `plan_instrumentation`
+   for you, writing `plan.json` and printing a summary. Never paste scan
+   or plan JSON into an MCP tool call by hand. The standalone
+   `instrumentation scan` remains available for inspection:
    ```bash
    uv run overmind instrumentation scan --root . --out candidates.json
    ```

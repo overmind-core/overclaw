@@ -84,10 +84,10 @@ read it once, not per step.
 
 1. `list_behaviours` per capability. Populated registry → placements come
    from `get_instrumentation_context`; empty → steps 2-3.
-2. `overmind instrumentation scan --root . --out candidates.json`
-3. MCP `plan_instrumentation(candidates)` — send candidates.json content
-   verbatim. Returns placements (with `required_identity`) + `ambiguous` +
-   `dropped` (report dropped).
+2. `overmind instrumentation plan --root . --out plan.json` — scans AND
+   posts to the server's planner in one command; writes plan.json and
+   prints a summary with `ambiguous` + `dropped` (report dropped). Never
+   paste scan or plan JSON into a tool call yourself.
 4. One subagent per placement file, all at once: apply
    `required_task_decorator` at `target.qualname`, add `target.import_line`,
    wire `required_identity` (init with agent_id/agent_name, or

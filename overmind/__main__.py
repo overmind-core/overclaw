@@ -193,6 +193,54 @@ def instrumentation_smoke(
 instrumentation_app.command("smoke")(instrumentation_smoke)
 
 
+def instrumentation_plan(
+    root: Annotated[Path, typer.Option("--root", help="Source repository root")] = Path("."),
+    out: Annotated[Path, typer.Option("--out", help="Write the placement plan JSON here")] = Path("plan.json"),
+    candidates_out: Annotated[Path, typer.Option("--candidates-out", help="Also write the scan output here")] = Path("candidates.json"),
+    capability: Annotated[str, typer.Option("--capability", help="Restrict planning to one capability")] = "",
+    api_url: Annotated[str, typer.Option(envvar="OVERMIND_API_URL", help="Overmind backend base URL")] = "https://api.overmindlab.ai",
+    api_key: Annotated[str, typer.Option(envvar="OVERMIND_API_KEY", help="Project API key", show_default=False)] = "",
+):
+    """Scan the repo and mint the whole-repo placement plan over MCP in one step."""
+    import urllib.request
+
+    candidates = scan(str(root))
+    candidates_out.write_text(json.dumps(candidates, sort_keys=True))
+    arguments: dict = {"candidates": candidates}
+    if capability:
+        arguments["capability_name_or_slug"] = capability
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "plan_instrumentation", "arguments": arguments},
+    }
+    req = urllib.request.Request(
+        api_url.rstrip("/") + "/api/mcp/",
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json", "X-Api-Key": api_key},
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        payload = json.load(resp)
+    result = json.loads(payload["result"]["content"][0]["text"])
+    if result.get("errors"):
+        typer.echo(json.dumps(result, indent=1))
+        raise typer.Exit(1)
+    out.write_text(json.dumps(result, indent=1))
+    summary = {
+        "placements": len(result.get("placements") or []),
+        "plans": result.get("plans"),
+        "ambiguous": result.get("ambiguous"),
+        "dropped": result.get("dropped"),
+        "minted": result.get("minted"),
+        "plan_file": str(out),
+    }
+    typer.echo(json.dumps(summary, indent=1))
+
+
+instrumentation_app.command("plan")(instrumentation_plan)
+
+
 def instrumentation_verify(
     spans_file: Annotated[Path, typer.Option("--spans-file", help="JSONL spans from a smoke run")],
     capability: Annotated[str, typer.Option("--capability", help="Capability name or slug fallback")] = "",
