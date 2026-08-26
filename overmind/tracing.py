@@ -41,6 +41,7 @@ _initialized = False
 _tracer: trace.Tracer | None = None
 _providers: set[str] = set()
 _provider_lock = Lock()
+_quiet_missing_providers = False
 _ACTIVE_TASK: ContextVar[str | None] = ContextVar("overmind_active_task", default=None)
 _ACTIVE_TASK_SPAN: ContextVar[Any | None] = ContextVar("overmind_active_task_span", default=None)
 
@@ -144,7 +145,8 @@ def _enable_provider(name: str, module: str, instrumentor_factory) -> None:
             msg = f"{install_name} is not installed. Please install it with `pip install {install_name}`."
             if _strict_mode:
                 raise ImportError(msg)
-            logger.warning(msg)
+            # providers=[] expands to "all installed": absence there is expected.
+            (logger.debug if _quiet_missing_providers else logger.warning)(msg)
             return
 
         try:
@@ -208,18 +210,23 @@ _PROVIDER_ENABLERS = {
 
 
 def enable_tracing(providers: list[str] | None = None) -> None:
+    global _quiet_missing_providers
+    _quiet_missing_providers = providers == []
     if providers == []:  # empty list means "all"
         providers = list(_PROVIDER_ENABLERS.keys())
     logger.info(f"Enabling tracing for providers: {providers}")
 
     if providers is None:
         return
-    for name in providers:
-        enabler = _PROVIDER_ENABLERS.get(name)
-        if enabler is None:
-            logger.warning(f"Unknown tracing provider: {name!r}")
-            continue
-        enabler()
+    try:
+        for name in providers:
+            enabler = _PROVIDER_ENABLERS.get(name)
+            if enabler is None:
+                logger.warning(f"Unknown tracing provider: {name!r}")
+                continue
+            enabler()
+    finally:
+        _quiet_missing_providers = False
 
 
 # OTel context keys (canonical attribute strings double as keys).

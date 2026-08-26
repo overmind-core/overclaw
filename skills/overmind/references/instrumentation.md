@@ -117,6 +117,31 @@ overmind.deliver(payload, *, grounded_by=None, name="deliver", provenance="agent
 - Only the primary task boundary owns the envelope and conversation
   completion; nested spans must not emit a second envelope.
 
+## Route first
+
+Call `list_behaviours` for each capability before anything else.
+
+- **Registry populated** (behaviours exist — the repo was deep-scanned):
+  skip the scan and `plan_instrumentation`. `get_instrumentation_context`
+  per capability is the placement source; its `placements` follow the same
+  schema. Everything else below still applies: parallel fan-out per file,
+  static gate, smoke run, `verify_instrumentation_spans`. Never run the
+  real app on this route either.
+- **Registry empty** (no behaviours): run the full fast path below —
+  scan → plan → fan-out → gates.
+
+Constraints for both routes:
+- Write every artifact (candidates.json, plan.json, smoke scripts,
+  spans.jsonl) **inside the repository**. Sandboxed coding agents cannot
+  write `/tmp` or read outside the project; an absolute path outside the
+  repo fails the run.
+- First pass is binding only: task roots, capability scopes, anchor names.
+  Do not add `intent`/`expect`/`checkpoint`/`deliver`/`eval_context` until
+  `verify_instrumentation_spans` reports every task `declared`. Tier 2 comes
+  from the punch list, after the gate.
+- Instrument every capability in one session — fan out across all of them
+  at once, not one capability at a time.
+
 ## Fast-path workflow
 
 Target under 10 minutes total. Record wall-clock per stage (scan / plan /
