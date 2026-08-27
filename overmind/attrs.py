@@ -261,6 +261,8 @@ PROVENANCE = "overmind.provenance"  # "user" | "agent" | "environment" | "harnes
 UNIT_KIND = "overmind.unit_kind"  # "turn" | "run" (ATSC agent-turn vocabulary)
 DELIVERY = "overmind.delivery"  # true on the span carrying the terminal deliverable
 GROUNDED_BY = "overmind.grounded_by"  # JSON array of span_id hex strings
+# Declared Behaviour.slug. Optional; the server binds structurally without it.
+BEHAVIOUR_KEY = "overmind.behaviour.key"
 
 # ---------------------------------------------------------------------------
 # Evaluator (overmind/optimize/evaluator.py)

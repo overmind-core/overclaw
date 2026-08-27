@@ -130,6 +130,11 @@ class TestNoDeadConstants:
         )
 
 
+class TestBehaviourKey:
+    def test_declared_task_key_is_pinned(self) -> None:
+        assert attrs.BEHAVIOUR_KEY == "overmind.behaviour.key"
+
+
 class TestEvalEnvelopeNamespace:
     """Eval envelope wire contract v1 — event names + event attributes.
 

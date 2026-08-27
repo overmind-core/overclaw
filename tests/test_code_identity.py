@@ -22,7 +22,6 @@ from overmind.tracing import (
     _GIT_SHA_ENV_VARS,
     _detect_git_sha,
     entry_point,
-    function,
     observe,
     retrieval,
     tool,
@@ -52,7 +51,7 @@ def _only_span(inmem):
 
 
 def test_sync_function_carries_code_identity(inmem):
-    @function()
+    @observe()
     def add(a, b):
         return a + b
 
@@ -63,7 +62,7 @@ def test_sync_function_carries_code_identity(inmem):
 
 
 def test_async_function_carries_code_identity(inmem):
-    @function()
+    @observe()
     async def fetch(x):
         return x
 
@@ -84,7 +83,7 @@ def test_method_qualname_includes_class(inmem):
     assert span.attributes[attrs.CODE_FUNCTION_NAME] == "test_method_qualname_includes_class.<locals>.Greeter.greet"
 
 
-@pytest.mark.parametrize("decorator", [observe, function, entry_point, workflow, tool, retrieval])
+@pytest.mark.parametrize("decorator", [observe, entry_point, workflow, tool, retrieval])
 def test_all_decorators_stamp_code_identity(inmem, decorator):
     @decorator()
     def op():
@@ -105,7 +104,7 @@ def test_unwraps_to_original_function(inmem):
 
     anonymous_wrapper.__wrapped__ = original
 
-    traced = function()(anonymous_wrapper)
+    traced = observe()(anonymous_wrapper)
     assert traced() == 42
     span = _only_span(inmem)
     assert span.attributes[attrs.CODE_FUNCTION_NAME] == "test_unwraps_to_original_function.<locals>.original"

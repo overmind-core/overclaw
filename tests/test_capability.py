@@ -19,12 +19,11 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 import overmind.tracing as tracing
 from overmind import attrs
 from overmind.tracing import (
+    _seed_identity_context,
     _span_processor_on_start,
     capability,
     entry_point,
-    function,
-    set_agent_id,
-    set_agent_name,
+    observe,
     start_span,
     tool,
 )
@@ -92,8 +91,7 @@ def test_nested_scope_restores_outer_identity(exporter):
 
 def test_name_only_scope_clears_outer_id(exporter):
     def _run():
-        set_agent_id("cap-out")
-        set_agent_name("Outer")
+        _seed_identity_context("cap-out", "Outer", None)
         with capability("Inner"), start_span("inner"):
             pass
 
@@ -105,7 +103,7 @@ def test_name_only_scope_clears_outer_id(exporter):
 
 def test_handoff_mid_trace_stamps_turn_on_first_span_only(exporter):
     def _run():
-        set_agent_name("Browser Automation Agent")
+        _seed_identity_context(None, "Browser Automation Agent", None)
         with start_span("run-root"), capability("DOM Element Locator"):
             with start_span("boundary"):
                 pass
@@ -119,7 +117,7 @@ def test_handoff_mid_trace_stamps_turn_on_first_span_only(exporter):
 
 def test_same_capability_is_not_a_handoff(exporter):
     def _run():
-        set_agent_name("Browser Automation Agent")
+        _seed_identity_context(None, "Browser Automation Agent", None)
         with start_span("run-root"), capability("Browser Automation Agent"):
             with start_span("step"):
                 pass
@@ -130,7 +128,7 @@ def test_same_capability_is_not_a_handoff(exporter):
 
 def test_scope_without_active_trace_stamps_no_turn(exporter):
     def _run():
-        set_agent_name("Outer")
+        _seed_identity_context(None, "Outer", None)
         with capability("Inner"), start_span("root"):
             pass
 
@@ -140,7 +138,7 @@ def test_scope_without_active_trace_stamps_no_turn(exporter):
 
 def test_mixed_identity_grains_are_not_a_handoff(exporter):
     def _run():
-        set_agent_name("Outer")
+        _seed_identity_context(None, "Outer", None)
         with start_span("run-root"), capability(id="cap-9"):
             with start_span("inside"):
                 pass
@@ -158,7 +156,7 @@ def test_entry_point_handoff_boundary_keeps_turn(exporter):
         return 1
 
     def _run():
-        set_agent_name("Outer")
+        _seed_identity_context(None, "Outer", None)
         with start_span("run-root"), capability("Inner"):
             sub_run()
 
@@ -177,7 +175,7 @@ def test_entry_point_outside_handoff_still_marks_run(exporter):
 
 def test_capability_as_decorator_composes_with_tool(exporter):
     @capability("Page Markdown Extractor")
-    @tool()
+    @tool("extract")
     def extract(url: str) -> str:
         return url
 
@@ -204,31 +202,31 @@ def test_async_decorator_and_context_manager(exporter):
     assert _by_name(exporter, "managed").attributes[attrs.AGENT_NAME] == "Async CM"
 
 
-def test_observe_agent_id_routes_through_capability_scope(exporter):
-    @function("delegate", agent_id="cap-2")
+def test_observe_capability_routes_through_capability_scope(exporter):
+    @observe("delegate", capability="Inner")
     def delegate() -> None:
         with start_span("child"):
             pass
 
     def _run():
-        set_agent_id("cap-1")
+        _seed_identity_context(None, "Outer", None)
         with start_span("run-root"):
             delegate()
 
     _in_fresh_context(_run)
     span = _by_name(exporter, "delegate")
-    assert span.attributes[attrs.AGENT_ID] == "cap-2"
+    assert span.attributes[attrs.AGENT_NAME] == "Inner"
     assert span.attributes[attrs.UNIT_KIND] == "turn"
-    assert _by_name(exporter, "child").attributes[attrs.AGENT_ID] == "cap-2"
+    assert _by_name(exporter, "child").attributes[attrs.AGENT_NAME] == "Inner"
 
 
-def test_observe_same_agent_id_is_not_a_handoff(exporter):
-    @function("delegate", agent_id="cap-1")
+def test_observe_same_capability_is_not_a_handoff(exporter):
+    @observe("delegate", capability="Outer")
     def delegate() -> None:
         pass
 
     def _run():
-        set_agent_id("cap-1")
+        _seed_identity_context(None, "Outer", None)
         with start_span("run-root"):
             delegate()
 

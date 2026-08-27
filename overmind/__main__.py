@@ -11,19 +11,24 @@ Use --help with any command or subcommand for details.
 import os
 from typing import Annotated
 
-import typer
-from rich.console import Console
+try:
+    import typer
+    from rich.console import Console
 
-from overmind.optimizer import (
-    API_KEY,
-    API_URL,
-    HEARTBEAT_INTERVAL,
-    IDLE_INTERVAL,
-    WORK_DIR,
-    configure_logging,
-    run_optimizer,
-)
-from overmind.skills import skills_app
+    from overmind.optimizer import (
+        API_KEY,
+        API_URL,
+        HEARTBEAT_INTERVAL,
+        IDLE_INTERVAL,
+        WORK_DIR,
+        configure_logging,
+        run_optimizer,
+    )
+    from overmind.skills import skills_app
+except ImportError as exc:
+    raise ImportError(
+        "The Overmind CLI requires the 'cli' extra. Install it with: pip install 'overmind[cli]'"
+    ) from exc
 
 app = typer.Typer(
     name="overmind",

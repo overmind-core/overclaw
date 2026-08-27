@@ -9,6 +9,7 @@ in ``overmind/tracing.py`` (see docs/tracing-attributes.md §7).
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
 import pytest
 from opentelemetry.sdk.trace import TracerProvider
@@ -17,7 +18,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 
 import overmind.tracing as tracing
 from overmind import attrs
-from overmind.tracing import SpanType, deliver, entry_point, function, mark_unit, observe, retrieval, start_span, tool
+from overmind.tracing import SpanType, deliver, entry_point, observe, retrieval, start_span, tool
 
 
 @pytest.fixture
@@ -71,7 +72,7 @@ def test_llm_span_auto_tags_agent(exporter):
 
 
 def test_function_span_has_no_provenance(exporter):
-    @function()
+    @observe()
     def compute() -> int:
         return 1
 
@@ -107,15 +108,27 @@ def test_entry_point_marks_run(exporter):
     assert _only_span(exporter).attributes[attrs.UNIT_KIND] == "run"
 
 
-def test_mark_unit_stamps_current_span(exporter):
-    with start_span("step"):
-        mark_unit("turn")
+def test_unit_param_stamps_turn(exporter):
+    with start_span("step", unit="turn"):
+        pass
     assert _only_span(exporter).attributes[attrs.UNIT_KIND] == "turn"
 
 
-def test_mark_unit_validates_kind():
-    with pytest.raises(ValueError, match="kind"):
-        mark_unit("phase")
+def test_unit_param_on_observe(exporter):
+    @observe("step", unit="turn")
+    def step() -> int:
+        return 1
+
+    step()
+    assert _only_span(exporter).attributes[attrs.UNIT_KIND] == "turn"
+
+
+def test_unit_param_validates_kind():
+    with pytest.raises(ValueError, match="unit"):
+        observe(unit="phase")
+    with pytest.raises(ValueError, match="unit"):
+        with start_span("step", unit="phase"):
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -142,3 +155,65 @@ def test_deliver_without_grounding_omits_grounded_by(exporter):
     span = _only_span(exporter)
     assert span.attributes[attrs.DELIVERY] is True
     assert attrs.GROUNDED_BY not in span.attributes
+
+
+def test_deliver_auto_grounds_on_environment_evidence(exporter):
+    """Environment-provenance spans are collected per trace; deliver() uses
+    them when grounded_by is omitted."""
+
+    @tool("search")
+    def search(query: str) -> str:
+        return query
+
+    with start_span("run-root", span_type=SpanType.ENTRY_POINT):
+        search("q")
+        with start_span("plan"):  # no provenance — must not be collected
+            pass
+        deliver({"answer": 1})
+
+    spans = {s.name: s for s in exporter.get_finished_spans()}
+    tool_id = format(spans["search"].context.span_id, "016x")
+    assert json.loads(spans["deliver"].attributes[attrs.GROUNDED_BY]) == [tool_id]
+
+
+def test_deliver_auto_grounding_is_consumed(exporter):
+    @tool("probe")
+    def probe() -> int:
+        return 1
+
+    with start_span("run-root", span_type=SpanType.ENTRY_POINT):
+        probe()
+        deliver("first")
+        deliver("second")
+
+    delivery_spans = [s for s in exporter.get_finished_spans() if s.attributes.get(attrs.DELIVERY)]
+    assert attrs.GROUNDED_BY in delivery_spans[0].attributes
+    assert attrs.GROUNDED_BY not in delivery_spans[1].attributes
+
+
+# ---------------------------------------------------------------------------
+# Cancellation flush
+# ---------------------------------------------------------------------------
+
+
+def test_cancelled_entry_point_flushes(exporter):
+    @entry_point("run")
+    def run() -> None:
+        raise KeyboardInterrupt
+
+    with patch.object(tracing, "force_flush_traces") as flush:
+        with pytest.raises(KeyboardInterrupt):
+            run()
+    flush.assert_called_once()
+    assert _only_span(exporter).attributes[attrs.STATUS] == "cancelled"
+
+
+def test_cancelled_inner_span_does_not_flush(exporter):
+    @observe("step")
+    def step() -> None:
+        raise KeyboardInterrupt
+
+    with patch.object(tracing, "force_flush_traces") as flush:
+        with pytest.raises(KeyboardInterrupt):
+            step()
+    flush.assert_not_called()

@@ -131,6 +131,62 @@ class TestJsonDumps:
         assert isinstance(_json_dumps(_CycleSafe()), str)
 
 
+class TestScrubbing:
+    """Secrets and binary blobs are redacted during serialisation; text is
+    never truncated."""
+
+    def test_secret_keys_redacted(self):
+        out = _normalize_for_json({
+            "api_key": "sk-123",
+            "openai_api_key": "sk-456",
+            "access_token": "t",
+            "password": "p",
+            "sensitive_data": {"x": 1},
+            "query": "refund policy",
+        })
+        assert out["api_key"] == "<redacted>"
+        assert out["openai_api_key"] == "<redacted>"
+        assert out["access_token"] == "<redacted>"
+        assert out["password"] == "<redacted>"
+        assert out["sensitive_data"] == "<redacted>"
+        assert out["query"] == "refund policy"
+
+    def test_data_url_redacted(self):
+        out = _normalize_for_json("data:image/png;base64," + "A" * 100)
+        assert out.startswith("<base64 ")
+
+    def test_long_base64_blob_redacted(self):
+        blob = "A" * 600
+        assert _normalize_for_json(blob) == f"<base64 {len(blob)} chars>"
+
+    def test_long_plain_text_kept_in_full(self):
+        text = ("the quick brown fox " * 200).strip()
+        assert _normalize_for_json(text) == text
+
+    def test_large_bytes_become_placeholder(self):
+        assert _normalize_for_json(b"\x00" * 1000) == "<bytes 1000>"
+
+    def test_init_redact_keys_extends_the_set(self, monkeypatch):
+        from overmind import tracing
+
+        monkeypatch.setattr(tracing, "_extra_redact_keys", frozenset())
+        monkeypatch.setattr(tracing, "_initialized", True)
+        tracing.init(redact_keys=["headers", "Cookie"])
+        out = _normalize_for_json({"headers": {"x": 1}, "cookie": "c", "body": "ok"})
+        assert out["headers"] == "<redacted>"
+        assert out["cookie"] == "<redacted>"
+        assert out["body"] == "ok"
+
+    def test_object_attributes_scrubbed(self):
+        class _Config:
+            def __init__(self):
+                self.api_key = "sk-999"
+                self.name = "demo"
+
+        out = _normalize_for_json(_Config())
+        assert out == {"api_key": "<redacted>", "name": "demo"}
+
+
 class TestCoerceToOtelAttribute:
     def test_none_becomes_empty_string(self):
         assert _coerce_to_otel_attribute(None) == ""

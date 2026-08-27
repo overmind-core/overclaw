@@ -3,7 +3,6 @@
 Helpers covered
 ---------------
 * :func:`overmind.tracing.set_workflow_name`
-* :func:`overmind.tracing.set_agent_name`
 * :func:`overmind.tracing.set_conversation_id`
 * :func:`overmind.tracing.capture_exception`
 * :func:`overmind.tracing.force_flush_traces`
@@ -20,7 +19,6 @@ import pytest
 from overmind.tracing import (
     capture_exception,
     force_flush_traces,
-    set_agent_name,
     set_conversation_id,
     set_tag,
     set_user,
@@ -77,13 +75,6 @@ class TestContextHelpers:
 
     @patch("overmind.tracing.attach")
     @patch("overmind.tracing.set_value", side_effect=lambda key, value: (key, value))
-    def test_set_agent_name_attaches(self, mock_set_value, mock_attach):
-        set_agent_name("my-agent")
-        assert "my-agent" in mock_set_value.call_args.args
-        mock_attach.assert_called_once()
-
-    @patch("overmind.tracing.attach")
-    @patch("overmind.tracing.set_value", side_effect=lambda key, value: (key, value))
     def test_set_conversation_id_attaches(self, mock_set_value, mock_attach):
         set_conversation_id("conv-123")
         assert "conv-123" in mock_set_value.call_args.args
@@ -112,6 +103,19 @@ class TestForceFlushTraces:
         provider.force_flush.assert_called_once_with(timeout_millis=750)
 
 
+class TestInitDebug:
+    def test_debug_logs_setup_summary(self, caplog):
+        import overmind.tracing as tr
+
+        # conftest already initialised the SDK, so this exercises the re-init path.
+        with caplog.at_level("INFO", logger="overmind"):
+            assert tr.init(debug=True) is True
+
+        (record,) = [r for r in caplog.records if r.message.startswith("Overmind debug:")]
+        for fragment in ("endpoint=", "agent_id=", "providers=", "export=", "export_orphan_spans="):
+            assert fragment in record.message
+
+
 class TestTracingAll:
     """Regression guard for the public ``overmind.tracing.__all__`` surface."""
 
@@ -119,17 +123,20 @@ class TestTracingAll:
         import overmind.tracing as tr
 
         expected = {
+            "capability",
             "capture_exception",
+            "deliver",
             "enable_tracing",
             "force_flush_traces",
             "init",
+            "normalize_messages",
             "observe",
-            "set_agent_name",
             "set_conversation_id",
             "set_tag",
             "set_user",
             "set_workflow_name",
             "start_span",
+            "task",
         }
         missing = expected - set(tr.__all__)
         assert missing == set(), f"Missing from tracing.__all__: {missing}"

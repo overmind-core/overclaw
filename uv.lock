@@ -1279,6 +1279,47 @@ wheels = [
 ]
 
 [[package]]
+name = "openinference-instrumentation"
+version = "0.1.59"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "openinference-semantic-conventions" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-sdk" },
+    { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e8/1d/26b7ddff8fd4337fa81f1f205bee4df6da420a2cec27405a3fcb26fafb0e/openinference_instrumentation-0.1.59.tar.gz", hash = "sha256:d9947cf0c984e61eb7628edc3163a23c2a84fa74d985ea527075a54a2ad55b3a", size = 41281, upload-time = "2026-08-25T16:51:41.098Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cd/4a/e78714992424dd5b8d217eebb8411bc2d710e0fd08c14f38d30206a44801/openinference_instrumentation-0.1.59-py3-none-any.whl", hash = "sha256:96eb1b9a29bc934e06db69fb2d10c9ccd676c3d5c328110db6c1a861e7c084bc", size = 48953, upload-time = "2026-08-25T16:51:39.769Z" },
+]
+
+[[package]]
+name = "openinference-instrumentation-langchain"
+version = "0.1.72"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "openinference-instrumentation" },
+    { name = "openinference-semantic-conventions" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9d/d8/ee92657ff27e169dcf1671d8bfd5b449ff49daee2508185a7da11bec17c9/openinference_instrumentation_langchain-0.1.72.tar.gz", hash = "sha256:c35c32df9cbba42bbf53c62ebfb4e7e0b6381896d9b6f096e5445a5ab4f90dff", size = 79255, upload-time = "2026-08-25T05:32:53.484Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/80/6f/1481dd30aab86e164b0622317e9fe5114f8d8c004945e240048e1b31b6ce/openinference_instrumentation_langchain-0.1.72-py3-none-any.whl", hash = "sha256:27a67089fd233fe544cc41fb851da09293d392e03bc909e0611f8f9761b96374", size = 25518, upload-time = "2026-08-25T05:32:52.232Z" },
+]
+
+[[package]]
+name = "openinference-semantic-conventions"
+version = "0.1.33"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2a/ba/a749f287fc09de1886f038603be18089f35f202488218bc4f87408a9cf0d/openinference_semantic_conventions-0.1.33.tar.gz", hash = "sha256:c029a06d34cb75d8698289d266eb78749c5ed627032e1ccdc164860c3b2341e4", size = 14145, upload-time = "2026-08-24T23:47:28.777Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/26/9f/7bb1c5b0a2e16074db637ea2010ffdd5ee4edbaec7b942916a0f22e7cd4d/openinference_semantic_conventions-0.1.33-py3-none-any.whl", hash = "sha256:ae7207177afa97c0607a49313f57607bd3958750a3ec3078d98a540dfe3b88ad", size = 11397, upload-time = "2026-08-24T23:47:27.522Z" },
+]
+
+[[package]]
 name = "opentelemetry-api"
 version = "1.43.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1547,7 +1588,6 @@ name = "overmind"
 version = "0.1.57"
 source = { editable = "." }
 dependencies = [
-    { name = "litellm" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-instrumentation" },
@@ -1560,24 +1600,20 @@ dependencies = [
     { name = "opentelemetry-sdk" },
     { name = "opentelemetry-semantic-conventions" },
     { name = "opentelemetry-semantic-conventions-ai" },
-    { name = "psutil" },
     { name = "requests" },
-    { name = "rich" },
-    { name = "typer" },
 ]
 
 [package.optional-dependencies]
-test = [
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-xdist" },
+cli = [
+    { name = "psutil" },
+    { name = "rich" },
+    { name = "typer" },
 ]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pre-commit" },
-    { name = "ruff" },
-    { name = "ydiff" },
+inference = [
+    { name = "litellm" },
+]
+langchain = [
+    { name = "openinference-instrumentation-langchain" },
 ]
 test = [
     { name = "pytest" },
@@ -1590,9 +1626,26 @@ tracing-full = [
     { name = "opentelemetry-instrumentation-requests" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "litellm" },
+    { name = "pre-commit" },
+    { name = "psutil" },
+    { name = "rich" },
+    { name = "ruff" },
+    { name = "typer" },
+    { name = "ydiff" },
+]
+test = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-xdist" },
+]
+
 [package.metadata]
 requires-dist = [
-    { name = "litellm", specifier = ">=1.90.2" },
+    { name = "litellm", marker = "extra == 'inference'", specifier = ">=1.90.2" },
+    { name = "openinference-instrumentation-langchain", marker = "extra == 'langchain'", specifier = ">=0.1.72" },
     { name = "opentelemetry-api", specifier = ">=1.35.0" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.35.0" },
     { name = "opentelemetry-instrumentation", specifier = ">=0.60b1" },
@@ -1600,36 +1653,38 @@ requires-dist = [
     { name = "opentelemetry-instrumentation-anthropic", specifier = ">=0.53.0" },
     { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.60b1" },
     { name = "opentelemetry-instrumentation-google-generativeai", specifier = ">=0.53.0" },
+    { name = "opentelemetry-instrumentation-httpx", marker = "extra == 'tracing-full'", specifier = ">=0.60b1" },
+    { name = "opentelemetry-instrumentation-logging", marker = "extra == 'tracing-full'", specifier = ">=0.60b1" },
     { name = "opentelemetry-instrumentation-openai", specifier = ">=0.53.1" },
+    { name = "opentelemetry-instrumentation-requests", marker = "extra == 'tracing-full'", specifier = ">=0.60b1" },
     { name = "opentelemetry-overmind", specifier = ">=0.53.0" },
     { name = "opentelemetry-sdk", specifier = ">=1.35.0" },
     { name = "opentelemetry-semantic-conventions", specifier = ">=0.60b1" },
     { name = "opentelemetry-semantic-conventions-ai", specifier = ">=0.4.13" },
-    { name = "psutil", specifier = ">=5.9.0" },
+    { name = "psutil", marker = "extra == 'cli'", specifier = ">=5.9.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=5.0" },
     { name = "pytest-xdist", marker = "extra == 'test'", specifier = ">=3.5" },
     { name = "requests", specifier = ">=2.31.0" },
-    { name = "rich", specifier = ">=14.0.0" },
-    { name = "typer", specifier = ">=0.25.0" },
+    { name = "rich", marker = "extra == 'cli'", specifier = ">=14.0.0" },
+    { name = "typer", marker = "extra == 'cli'", specifier = ">=0.25.0" },
 ]
-provides-extras = ["test"]
+provides-extras = ["test", "langchain", "cli", "inference", "tracing-full"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "litellm", specifier = ">=1.90.2" },
     { name = "pre-commit", specifier = ">=4.5.1" },
+    { name = "psutil", specifier = ">=5.9.0" },
+    { name = "rich", specifier = ">=14.0.0" },
     { name = "ruff", specifier = ">=0.15.7" },
+    { name = "typer", specifier = ">=0.25.0" },
     { name = "ydiff", specifier = ">=1.5" },
 ]
 test = [
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-cov", specifier = ">=5.0" },
     { name = "pytest-xdist", specifier = ">=3.5" },
-]
-tracing-full = [
-    { name = "opentelemetry-instrumentation-httpx", specifier = ">=0.60b1" },
-    { name = "opentelemetry-instrumentation-logging", specifier = ">=0.60b1" },
-    { name = "opentelemetry-instrumentation-requests", specifier = ">=0.60b1" },
 ]
 
 [[package]]
