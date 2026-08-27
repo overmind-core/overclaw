@@ -488,72 +488,15 @@ class _OrphanSpanSampler(Sampler):
         return "OvermindOrphanSpanSampler"
 
 
-def _span_attribute_sink(span) -> dict[str, Any] | None:
-    """Writable attribute map on an ended span, or ``None`` if unavailable."""
-    target = getattr(span, "_attributes", None)
-    if target is None:
-        return None
-    # BoundedAttributes (1.43+) is read-only once the span ends; its plain
-    # ``_dict`` backing store still accepts writes and is what ``attributes``
-    # proxies. Older SDKs accept assignment on the object itself.
-    return getattr(target, "_dict", target)
-
-
-def _is_legal_otel_attribute(value: Any) -> bool:
-    if isinstance(value, (bool, str, int, float)):
-        return True
-    if isinstance(value, (list, tuple)) and all(isinstance(item, (bool, str, int, float)) for item in value):
-        return True
-    return False
-
-
-def _encode_otlp_attribute(key: str, value: Any) -> None:
-    """Raise if the OTLP protobuf encoder cannot represent *value*."""
-    from opentelemetry.exporter.otlp.proto.common._internal import _encode_key_value
-
-    _encode_key_value(key, value)
-
-
-def _sanitize_span_attributes(span) -> None:
-    """Force ``inputs`` / ``outputs`` (and any illegal value) to OTLP-safe
-    primitives before the batch exporter runs.
-
-    The OTLP protobuf encoder hits ``DecodeError`` on some structured
-    ``AnyValue`` payloads (dicts, nested lists, protobuf messages). JSON
-    strings encode cleanly.
-    """
-    sink = _span_attribute_sink(span)
-    if not sink:
-        return
-    for key, value in list(sink.items()):
-        safe = value
-        if key in {"inputs", "outputs"} or not _is_legal_otel_attribute(value):
-            safe = value if isinstance(value, str) else _coerce_to_otel_attribute(value)
-            if key in {"inputs", "outputs"} and not isinstance(safe, str):
-                safe = _json_dumps(value)
-        try:
-            _encode_otlp_attribute(str(key), safe)
-        except Exception:
-            safe = _json_dumps(value) if not isinstance(safe, str) else safe.encode("utf-8", "replace").decode("utf-8")
-            try:
-                _encode_otlp_attribute(str(key), safe)
-            except Exception:
-                safe = f"<unencodable {type(value).__name__}>"
-        if safe is not value:
-            try:
-                sink[key] = safe
-            except Exception:
-                logger.debug("could not sanitize attribute %s", key, exc_info=True)
-
-
 class _GenAiUsageSpanProcessor(SpanProcessor):
     """Mirror OTel ``gen_ai.*`` usage onto canonical ``genai.*`` keys at span
     end, so auto-instrumented spans carry the tokens/cost keys the server reads.
 
-    Also sanitizes attributes the OTLP exporter cannot encode (notably structured
-    ``inputs`` / ``outputs``). Must run before the exporting processor.
-
     ponytail: mutates ``span._attributes`` (ReadableSpan has no set_attribute).
+    Since opentelemetry-sdk 1.43 the ended span's ``BoundedAttributes`` rejects
+    item assignment, so we write into its backing ``._dict`` when present and
+    fall back to direct assignment for older SDKs. Upgrade path if this seals
+    too: a SpanExporter wrapper.
     """
 
     def on_start(self, span: trace.Span, parent_context: trace.Context | None = None) -> None:
@@ -566,13 +509,16 @@ class _GenAiUsageSpanProcessor(SpanProcessor):
             logger.debug("genai enrichment could not set attributes", exc_info=True)
 
     def patch_on_end(self, span) -> None:
-        _sanitize_span_attributes(span)
         updates = canonical_usage_updates(span.attributes or {})
         if not updates:
             return
-        sink = _span_attribute_sink(span)
-        if sink is None:
+        target = getattr(span, "_attributes", None)
+        if target is None:
             return
+        # BoundedAttributes (1.43+) is read-only once the span ends; its plain
+        # ``_dict`` backing store still accepts writes and is what ``attributes``
+        # proxies. Older SDKs accept assignment on the object itself.
+        sink = getattr(target, "_dict", target)
         for key, value in updates.items():
             try:
                 sink[key] = value
@@ -1694,17 +1640,6 @@ def deliver(
         if grounded_by:
             otel_span.set_attribute(attrs.GROUNDED_BY, json.dumps([_grounding_span_id(h) for h in grounded_by]))
         _capture_output(otel_span, payload)
-
-
-def observe_safe(
-    span_name: str | Callable[..., str] | None = None,
-    type: SpanType | str = SpanType.FUNCTION,
-    **kwargs: Any,
-) -> Callable[[F], F]:
-    """:func:`observe` with ``capture="none"``: never records arguments or
-    return values. Manual escape hatch for code that handles credentials;
-    prefer masking values before they reach traced functions."""
-    return observe(span_name, type, capture="none", **kwargs)
 
 
 def force_flush_traces(timeout_millis: int = 1000) -> None:
