@@ -134,7 +134,7 @@ def test_observe_handles_exceptions(mock_tracer):
         # Check that exception was recorded
         mock_span.record_exception.assert_called_once()
         # Check that error status was set
-        status_calls = [c for c in mock_span.set_status.call_args_list]
+        status_calls = list(mock_span.set_status.call_args_list)
         assert len(status_calls) > 0
         # Verify error status
         error_call = status_calls[-1]
@@ -180,7 +180,7 @@ def test_observe_async_with_exception(mock_tracer):
             asyncio.run(async_fail())
 
         mock_span.record_exception.assert_called_once()
-        status_calls = [c for c in mock_span.set_status.call_args_list]
+        status_calls = list(mock_span.set_status.call_args_list)
         assert status_calls[-1][0][0].status_code == StatusCode.ERROR
 
 
