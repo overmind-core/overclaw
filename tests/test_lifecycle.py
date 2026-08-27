@@ -93,6 +93,20 @@ def test_run_capability_falls_back_to_env(exporter, monkeypatch):
     assert root.attributes[attrs.AGENT_ID] == "env-id"
 
 
+def test_run_explicit_identity_suppresses_env_fallback(exporter, monkeypatch):
+    monkeypatch.setenv("OVERMIND_AGENT_NAME", "Env Agent")
+    monkeypatch.setenv("OVERMIND_AGENT_ID", "env-id")
+
+    def _main():
+        with run(capability="Declared Agent"):
+            pass
+
+    _in_fresh_context(_main)
+    root = _by_name(exporter, "run")
+    assert root.attributes[attrs.AGENT_NAME] == "Declared Agent"
+    assert attrs.AGENT_ID not in root.attributes
+
+
 def test_run_without_identity_needs_no_capability_scope(exporter, monkeypatch):
     monkeypatch.delenv("OVERMIND_AGENT_NAME", raising=False)
     monkeypatch.delenv("OVERMIND_AGENT_ID", raising=False)

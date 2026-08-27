@@ -488,15 +488,72 @@ class _OrphanSpanSampler(Sampler):
         return "OvermindOrphanSpanSampler"
 
 
+def _span_attribute_sink(span) -> dict[str, Any] | None:
+    """Writable attribute map on an ended span, or ``None`` if unavailable."""
+    target = getattr(span, "_attributes", None)
+    if target is None:
+        return None
+    # BoundedAttributes (1.43+) is read-only once the span ends; its plain
+    # ``_dict`` backing store still accepts writes and is what ``attributes``
+    # proxies. Older SDKs accept assignment on the object itself.
+    return getattr(target, "_dict", target)
+
+
+def _is_legal_otel_attribute(value: Any) -> bool:
+    if isinstance(value, (bool, str, int, float)):
+        return True
+    if isinstance(value, (list, tuple)) and all(isinstance(item, (bool, str, int, float)) for item in value):
+        return True
+    return False
+
+
+def _encode_otlp_attribute(key: str, value: Any) -> None:
+    """Raise if the OTLP protobuf encoder cannot represent *value*."""
+    from opentelemetry.exporter.otlp.proto.common._internal import _encode_key_value
+
+    _encode_key_value(key, value)
+
+
+def _sanitize_span_attributes(span) -> None:
+    """Force ``inputs`` / ``outputs`` (and any illegal value) to OTLP-safe
+    primitives before the batch exporter runs.
+
+    The OTLP protobuf encoder hits ``DecodeError`` on some structured
+    ``AnyValue`` payloads (dicts, nested lists, protobuf messages). JSON
+    strings encode cleanly.
+    """
+    sink = _span_attribute_sink(span)
+    if not sink:
+        return
+    for key, value in list(sink.items()):
+        safe = value
+        if key in {"inputs", "outputs"} or not _is_legal_otel_attribute(value):
+            safe = value if isinstance(value, str) else _coerce_to_otel_attribute(value)
+            if key in {"inputs", "outputs"} and not isinstance(safe, str):
+                safe = _json_dumps(value)
+        try:
+            _encode_otlp_attribute(str(key), safe)
+        except Exception:
+            safe = _json_dumps(value) if not isinstance(safe, str) else safe.encode("utf-8", "replace").decode("utf-8")
+            try:
+                _encode_otlp_attribute(str(key), safe)
+            except Exception:
+                safe = f"<unencodable {type(value).__name__}>"
+        if safe is not value:
+            try:
+                sink[key] = safe
+            except Exception:
+                logger.debug("could not sanitize attribute %s", key, exc_info=True)
+
+
 class _GenAiUsageSpanProcessor(SpanProcessor):
     """Mirror OTel ``gen_ai.*`` usage onto canonical ``genai.*`` keys at span
     end, so auto-instrumented spans carry the tokens/cost keys the server reads.
 
+    Also sanitizes attributes the OTLP exporter cannot encode (notably structured
+    ``inputs`` / ``outputs``). Must run before the exporting processor.
+
     ponytail: mutates ``span._attributes`` (ReadableSpan has no set_attribute).
-    Since opentelemetry-sdk 1.43 the ended span's ``BoundedAttributes`` rejects
-    item assignment, so we write into its backing ``._dict`` when present and
-    fall back to direct assignment for older SDKs. Upgrade path if this seals
-    too: a SpanExporter wrapper.
     """
 
     def on_start(self, span: trace.Span, parent_context: trace.Context | None = None) -> None:
@@ -509,16 +566,13 @@ class _GenAiUsageSpanProcessor(SpanProcessor):
             logger.debug("genai enrichment could not set attributes", exc_info=True)
 
     def patch_on_end(self, span) -> None:
+        _sanitize_span_attributes(span)
         updates = canonical_usage_updates(span.attributes or {})
         if not updates:
             return
-        target = getattr(span, "_attributes", None)
-        if target is None:
+        sink = _span_attribute_sink(span)
+        if sink is None:
             return
-        # BoundedAttributes (1.43+) is read-only once the span ends; its plain
-        # ``_dict`` backing store still accepts writes and is what ``attributes``
-        # proxies. Older SDKs accept assignment on the object itself.
-        sink = getattr(target, "_dict", target)
         for key, value in updates.items():
             try:
                 sink[key] = value
@@ -894,13 +948,24 @@ def set_conversation_id(conversation_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+# Matches the platform's Capability.slug convention: lowercase,
+# non-alphanumeric runs collapse to single hyphens.
+_IDENTITY_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _identity_slug(value: str) -> str:
+    return _IDENTITY_SLUG_RE.sub("-", value.lower()).strip("-")
+
+
 def _is_handoff(name: str | None, id: str | None) -> bool:
     """Entering a capability that differs from the active one, mid-trace.
 
-    Identity is compared on the finest shared grain: ids when both sides have
-    one, else names. Mixed grains (id-only scope under name-only identity)
-    are never treated as a handoff — a boundary is only declared when the
-    identities are provably different."""
+    Identity is compared on the finest shared grain: ids when both sides
+    have one (a name never shadows an id), else names on the slug grain —
+    the server resolves a slug and its display spelling to the same
+    capability, so they are not different identities. Mixed grains (id-only
+    scope under name-only identity) are never treated as a handoff — a
+    boundary is only declared when the identities are provably different."""
     if not trace.get_current_span().get_span_context().is_valid:
         return False
     active_id = get_value(attrs.AGENT_ID)
@@ -908,7 +973,7 @@ def _is_handoff(name: str | None, id: str | None) -> bool:
     if id and active_id:
         return str(id) != str(active_id)
     if name and active_name:
-        return str(name) != str(active_name)
+        return _identity_slug(str(name)) != _identity_slug(str(active_name))
     return False
 
 
@@ -968,10 +1033,17 @@ class _CapabilityScope:
 
 
 def capability(name: str | None = None, *, id: str | None = None) -> _CapabilityScope:
-    """Declare that all work inside belongs to the named capability.
+    """Declare that all work inside belongs to one capability.
+
+    ``id`` — the capability's UUID from the Console — is the identifier the
+    server resolves first and is stable through renames; pin it whenever you
+    have it. The positional ``name`` accepts the capability's slug (stable
+    through renames, recommended) or its display name (a mutable label the
+    server resolves through its alias table); it is safe to send alongside
+    ``id`` but never load-bearing when an id is present.
 
     Usable as a context manager (``with`` / ``async with``) or decorator.
-    Every span created inside carries ``overmind.agent.name`` / ``.id``; on
+    Every span created inside carries ``overmind.agent.id`` / ``.name``; on
     exit the outer identity is restored. Entering a *different* capability
     mid-trace is a handoff: the first span of the new scope is stamped
     ``overmind.unit_kind = "turn"`` so the platform opens a new scoring unit.
@@ -1361,6 +1433,7 @@ def _traced_call(
     span_type: SpanType,
     declared: Mapping[str, str],
     capability_name: str | None,
+    capability_id: str | None,
     capture: str,
     ignore: frozenset[str],
     format_input: Callable | None,
@@ -1369,7 +1442,7 @@ def _traced_call(
     """Shared body of the observe wrappers: capability scope, declared span
     attributes, input/output capture, lifecycle finalisation, cancellation
     flush."""
-    scope = _CapabilityScope(capability_name, None) if capability_name else nullcontext()
+    scope = _CapabilityScope(capability_name, capability_id) if capability_name or capability_id else nullcontext()
     try:
         with scope, get_tracer().start_as_current_span(name, attributes=declared) as otel_span:
             bound = {}
@@ -1411,6 +1484,7 @@ def observe(
     provenance: str | None = None,
     unit: str | None = None,
     capability: str | None = None,
+    capability_id: str | None = None,
     capture: str = "auto",
     ignore: Iterable[str] = (),
     format_input: Callable[[dict[str, Any]], Any] | None = None,
@@ -1432,10 +1506,12 @@ def observe(
             their natural class automatically.
         unit: ``"run"`` / ``"turn"`` scoring-unit marker; entry points are
             marked ``"run"`` automatically.
-        capability: Capability name to scope this span *and its children* to
-            (see :func:`capability`); a differing identity mid-trace marks a
-            handoff boundary. Stack ``@overmind.capability(name, id=...)``
-            instead when you need to pin the capability's UUID.
+        capability: Capability slug or display name to scope this span *and
+            its children* to (see :func:`capability`); a differing identity
+            mid-trace marks a handoff boundary.
+        capability_id: Capability UUID — the recommended identifier, stable
+            through renames; the server resolves it before any name. Send it
+            with or without ``capability``.
         capture: ``"auto"`` (scrubbed args/result), ``"none"`` (no payloads),
             or ``"messages"`` (normalise the ``messages`` argument and a
             list result into role/content chat evidence).
@@ -1461,6 +1537,7 @@ def observe(
             span_type=span_type,
             declared=_declared_attributes(span_type, provenance, unit) | code_identity_attributes(func),
             capability_name=capability,
+            capability_id=capability_id,
             capture=capture,
             ignore=ignore_set,
             format_input=format_input,

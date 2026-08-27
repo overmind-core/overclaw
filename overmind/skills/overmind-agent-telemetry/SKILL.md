@@ -63,8 +63,8 @@ Optional identity/config (all have env-var equivalents read by `init()`):
 | Env var | Purpose |
 | --- | --- |
 | `OVERMIND_SERVICE_NAME` | Service name on the traces |
-| `OVERMIND_AGENT_NAME` | Human-readable agent name |
-| `OVERMIND_AGENT_ID` | Agent UUID (preferred over name once registered) |
+| `OVERMIND_AGENT_ID` | Capability UUID from the Console — the identifier; stable through renames |
+| `OVERMIND_AGENT_NAME` | Optional display label (slug or name); advisory when an id is set |
 | `OVERMIND_ENVIRONMENT` | e.g. `production` (default `development`) |
 | `OVERMIND_API_URL` | Override the trace endpoint base URL |
 
@@ -179,9 +179,10 @@ with overmind.task("investment-debate", unit="turn"):
 Rules that matter:
 - `deliver()` runs **inside the unit that produced the deliverable**.
 - Internal fan-out/retries/loop bodies must **not** declare `unit`.
-- Multi-capability agents scope identity with `overmind.capability(name)`;
-  entering a different capability mid-trace is a handoff and opens a new unit
-  automatically.
+- Multi-capability agents scope identity with
+  `overmind.capability("slug-or-name", id=...)` — pin `id=` (the capability
+  UUID) whenever you have it; entering a different capability mid-trace is a
+  handoff and opens a new unit automatically.
 
 For LangGraph agents, `overmind.integrations.langgraph.bind()` does this
 declaratively — call it on the `StateGraph` after `add_node()`, before
@@ -223,7 +224,8 @@ def score(x): ...
 ```
 
 All decorators accept `capture=` (`"auto"` scrubbed args/result, `"none"`,
-`"messages"`), `ignore=` (argument names never captured), `capability=`, and
+`"messages"`), `ignore=` (argument names never captured), `capability=` /
+`capability_id=` (prefer the id — it survives renames), and
 `format_input=`/`format_output=` hooks. Captured payloads are scrubbed
 automatically: secret-named keys redacted, base64/data-URL blobs replaced,
 text kept in full.

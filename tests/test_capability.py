@@ -126,6 +126,28 @@ def test_same_capability_is_not_a_handoff(exporter):
     assert attrs.UNIT_KIND not in _by_name(exporter, "step").attributes
 
 
+def test_slug_and_display_name_are_the_same_identity(exporter):
+    def _run():
+        _seed_identity_context(None, "Browser Automation Agent", None)
+        with start_span("run-root"), capability("browser-automation-agent"):
+            with start_span("step"):
+                pass
+
+    _in_fresh_context(_run)
+    assert attrs.UNIT_KIND not in _by_name(exporter, "step").attributes
+
+
+def test_matching_ids_are_never_a_handoff_even_when_names_differ(exporter):
+    def _run():
+        _seed_identity_context("cap-1", "Old Name", None)
+        with start_span("run-root"), capability("New Name", id="cap-1"):
+            with start_span("step"):
+                pass
+
+    _in_fresh_context(_run)
+    assert attrs.UNIT_KIND not in _by_name(exporter, "step").attributes
+
+
 def test_scope_without_active_trace_stamps_no_turn(exporter):
     def _run():
         _seed_identity_context(None, "Outer", None)
@@ -218,6 +240,25 @@ def test_observe_capability_routes_through_capability_scope(exporter):
     assert span.attributes[attrs.AGENT_NAME] == "Inner"
     assert span.attributes[attrs.UNIT_KIND] == "turn"
     assert _by_name(exporter, "child").attributes[attrs.AGENT_NAME] == "Inner"
+
+
+def test_observe_capability_id_pins_uuid_and_marks_handoff(exporter):
+    @observe("delegate", capability_id="cap-2")
+    def delegate() -> None:
+        with start_span("child"):
+            pass
+
+    def _run():
+        _seed_identity_context("cap-1", "Outer", None)
+        with start_span("run-root"):
+            delegate()
+
+    _in_fresh_context(_run)
+    span = _by_name(exporter, "delegate")
+    assert span.attributes[attrs.AGENT_ID] == "cap-2"
+    assert attrs.AGENT_NAME not in span.attributes
+    assert span.attributes[attrs.UNIT_KIND] == "turn"
+    assert _by_name(exporter, "child").attributes[attrs.AGENT_ID] == "cap-2"
 
 
 def test_observe_same_capability_is_not_a_handoff(exporter):

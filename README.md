@@ -48,7 +48,8 @@ import overmind
 # safe to ship.
 overmind.init(
     service_name="my-agent",
-    agent_name="Support Triage",           # the capability declared in the Console
+    agent_id="6f1c...",                    # the capability's UUID from the Console — stable through renames
+    agent_name="Support Triage",           # optional display label; also resolves the slug or name
     providers="auto",                      # instrument every installed provider SDK
 )                                          # (or name them: providers=["openai", "anthropic"])
 
@@ -70,7 +71,7 @@ def call_model(messages: list[dict]) -> dict:
 
 That is the whole integration: no init guards (everything no-ops without a key), no hand-rolled scrubbing (captured payloads redact secret-named keys and base64 blobs automatically, text is kept in full), and no evidence bookkeeping (`deliver()` grounds itself in the environment-provenance spans of the run — pass `grounded_by=[...]` to override). On `KeyboardInterrupt`/cancellation the entry-point span flushes before re-raising, so interrupted runs still land.
 
-Decorators: `entry_point`, `workflow`, `tool`, `retrieval`, and the general `observe` (sync and async). All accept `capture=` (`"auto"` scrubbed args/result, `"none"`, `"messages"`), `ignore=` (argument names never captured), `format_input=` / `format_output=` hooks for custom payload shapes, `provenance=`, `unit=`, and `capability=`. `start_span(...)` is the context-manager companion; `set_tag`, `set_user`, `set_conversation_id`, and `capture_exception` annotate the current span Sentry-style.
+Decorators: `entry_point`, `workflow`, `tool`, `retrieval`, and the general `observe` (sync and async). All accept `capture=` (`"auto"` scrubbed args/result, `"none"`, `"messages"`), `ignore=` (argument names never captured), `format_input=` / `format_output=` hooks for custom payload shapes, `provenance=`, `unit=`, and `capability=` / `capability_id=`. `start_span(...)` is the context-manager companion; `set_tag`, `set_user`, `set_conversation_id`, and `capture_exception` annotate the current span Sentry-style.
 
 The span name may be a callable receiving the call's arguments — for polymorphic dispatchers, where one function executes named actions and each invocation must emit its own tool span (`tool.name` follows the resolved name):
 
@@ -85,10 +86,10 @@ Spans declare evidence provenance for the platform's evaluation judges: tool and
 
 [`docs/carving-runs-into-units.md`](docs/carving-runs-into-units.md) is the integrator's guide to all of this — run vs. turn, deliver placement, handoffs, and the anchor-decoration rule, with a worked LangGraph example. The wire-level attribute contract is **pinned** in [`docs/tracing-attributes.md`](docs/tracing-attributes.md); nothing there is renamed. When traces don't show up, work through [`docs/troubleshooting.md`](docs/troubleshooting.md) — `init(debug=True)` prints the endpoint, identity, enabled instrumentors, and export mode.
 
-Multi-capability agents scope identity with `overmind.capability` — a context manager or decorator that stamps `overmind.agent.name` / `.id` on every span created inside and restores the outer identity on exit (`capability="..."` on any decorator is shorthand for the name-only scope):
+Multi-capability agents scope identity with `overmind.capability` — a context manager or decorator that stamps `overmind.agent.id` / `.name` on every span created inside and restores the outer identity on exit. The `id` (the capability's UUID from the Console) is the identifier the server resolves first and is stable through renames; the positional argument takes the slug or display name, safe to send alongside but never load-bearing when an id is present (`capability_id=` / `capability=` on any decorator are the same scope):
 
 ```python
-with overmind.capability("DOM Element Locator", id="..."):  # id optional
+with overmind.capability("dom-element-locator", id="6f1c..."):  # pin the UUID when you have it
     locate(prompt)  # every span here belongs to the locator capability
 ```
 
@@ -101,7 +102,7 @@ with overmind.task("investment-debate", unit="turn"):
     ...  # spans here nest under the behaviour's turn span
 ```
 
-`overmind.run(...)` brackets a whole agent run in one scope — capability identity (args, else `OVERMIND_AGENT_NAME` / `OVERMIND_AGENT_ID`), the entry-point run span, intent, conversation id, tags, error status, and a flush on exit. The yielded handle delivers the terminal payload; call it inside the unit that produced it:
+`overmind.run(...)` brackets a whole agent run in one scope — capability identity (`capability_id=` and/or `capability=`; when neither is given, the `OVERMIND_AGENT_ID` / `OVERMIND_AGENT_NAME` env vars), the entry-point run span, intent, conversation id, tags, error status, and a flush on exit. The yielded handle delivers the terminal payload; call it inside the unit that produced it:
 
 ```python
 with overmind.run("trading-run", intent=f"Analyze {ticker}", conversation_id=f"{ticker}:{date}") as run:
