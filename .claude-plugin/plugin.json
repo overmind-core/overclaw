@@ -1,0 +1,22 @@
+{
+  "name": "overmind",
+  "description": "Overmind skills — agent observability, tracing, and platform workflows for coding agents.",
+  "version": "1.2.0",
+  "author": {
+    "name": "Overmind",
+    "email": "hello@overmindlab.ai"
+  },
+  "homepage": "https://overmindlab.ai",
+  "repository": "https://github.com/overmind-core/overmind",
+  "license": "MIT",
+  "keywords": [
+    "overmind",
+    "llm",
+    "observability",
+    "tracing",
+    "agent",
+    "optimization",
+    "mcp"
+  ],
+  "mcpServers": "./mcp.json"
+}

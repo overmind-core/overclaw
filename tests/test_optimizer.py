@@ -9,17 +9,19 @@ git repo.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import threading
 import time
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from overmind.optimizer import (
     OptimizerAPI,
     _new_traceparent,
     _runtime_metadata,
     _start_heartbeat_thread,
+    poll_once,
     run_command,
 )
 
@@ -35,6 +37,17 @@ def test_runtime_metadata_reports_python_and_uv():
     else:
         assert meta["uv.path"] is None
         assert meta["uv.version"] is None
+
+
+def test_runtime_metadata_reports_extra_toolchains():
+    meta = _runtime_metadata()
+    for tool in ("node", "npx", "pnpm", "bun", "go", "cargo", "rustc"):
+        assert isinstance(meta[f"{tool}.exists"], bool)
+        if meta[f"{tool}.exists"]:
+            assert meta[f"{tool}.path"]
+        else:
+            assert meta[f"{tool}.path"] is None
+            assert meta[f"{tool}.version"] is None
 
 
 def test_traceparent_shape():
@@ -55,6 +68,49 @@ def test_run_command_failure_reports_exit_code_and_stderr():
     assert not ok and result["exit_code"] == 3 and "boom" in error, (ok, result, error)
 
 
+def test_run_command_server_model_wins_and_local_key_redacted(monkeypatch):
+    # The server sends only OPENROUTER_MODEL per command (never a key), and an
+    # explicit command_env value wins over the daemon's own env. The inherited
+    # local key must never appear in captured output.
+    monkeypatch.setenv("OPENROUTER_MODEL", "local-model")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "local-secret")
+    ok, result, error = run_command({
+        "command": 'printf \'%s|%s\' "$OPENROUTER_MODEL" "$OPENROUTER_API_KEY"',
+        "timeout": 10,
+        "environment": {"OPENROUTER_MODEL": "openai/gpt-5"},
+    })
+    assert ok, (result, error)
+    assert result["output"] == "openai/gpt-5|[REDACTED]"
+    assert "local-secret" not in result["output"]
+
+
+def test_run_command_redacts_local_key_from_stderr_and_debug_logs(caplog, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "local-secret")
+    with caplog.at_level(logging.DEBUG, logger="optimizer.client"):
+        ok, result, error = run_command({
+            "command": 'printf \'model=%s key=%s\\n\' "$OPENROUTER_MODEL" "$OPENROUTER_API_KEY" >&2; exit 1',
+            "timeout": 10,
+            "environment": {"OPENROUTER_MODEL": "openai/gpt-5"},
+        })
+    assert not ok
+    assert result["output"] == ""
+    assert error == "model=openai/gpt-5 key=[REDACTED]\n"
+    assert "local-secret" not in caplog.text
+    assert "openai/gpt-5" in caplog.text
+
+
+def test_run_command_local_env_keeps_local_key(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "local-secret")
+    ok, result, error = run_command({
+        "command": 'printf \'%s|%s\' "$OPENROUTER_MODEL" "$OPENROUTER_API_KEY"',
+        "timeout": 10,
+        "environment": {"OPENROUTER_MODEL": "openai/gpt-5"},
+    })
+    assert ok, (result, error)
+    assert result["output"] == "openai/gpt-5|[REDACTED]"
+    assert "local-secret" not in result["output"]
+
+
 # ── OptimizerAPI.poll sends lease flag ───────────────────────────────────────
 
 
@@ -65,8 +121,7 @@ def _make_api(responses: list):
     mock_session = MagicMock()
     # Each call to session.post returns the next response in the list.
     mock_session.post.side_effect = [
-        SimpleNamespace(raise_for_status=lambda: None, json=lambda: r)
-        for r in responses
+        SimpleNamespace(raise_for_status=lambda: None, json=lambda r=r: r) for r in responses
     ]
     api.session = mock_session
     api.base_url = "http://test"
@@ -94,6 +149,15 @@ def test_poll_default_lease_is_true():
     api.poll("sess-1")
     _, kwargs = api.session.post.call_args
     assert kwargs["json"]["lease"] is True
+
+
+def test_register_payload_uses_package_version():
+    from overmind import __version__
+
+    api = _make_api([{"id": "sess-1"}])
+    assert api.register() == "sess-1"
+    _, kwargs = api.session.post.call_args
+    assert kwargs["json"]["cli_version"] == f"optimizer/{__version__}"
 
 
 # ── heartbeat thread calls poll(lease=False) while main loop is busy ─────────
@@ -207,3 +271,31 @@ def test_setup_candidate_branch_idempotent_on_restart(tmp_path):
     _setup_candidate_branch(base_ref, "cand-r", patch, tmp_path)
     content = (tmp_path / "agent.py").read_text()
     assert "restarted" in content, content
+
+
+def test_optimizer_base_ref_strips_candidate_commit_after_restart(tmp_path):
+    from overmind.optimizer import _optimizer_base_ref, _setup_candidate_branch
+
+    _init_git_repo(tmp_path)
+    main_sha = subprocess.run(
+        ["git", "rev-parse", "main"], cwd=tmp_path, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    patch = _make_patch("PROMPT = 'v0'", "PROMPT = 'candidate-a'")
+    _setup_candidate_branch("main", "candidate-a", patch, tmp_path)
+
+    assert _optimizer_base_ref(tmp_path) == main_sha
+
+
+def test_poll_once_runs_smoke_from_base_after_candidate_checkout(tmp_path):
+    from overmind.optimizer import _setup_candidate_branch
+
+    _init_git_repo(tmp_path)
+    patch = _make_patch("PROMPT = 'v0'", "PROMPT = 'candidate-a'")
+    _setup_candidate_branch("main", "candidate-a", patch, tmp_path)
+
+    api = MagicMock()
+    api.poll.return_value = [{"id": "smoke", "candidate_id": "", "command": "cat agent.py", "timeout": 10}]
+
+    assert poll_once(api, "session", tmp_path, base_ref="main") == 1
+    assert api.submit_result.call_args.kwargs["success"] is True
+    assert api.submit_result.call_args.kwargs["result"]["output"] == "PROMPT = 'v0'\n"
