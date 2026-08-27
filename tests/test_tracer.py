@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from opentelemetry.trace import StatusCode
 
-from overmind.tracing import observe
+from overmind.tracing import SpanType, observe, observe_safe
 
 
 @pytest.fixture(autouse=True)
@@ -134,7 +134,7 @@ def test_observe_handles_exceptions(mock_tracer):
         # Check that exception was recorded
         mock_span.record_exception.assert_called_once()
         # Check that error status was set
-        status_calls = [c for c in mock_span.set_status.call_args_list]
+        status_calls = list(mock_span.set_status.call_args_list)
         assert len(status_calls) > 0
         # Verify error status
         error_call = status_calls[-1]
@@ -180,7 +180,7 @@ def test_observe_async_with_exception(mock_tracer):
             asyncio.run(async_fail())
 
         mock_span.record_exception.assert_called_once()
-        status_calls = [c for c in mock_span.set_status.call_args_list]
+        status_calls = list(mock_span.set_status.call_args_list)
         assert status_calls[-1][0][0].status_code == StatusCode.ERROR
 
 
@@ -364,3 +364,92 @@ def test_observe_async_class_method(mock_tracer):
 
         assert result == 30
         mock_tracer_obj.start_as_current_span.assert_called_once()
+
+
+def test_observe_safe_does_not_capture_io(mock_tracer):
+    """observe_safe never captures inputs/outputs."""
+
+    mock_tracer_obj, mock_span = mock_tracer
+
+    with patch("overmind.tracing.get_tracer", return_value=mock_tracer_obj):
+
+        @observe_safe()
+        def secure_func(api_key: str, payload: dict):
+            return {"ok": True}
+
+        result = secure_func("sk-secret", {"a": 1})
+
+        assert result == {"ok": True}
+        mock_tracer_obj.start_as_current_span.assert_called_once()
+        assert mock_tracer_obj.start_as_current_span.call_args.args[0].endswith("secure_func")
+        assert mock_span.set_status.call_args[0][0].status_code == StatusCode.OK
+        io_calls = [c for c in mock_span.set_attribute.call_args_list if "inputs" in str(c) or "outputs" in str(c)]
+        assert io_calls == []
+
+
+def test_observe_safe_async(mock_tracer):
+    """observe_safe supports async functions and spans the real execution."""
+    import asyncio
+
+    mock_tracer_obj, mock_span = mock_tracer
+
+    with patch("overmind.tracing.get_tracer", return_value=mock_tracer_obj):
+
+        @observe_safe(span_name="secure_async")
+        async def async_fetch(token: str):
+            await asyncio.sleep(0.01)
+            return "data"
+
+        assert asyncio.run(async_fetch("t0ken")) == "data"
+        assert mock_tracer_obj.start_as_current_span.call_args.args == ("secure_async",)
+        assert mock_span.set_status.call_args[0][0].status_code == StatusCode.OK
+
+
+def test_observe_safe_async_exception_is_recorded(mock_tracer):
+    """Async exceptions mark the span failed (regression: the old sync-only
+    wrapper finalised the span before the coroutine ran)."""
+    import asyncio
+
+    mock_tracer_obj, mock_span = mock_tracer
+
+    with patch("overmind.tracing.get_tracer", return_value=mock_tracer_obj):
+
+        @observe_safe()
+        async def async_fail(token: str):
+            await asyncio.sleep(0.01)
+            raise RuntimeError("secure failure")
+
+        with pytest.raises(RuntimeError, match="secure failure"):
+            asyncio.run(async_fail("t0ken"))
+
+        mock_span.record_exception.assert_called_once()
+        status_calls = list(mock_span.set_status.call_args_list)
+        assert status_calls[-1][0][0].status_code == StatusCode.ERROR
+
+
+def test_observe_safe_tool_metadata(mock_tracer):
+    """observe_safe stamps tool metadata for SpanType.TOOL spans."""
+    from overmind.attrs import TOOL_ARG_KEYS, TOOL_NAME
+
+    mock_tracer_obj, mock_span = mock_tracer
+    # Tool spans are environment evidence; a mock span has no real context to remember.
+    mock_span.get_span_context.return_value.is_valid = False
+
+    with patch("overmind.tracing.get_tracer", return_value=mock_tracer_obj):
+
+        @observe_safe(type=SpanType.TOOL)
+        def my_tool(secret: str, query: str):
+            return "ok"
+
+        my_tool("hunter2", "find things")
+
+        set_attrs = {c[0][0]: c[0][1] for c in mock_span.set_attribute.call_args_list}
+        assert set_attrs.get(TOOL_NAME) == "my_tool"
+        assert set_attrs.get(TOOL_ARG_KEYS) == ["secret", "query"]
+
+
+def test_observe_safe_exported_from_package():
+    """observe_safe is importable from the package root."""
+    from overmind import observe_safe
+
+    assert callable(observe_safe)

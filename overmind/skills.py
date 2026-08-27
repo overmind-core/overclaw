@@ -21,7 +21,23 @@ from overmind.skills_db import Skill, skills
 
 console = Console()
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
+# Package dir (`.../site-packages/overmind` or `.../repo/overmind`). Skills live at
+# the repo-root `skills/` for agent installers; the wheel force-includes that
+# tree at `overmind/skills/` so sync still works from an installed package.
+_PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _skill_src(slug: str) -> str | None:
+    """First candidate dir containing the slug: packaged wheel tree, then repo root.
+
+    A dev checkout has unrelated prompt files at ``overmind/skills/``, so the
+    packaged dir existing is not enough — it must contain the skill itself.
+    """
+    candidates = (
+        os.path.join(_PACKAGE_DIR, "skills", slug),
+        os.path.join(os.path.dirname(_PACKAGE_DIR), "skills", slug),
+    )
+    return next((p for p in candidates if os.path.isdir(p)), None)
 
 
 skills_app = typer.Typer(help="Manage Overmind agent skills.")
@@ -50,7 +66,7 @@ def sync_skills(
     ide: Annotated[str, typer.Option(..., help="IDE to use")] = "cursor",  # ide: cursor, claude code etc
 ):
     for name in names:
-        skill = next((s for s in skills if s.name == name), None)
+        skill = next((s for s in skills if s.name == name or s.slug == name), None)
         if skill:
             sync_skill(skill, ide)
         else:
@@ -58,24 +74,26 @@ def sync_skills(
 
 
 def sync_skill(skill: Skill, ide: str):
-    """Copy a skill's SKILL.md into the destination directory."""
-    src = os.path.join(current_dir, "skills", skill.slug, "SKILL.md")
-    dest_dir = get_destination_dir(ide)
-    dest_path = os.path.join(dest_dir, skill.slug, "SKILL.md")
-
-    if os.path.exists(dest_path):
-        logging.info(f"{dest_path} already exists, skipping copy.")
-        return
-    os.makedirs(dest_dir, exist_ok=True)
-    shutil.copy2(src, dest_path)
-    logging.info(f"Copied {src} to {dest_path}")
+    """Copy the whole skill directory (SKILL.md + references/) into the destination."""
+    src = _skill_src(skill.slug)
+    if src is None:
+        raise FileNotFoundError(f"Skill directory not found for: {skill.slug}")
+    dest = os.path.join(get_destination_dir(ide), "skills", skill.slug)
+    shutil.copytree(src, dest, dirs_exist_ok=True)
+    logging.info(f"Copied {src} to {dest}")
 
 
 def get_destination_dir(ide: str):
     if ide == "cursor":
-        return ".cursor/skills"
+        return ".cursor"
 
-    if ide == "claude":
-        return ".claude/skills"
+    if ide == "claude_code" or ide == "claude" or ide == "claude-code":
+        return ".claude"
 
-    raise ValueError(f"Invalid IDE: {ide}")
+    if ide == "opencode":
+        return ".opencode"
+
+    if ide == "codex":
+        return ".agents"
+
+    raise typer.BadParameter(f"use cursor, claude_code, opencode or codex, got: {ide}", param_hint="--ide")

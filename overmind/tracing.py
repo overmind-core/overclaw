@@ -1696,6 +1696,17 @@ def deliver(
         _capture_output(otel_span, payload)
 
 
+def observe_safe(
+    span_name: str | Callable[..., str] | None = None,
+    type: SpanType | str = SpanType.FUNCTION,
+    **kwargs: Any,
+) -> Callable[[F], F]:
+    """:func:`observe` with ``capture="none"``: never records arguments or
+    return values. Manual escape hatch for code that handles credentials;
+    prefer masking values before they reach traced functions."""
+    return observe(span_name, type, capture="none", **kwargs)
+
+
 def force_flush_traces(timeout_millis: int = 1000) -> None:
     """Best-effort exporter flush before exit; no-op if the provider
     lacks ``force_flush``. Ends any still-open turn spans first so a run
