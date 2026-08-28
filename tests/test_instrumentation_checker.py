@@ -405,7 +405,7 @@ def test_cli_smoke_fails_when_a_script_fails(tmp_path):
     assert result.exit_code == 1
 
 
-def test_cli_verify_gates_on_declared_bindings(tmp_path, monkeypatch):
+def test_cli_verify_gates_on_bound_units(tmp_path, monkeypatch):
     from overmind import __main__ as cli
 
     spans = tmp_path / "spans.jsonl"
@@ -426,7 +426,14 @@ def test_cli_verify_gates_on_declared_bindings(tmp_path, monkeypatch):
     monkeypatch.setattr(
         cli,
         "_mcp_call",
-        lambda *args, **kwargs: {"tasks": [{"binding_source": "bound_structurally"}], "errors": []},
+        lambda *args, **kwargs: {"tasks": [{"binding_source": "anchor_join"}], "errors": []},
+    )
+    assert CliRunner().invoke(app, ["instrumentation", "verify", "--spans-file", str(spans)]).exit_code == 0
+
+    monkeypatch.setattr(
+        cli,
+        "_mcp_call",
+        lambda *args, **kwargs: {"tasks": [{"binding_source": "unbound"}], "errors": []},
     )
     assert CliRunner().invoke(app, ["instrumentation", "verify", "--spans-file", str(spans)]).exit_code == 1
 
