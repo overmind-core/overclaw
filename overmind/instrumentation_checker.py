@@ -157,8 +157,9 @@ def _normalise_placement(raw: Any) -> tuple[_Placement | None, str | None]:
     if key is None:
         key = _decorator_key(_first(raw, "task_decorator", "decorator"))
     key_from_value = _first(task, "key_from", "dynamic_key_from")
-    # A fixed placement may still carry ``allowed_keys: null`` from the server.
-    dynamic = key_from_value is not None or task.get("allowed_keys") is not None
+    # A fixed placement still carries ``allowed_keys: null`` or ``[]`` from the
+    # server; only a non-empty list marks a shared (dynamic) entry.
+    dynamic = key_from_value is not None or bool(task.get("allowed_keys"))
     mode = str(_first(task, "mode", "kind", "placement", "placement_mode") or "").lower()
     dynamic = dynamic or "dynamic" in mode or mode in {"context", "context_manager"}
     if dynamic:

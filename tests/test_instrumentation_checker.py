@@ -536,3 +536,22 @@ def test_cli_help_documents_every_option_of_each_command():
         rendered = result.stdout.replace("\n", " ")
         for option in options:
             assert option in rendered, (command, option)
+
+
+def test_fixed_placement_with_empty_allowed_keys_stays_fixed(tmp_path):
+    (tmp_path / "app.py").write_text(
+        "import overmind\n\n\n@overmind.entry_point('run_agent')\ndef main():\n    pass\n"
+    )
+    plan = {
+        "placements": [
+            {
+                "key": "run_agent",
+                "placement_mode": "fixed",
+                "allowed_keys": [],
+                "target": {"file": "app.py", "qualname": "main"},
+                "required_task_decorator": "@overmind.entry_point('run_agent')",
+            }
+        ]
+    }
+    result = check_plan(plan, root=str(tmp_path))
+    assert result["ok"], [c for c in result["checks"] if c["status"] == "fail"]
