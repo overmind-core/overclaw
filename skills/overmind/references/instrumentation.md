@@ -262,6 +262,9 @@ edit / validate) and report the table at the end.
    join is the entry/interior code identity (`@overmind.entry_point` and the
    observe-family decorators stamp it) matched against the contract anchors.
    Turn-grain units bind `declared` via `with overmind.task(key, unit="turn")`.
+   Each task carries `spans_seen` — name, behaviour_key, unit_kind and
+   qualname per member span, exactly as the binder read them. Diagnose an
+   `unbound` verdict from that block; never dump span files locally.
    A task with
    `capability: null` means the spans carry no `overmind.agent.id` — fix the
    identity wiring (see the fan-out block); as a stopgap for a
