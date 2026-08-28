@@ -55,8 +55,64 @@ Follow these for ALL Overmind MCP work:
    5b). For repo-wide tasks, run the systematic one-at-a-time pass (Step 5c)
    — never a giant all-agents-at-once edit.
 
+## Instrumentation fast path (digest)
+
+The complete command sequence; details in
+[references/instrumentation.md](references/instrumentation.md) — read it once,
+not per step. Target: under 10 minutes for Tier 0 + Tier 1, Tier 2 afterward
+via the punch list.
+
+1. `list_behaviours` per capability. Populated registry → placements come from
+   `get_instrumentation_context`; empty (or no such tool) → step 2.
+1. `overmind instrumentation plan --root . --out plan.json` — scans AND posts
+   to the server's planner in one command; writes plan.json and prints a
+   summary with `ambiguous` + `dropped` (report dropped). Never paste scan or
+   plan JSON into a tool call yourself.
+1. One subagent per placement **file**, all at once: apply
+   `required_task_decorator` at `target.qualname`, add `target.import_line`,
+   wire `required_identity`. The lead keeps `ambiguous` (the dynamic-key
+   judgment calls).
+1. `overmind instrumentation check --plan-file plan.json`
+1. Smoke scripts per task from `smoke_hint`, run under `OVERMIND_SMOKE=1` +
+   `OVERMIND_TRACE_FILE=spans.jsonl` (in-repo paths; no API key needed; never
+   the real app).
+1. `overmind instrumentation verify --spans-file spans.jsonl` — posts the
+   spans to the server binder for you (never inline a large span array into a
+   tool call). Gate: every task `binding_source == "declared"`; exit 0 is the
+   pass signal.
+1. Act on Tier 1 punch-list items now; park Tier 2 for the ratchet loop.
+1. Report the per-stage timing table.
+
+API signatures (verbatim — do NOT read the SDK source for these):
+
+```python
+overmind.init(overmind_api_key=None, *, service_name=None, environment=None,
+              providers=None,   # [] = all; "auto" = all installed; None = none
+              overmind_base_url=None, agent_id=None, agent_name=None,
+              project_id=None, redact_keys=None, export_orphan_spans=False,
+              debug=False) -> bool
+overmind.run(name=None, *, capability=None, capability_id=None, intent=None,
+             conversation_id=None, tags=None)   # context manager or decorator
+overmind.task(key, *, unit=None)                # context manager or decorator
+overmind.capability(name=None, *, id=None)      # context manager or decorator
+@overmind.tool(name=None) / @overmind.workflow(name=None) / @overmind.retrieval(name=None)
+overmind.force_flush_traces()
+```
+
+`init(...)` must run before the traced entry executes. Identity is
+`capability_id` (the capability UUID) — pass it to `run()`, or to
+`capability(id=...)`, or as `init(agent_id=...)` for the process-wide default;
+`providers=[]` plus that id is the whole identity story. `task()` takes a
+plain string key, so dynamic dispatch computes it first
+(`with overmind.task(route_for(request)):`). Nothing else in the SDK needs
+reading for this workflow.
+
 ## Use-case references
 
+- Instrumenting an application from a server-minted placement plan (fast path:
+  `plan` → subagent fan-out → `check` → smoke → `verify_instrumentation_spans`,
+  then the Tier 2 ratchet):
+  [references/instrumentation.md](references/instrumentation.md)
 - Resolving / updating agents, prompts, eval spec, and GitHub analyze:
   [references/agents.md](references/agents.md)
 - Telemetry (add tracing, inspect traces / sessions / health, connectors):
