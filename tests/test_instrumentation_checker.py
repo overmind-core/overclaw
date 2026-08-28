@@ -517,7 +517,7 @@ def test_cli_version_prints_the_sdk_version():
 def test_cli_help_lists_every_instrumentation_command():
     result = CliRunner().invoke(app, ["instrumentation", "--help"])
     assert result.exit_code == 0
-    for command in ("scan", "plan", "check", "smoke", "verify"):
+    for command in ("scan", "plan", "check", "smoke", "verify", "gate"):
         assert command in result.stdout
 
 
@@ -528,6 +528,7 @@ def test_cli_help_documents_every_option_of_each_command():
         "check": {"--plan-file", "--root", "--format"},
         "smoke": {"--plan-file", "--out", "--root"},
         "verify": {"--spans-file", "--capability", "--api-url", "--api-key"},
+        "gate": {"--plan-file", "--root", "--spans-file", "--capability", "--api-url", "--api-key"},
     }
     for command, options in expected.items():
         result = CliRunner().invoke(app, ["instrumentation", command, "--help"])
@@ -539,9 +540,7 @@ def test_cli_help_documents_every_option_of_each_command():
 
 
 def test_fixed_placement_with_empty_allowed_keys_stays_fixed(tmp_path):
-    (tmp_path / "app.py").write_text(
-        "import overmind\n\n\n@overmind.entry_point('run_agent')\ndef main():\n    pass\n"
-    )
+    (tmp_path / "app.py").write_text("import overmind\n\n\n@overmind.entry_point('run_agent')\ndef main():\n    pass\n")
     plan = {
         "placements": [
             {
@@ -555,3 +554,172 @@ def test_fixed_placement_with_empty_allowed_keys_stays_fixed(tmp_path):
     }
     result = check_plan(plan, root=str(tmp_path))
     assert result["ok"], [c for c in result["checks"] if c["status"] == "fail"]
+
+
+def _plan_smoke_placement(key="triage_ticket", qualname="handle", **extra):
+    return {
+        "key": key,
+        "placement_mode": "fixed",
+        "target": {"file": "app.py", "qualname": qualname, "module": "app", "import_line": "import overmind"},
+        "required_task_decorator": f"@overmind.task('{key}')",
+        "smoke_hint": "call the entry with a synthetic ticket",
+        **extra,
+    }
+
+
+def _run_plan(tmp_path, monkeypatch, placements):
+    from overmind import __main__ as cli
+
+    monkeypatch.setattr(cli, "_mcp_call", lambda *args, **kwargs: {"placements": placements})
+    plan = tmp_path / "plan.json"
+    result = CliRunner().invoke(
+        app,
+        [
+            "instrumentation",
+            "plan",
+            "--root",
+            str(tmp_path),
+            "--out",
+            str(plan),
+            "--candidates-out",
+            str(tmp_path / "candidates.json"),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    return result, plan
+
+
+def test_cli_plan_scaffolds_a_smoke_script_per_placement(tmp_path, monkeypatch):
+    result, plan = _run_plan(tmp_path, monkeypatch, [_plan_smoke_placement(key="Triage Ticket!")])
+
+    scaffold = tmp_path / "smoke_triage_ticket_.py"
+    assert scaffold.exists()
+    body = scaffold.read_text()
+    assert "from app import handle" in body
+    assert "handle(...)  # TODO: synthetic args" in body
+    assert "call the entry with a synthetic ticket" in body
+    assert json.loads(plan.read_text())["placements"][0]["smoke_script"] == "smoke_triage_ticket_.py"
+    assert "smoke_triage_ticket_.py" in result.stdout
+
+
+def test_cli_plan_scaffold_instantiates_a_method_target(tmp_path, monkeypatch):
+    _run_plan(tmp_path, monkeypatch, [_plan_smoke_placement(qualname="Agent.run")])
+
+    body = (tmp_path / "smoke_triage_ticket.py").read_text()
+    assert "from app import Agent" in body
+    assert "instance = Agent()  # TODO: constructor args" in body
+    assert "instance.run(...)  # TODO: synthetic args" in body
+
+
+def test_cli_plan_never_overwrites_an_existing_smoke_script(tmp_path, monkeypatch):
+    existing = tmp_path / "smoke_triage_ticket.py"
+    existing.write_text("# filled in by the agent\n")
+
+    result, plan = _run_plan(tmp_path, monkeypatch, [_plan_smoke_placement()])
+
+    assert existing.read_text() == "# filled in by the agent\n"
+    assert json.loads(plan.read_text())["placements"][0]["smoke_script"] == "smoke_triage_ticket.py"
+    assert json.loads(result.stdout)["smoke_scaffolds"] == []
+
+
+def test_cli_plan_skips_scaffolds_without_a_module_target(tmp_path, monkeypatch):
+    placement = _plan_smoke_placement()
+    placement["target"] = {"file": "app.py", "qualname": "handle"}
+
+    result, plan = _run_plan(tmp_path, monkeypatch, [placement])
+
+    assert not list(tmp_path.glob("smoke_*.py"))
+    assert "smoke_script" not in json.loads(plan.read_text())["placements"][0]
+    assert json.loads(result.stdout)["smoke_scaffolds"] == []
+
+
+def _gate_repo(tmp_path, *, key="triage_ticket", smoke_body="pass\n"):
+    (tmp_path / "app.py").write_text(f"import overmind\n\n\n@overmind.task('{key}')\ndef handle():\n    pass\n")
+    (tmp_path / "smoke_triage_ticket.py").write_text(smoke_body)
+    plan = tmp_path / "plan.json"
+    plan.write_text(json.dumps({"placements": [_plan_smoke_placement(key=key, smoke_script="smoke_triage_ticket.py")]}))
+    return plan
+
+
+def test_cli_gate_runs_check_smoke_and_verify_in_one_pass(tmp_path, monkeypatch):
+    from overmind import __main__ as cli
+
+    plan = _gate_repo(
+        tmp_path,
+        smoke_body=(
+            "import json, os, pathlib\n"
+            "pathlib.Path(os.environ['OVERMIND_TRACE_FILE']).write_text(json.dumps({'span_id': 'a'}) + '\\n')\n"
+        ),
+    )
+    sent: dict = {}
+
+    def fake_call(api_url, api_key, tool, arguments, timeout):
+        sent.update(tool=tool, arguments=arguments)
+        return {"tasks": [{"behaviour_key": "triage_ticket", "binding_source": "declared"}], "errors": []}
+
+    monkeypatch.setattr(cli, "_mcp_call", fake_call)
+    result = CliRunner().invoke(app, ["instrumentation", "gate", "--plan-file", str(plan), "--root", str(tmp_path)])
+
+    assert result.exit_code == 0, result.stdout
+    assert json.loads(result.stdout) == {
+        "check": {"ok": True, "failed": 0},
+        "smoke": {"ran": 1, "failed": 0},
+        "verify": {"tasks": 1, "unbound": 0},
+    }
+    assert sent["tool"] == "verify_instrumentation_spans"
+    assert sent["arguments"]["spans"] == [{"span_id": "a"}]
+    assert (tmp_path / "spans.jsonl").exists()
+
+
+def test_cli_gate_stops_at_a_failing_check(tmp_path, monkeypatch):
+    from overmind import __main__ as cli
+
+    plan = _gate_repo(tmp_path)
+    (tmp_path / "app.py").write_text("import overmind\n\n\ndef handle():\n    pass\n")
+    calls = []
+    monkeypatch.setattr(cli, "_mcp_call", lambda *args, **kwargs: calls.append(args) or {})
+
+    result = CliRunner().invoke(app, ["instrumentation", "gate", "--plan-file", str(plan), "--root", str(tmp_path)])
+
+    assert result.exit_code == 1
+    summary = json.loads(result.stdout)
+    assert summary["check"]["ok"] is False
+    assert summary["check"]["failed"] >= 1
+    assert "smoke" not in summary and "verify" not in summary
+    assert calls == []
+
+
+def test_cli_gate_fails_on_an_unbound_task(tmp_path, monkeypatch):
+    from overmind import __main__ as cli
+
+    plan = _gate_repo(
+        tmp_path,
+        smoke_body=(
+            "import json, os, pathlib\n"
+            "pathlib.Path(os.environ['OVERMIND_TRACE_FILE']).write_text(json.dumps({'span_id': 'a'}) + '\\n')\n"
+        ),
+    )
+    monkeypatch.setattr(
+        cli, "_mcp_call", lambda *args, **kwargs: {"tasks": [{"binding_source": "unbound"}], "errors": []}
+    )
+
+    result = CliRunner().invoke(app, ["instrumentation", "gate", "--plan-file", str(plan), "--root", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["verify"] == {"tasks": 1, "unbound": 1}
+
+
+def test_cli_gate_fails_when_a_smoke_script_fails_without_verifying(tmp_path, monkeypatch):
+    from overmind import __main__ as cli
+
+    plan = _gate_repo(tmp_path, smoke_body="raise SystemExit(3)\n")
+    calls = []
+    monkeypatch.setattr(cli, "_mcp_call", lambda *args, **kwargs: calls.append(args) or {})
+
+    result = CliRunner().invoke(app, ["instrumentation", "gate", "--plan-file", str(plan), "--root", str(tmp_path)])
+
+    assert result.exit_code == 1
+    summary = json.loads(result.stdout)
+    assert summary["smoke"] == {"ran": 1, "failed": 1}
+    assert "verify" not in summary
+    assert calls == []

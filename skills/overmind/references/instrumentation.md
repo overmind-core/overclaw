@@ -121,9 +121,10 @@ Call `list_behaviours` for each capability before anything else.
 - **Registry populated** (behaviours exist — the repo was deep-scanned): skip
   the scan and `plan_instrumentation`. `get_instrumentation_context` per
   capability is the placement source; its `placements` follow the same schema.
-  Everything else below still applies: parallel fan-out per file, static gate,
-  smoke run, `verify_instrumentation_spans`. Never run the real app on this
-  route either.
+  Everything else below still applies: parallel fan-out per file, then
+  `overmind instrumentation gate`. Smoke scaffolds are a `plan` side effect, so
+  on this route write the smoke scripts yourself. Never run the real app on
+  this route either.
 - **Registry empty** (no behaviours), or neither tool exposed by the MCP
   server: run the full fast path below.
 
@@ -145,6 +146,9 @@ Constraints for both routes:
   bound. Tier 2 comes from the punch list, after the gate.
 - Instrument every capability in one session — fan out across all of them at
   once, not one capability at a time.
+- Trust the plan. A placement's `file`, `qualname` and `lineno` are
+  scan-verified. Read the target function only — never re-read the module or
+  re-explore the repo before editing.
 
 Invoke the CLI as the installed binary (`overmind …` on PATH or
 `.venv/bin/overmind …`), never through `uv run` / `poetry run`: those resync
@@ -186,12 +190,19 @@ edit / validate) and report the table at the end.
    `capability_id`, `plan_id`, `why`, `tier`, `smoke_hint`. Read `dropped` and
    report it to the user — do not discard it silently.
 
+   The command also writes a `smoke_<key>.py` skeleton in the repo root for
+   every placement with a `smoke_hint` and a `module`+`qualname` target, and
+   wires it as that placement's `smoke_script`. An existing file of that name
+   is never overwritten, so re-running `plan` keeps your filled-in scripts.
+   The printed summary lists the scaffolds it created.
+
 1. **Parallel subagent fan-out.** One wave, covering every placement from that
    single plan call regardless of which capability it belongs to. Spawn one
    subagent per placement **file** — placements for the same file always go to
-   the same subagent, so two edits never race on one file. Prompt each
-   subagent with the placement JSON verbatim, plus this fixed instruction
-   block:
+   the same subagent, so two edits never race on one file. Dispatch every
+   subagent in a single message; the edits are independent by construction.
+   Prompt each subagent with the placement JSON verbatim, plus this fixed
+   instruction block:
 
    > Apply exactly the `required_task_decorator` at `target.qualname` in
    > `target.file`. Add `target.import_line` if it isn't already imported.
@@ -209,7 +220,26 @@ edit / validate) and report the table at the end.
    judgment calls a subagent can't make (which registered key a route maps
    to), written as a computed `with overmind.task(<key expression>)` boundary.
 
-1. **Static gate.**
+1. **Fill the smoke scaffolds.** Each generated `smoke_<key>.py` already
+   imports the target module and calls the real decorated entry inside a
+   try/except; only the `# TODO` args (and the constructor args for a method
+   target) are missing. Fill those in. Do not rewrite the script, and do not
+   author one from scratch unless `plan` skipped that placement (no `module`
+   on the target).
+
+1. **Gate (one command).**
+
+   ```bash
+   overmind instrumentation gate --plan-file plan.json [--root .] [--spans-file spans.jsonl] [--capability X]
+   ```
+
+   Runs check → smoke → verify in order, stopping at the first failing stage,
+   and prints one summary:
+   `{"check": {"ok", "failed"}, "smoke": {"ran", "failed"}, "verify": {"tasks", "unbound"}}`.
+   Exit 0 is the pass signal; any unbound task fails the gate. Run the three
+   stage commands below only to debug a failed gate.
+
+1. **Static gate (debug).**
 
    ```bash
    overmind instrumentation check --plan-file plan.json [--root .] [--format text|json]
@@ -220,7 +250,7 @@ edit / validate) and report the table at the end.
    `analyzed_sha` against the local git revision. `--format json` for
    scripting; exit 1 on any failure.
 
-1. **Smoke run.** Never run the real app; never hit real providers. Write a
+1. **Smoke run (debug).** Never run the real app; never hit real providers. Write a
    minimal script per task placement that calls the entry with synthetic args,
    using its `smoke_hint`. Two ways to execute:
 
@@ -256,7 +286,7 @@ edit / validate) and report the table at the end.
    the whole smoke contract — do not read the SDK source to verify how they
    interact; set them and run. `spans.jsonl` ends up as one JSON span per line.
 
-1. **Verify.**
+1. **Verify (debug).**
 
    ```bash
    overmind instrumentation verify --spans-file spans.jsonl

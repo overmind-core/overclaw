@@ -67,21 +67,27 @@ via the punch list.
 1. `overmind instrumentation plan --root . --out plan.json` — scans AND posts
    to the server's planner in one command; writes plan.json and prints a
    summary with `ambiguous` + `dropped` (report dropped). Never paste scan or
-   plan JSON into a tool call yourself.
-1. One subagent per placement **file**, all at once: apply
-   `required_task_decorator` at `target.qualname`, add `target.import_line`,
-   wire `required_identity`. The lead keeps `ambiguous` (the dynamic-key
-   judgment calls).
-1. `overmind instrumentation check --plan-file plan.json`
-1. Smoke scripts per task from `smoke_hint`, run under `OVERMIND_SMOKE=1` +
-   `OVERMIND_TRACE_FILE=spans.jsonl` (in-repo paths; no API key needed; never
-   the real app).
-1. `overmind instrumentation verify --spans-file spans.jsonl` — posts the
-   spans to the server binder for you (never inline a large span array into a
-   tool call). Gate: no task `binding_source == "unbound"` (runs bind `anchor_join`, turns bind `declared`); exit 0 is the
-   pass signal.
+   plan JSON into a tool call yourself. It also writes a `smoke_<key>.py`
+   skeleton per placement and wires it as `smoke_script`.
+1. One subagent per placement **file**, all dispatched in a single message:
+   apply `required_task_decorator` at `target.qualname`, add
+   `target.import_line`, wire `required_identity`. Edits are independent by
+   construction. The lead keeps `ambiguous` (the dynamic-key judgment calls).
+1. Fill the TODO args in each generated `smoke_<key>.py` — never write a smoke
+   script from scratch. The skeleton already imports and calls the real
+   decorated entry; only synthetic args are missing.
+1. `overmind instrumentation gate --plan-file plan.json` — runs check, smoke
+   and verify in one pass and prints one summary
+   `{check, smoke, verify}`. Exit 0 is the pass signal (no task
+   `binding_source == "unbound"`; runs bind `anchor_join`, turns bind
+   `declared`). Individual `check` / `smoke` / `verify` commands are for
+   debugging a failed gate — see the reference.
 1. Act on Tier 1 punch-list items now; park Tier 2 for the ratchet loop.
 1. Report the per-stage timing table.
+
+Constraints: the placement's file/qualname/lineno are scan-verified. Read the
+target function only — never re-read the module or re-explore the repo before
+editing.
 
 API signatures (verbatim — do NOT read the SDK source for these):
 
@@ -110,8 +116,8 @@ reading for this workflow.
 ## Use-case references
 
 - Instrumenting an application from a server-minted placement plan (fast path:
-  `plan` → subagent fan-out → `check` → smoke → `verify_instrumentation_spans`,
-  then the Tier 2 ratchet):
+  `plan` → subagent fan-out → fill smoke scaffolds → `gate`, then the Tier 2
+  ratchet):
   [references/instrumentation.md](references/instrumentation.md)
 - Resolving / updating agents, prompts, eval spec, and GitHub analyze:
   [references/agents.md](references/agents.md)

@@ -151,6 +151,47 @@ def instrumentation_scan(
         typer.echo(payload)
 
 
+SMOKE_SCAFFOLD = '''"""Smoke: fires the real entry for behaviour {key!r}. Fill in synthetic args."""
+from {module} import {symbol}
+
+# {hint}
+try:
+{call}
+except Exception as exc:  # body failures are fine; the span still exports
+    print(f"smoke body raised (ok): {{exc}}")
+'''
+
+
+def _write_smoke_scaffolds(placements: list, root: Path) -> list[str]:
+    """Drop a fill-in-the-args smoke script per placement and wire it as ``smoke_script``."""
+    written = []
+    for placement in placements:
+        if not isinstance(placement, dict):
+            continue
+        hint = placement.get("smoke_hint")
+        target = placement.get("target") if isinstance(placement.get("target"), dict) else {}
+        module, qualname = target.get("module"), target.get("qualname")
+        if not (hint and module and qualname):
+            continue
+        key = str(placement.get("key") or qualname)
+        script = f"smoke_{re.sub(r'[^a-z0-9_]', '_', key.lower())}.py"
+        placement["smoke_script"] = script
+        path = root / script
+        if path.exists():
+            continue
+        symbol, _, method = str(qualname).partition(".")
+        if method:
+            call = (
+                f"    instance = {symbol}()  # TODO: constructor args\n"
+                f"    instance.{method.split('.')[0]}(...)  # TODO: synthetic args"
+            )
+        else:
+            call = f"    {symbol}(...)  # TODO: synthetic args"
+        path.write_text(SMOKE_SCAFFOLD.format(key=key, module=module, symbol=symbol, hint=hint, call=call))
+        written.append(script)
+    return written
+
+
 @instrumentation_app.command("plan")
 def instrumentation_plan(
     root: Annotated[Path, typer.Option("--root", help="Source repository root")] = Path("."),
@@ -174,11 +215,14 @@ def instrumentation_plan(
     if result.get("errors"):
         typer.echo(json.dumps(result, indent=1))
         raise typer.Exit(1)
+    placements = result.get("placements") or []
+    scaffolds = _write_smoke_scaffolds(placements, root)
     out.write_text(json.dumps(result, indent=1))
     typer.echo(
         json.dumps(
             {
-                "placements": len(result.get("placements") or []),
+                "placements": len(placements),
+                "smoke_scaffolds": scaffolds,
                 "plans": result.get("plans"),
                 "ambiguous": result.get("ambiguous"),
                 "dropped": result.get("dropped"),
@@ -215,19 +259,16 @@ def instrumentation_check(
         raise typer.Exit(1)
 
 
-@instrumentation_app.command("smoke")
-def instrumentation_smoke(
-    plan_file: Annotated[Path, typer.Option("--plan-file", help="MCP placements plan JSON")],
-    out: Annotated[Path, typer.Option("--out", help="Trace output file for smoke-tested placements")],
-    root: Annotated[Path, typer.Option("--root", help="Source repository root")] = Path("."),
-):
-    """Run each placement's smoke_script with stubbed providers, spans to --out."""
+def _load_placements(plan_file: Path) -> list:
     plan = json.loads(plan_file.read_text())
     placements = plan.get("placements", plan) if isinstance(plan, dict) else plan
-    if not isinstance(placements, list):
-        placements = [placements]
+    return placements if isinstance(placements, list) else [placements]
 
-    failed = False
+
+def _run_smoke(placements: list, out: Path, root: Path) -> tuple[int, int, list[str]]:
+    """Run each placement's smoke_script; returns (ran, failed, todos)."""
+    ran = failed = 0
+    todos = []
     for placement in placements:
         if not isinstance(placement, dict):
             continue
@@ -242,13 +283,33 @@ def instrumentation_smoke(
             env = {**os.environ, "OVERMIND_SMOKE": "1", "OVERMIND_TRACE_FILE": str(out)}
             # Run through the interpreter: agent-written scripts have no shebang/exec bit.
             runner = [sys.executable, str(script_path)] if script_path.suffix == ".py" else [str(script_path)]
+            ran += 1
             if subprocess.run(runner, cwd=root, env=env, check=False).returncode != 0:
-                failed = True
+                failed += 1
         elif smoke_hint:
             target = placement.get("target") if isinstance(placement.get("target"), dict) else placement
             location = " ".join(str(target.get(field)) for field in ("file", "qualname") if target.get(field))
-            typer.echo(f"{f'TODO {location}' if location else 'TODO'}: {smoke_hint}")
+            todos.append(f"{f'TODO {location}' if location else 'TODO'}: {smoke_hint}")
+    return ran, failed, todos
 
+
+def _verify_spans(spans_file: Path, capability: str, api_url: str, api_key: str) -> dict:
+    arguments: dict = {"spans": [json.loads(line) for line in spans_file.read_text().splitlines() if line.strip()]}
+    if capability:
+        arguments["capability_name_or_slug"] = capability
+    return _mcp_call(api_url, api_key, "verify_instrumentation_spans", arguments, timeout=60)
+
+
+@instrumentation_app.command("smoke")
+def instrumentation_smoke(
+    plan_file: Annotated[Path, typer.Option("--plan-file", help="MCP placements plan JSON")],
+    out: Annotated[Path, typer.Option("--out", help="Trace output file for smoke-tested placements")],
+    root: Annotated[Path, typer.Option("--root", help="Source repository root")] = Path("."),
+):
+    """Run each placement's smoke_script with stubbed providers, spans to --out."""
+    _, failed, todos = _run_smoke(_load_placements(plan_file), out, root)
+    for todo in todos:
+        typer.echo(todo)
     if failed:
         raise typer.Exit(1)
 
@@ -263,14 +324,45 @@ def instrumentation_verify(
     api_key: Annotated[str, typer.Option(envvar="OVERMIND_API_KEY", help="Project API key", show_default=False)] = "",
 ):
     """Send smoke-run spans to verify_instrumentation_spans over MCP and print the verdict."""
-    arguments: dict = {"spans": [json.loads(line) for line in spans_file.read_text().splitlines() if line.strip()]}
-    if capability:
-        arguments["capability_name_or_slug"] = capability
-    result = _mcp_call(api_url, api_key, "verify_instrumentation_spans", arguments, timeout=60)
+    result = _verify_spans(spans_file, capability, api_url, api_key)
     typer.echo(json.dumps(result, indent=1))
     tasks = result.get("tasks") or []
     # Run units bind by anchor join, turn units by declared key — both pass.
     if not tasks or any(task.get("binding_source") == "unbound" for task in tasks):
+        raise typer.Exit(1)
+
+
+@instrumentation_app.command("gate")
+def instrumentation_gate(
+    plan_file: Annotated[Path, typer.Option("--plan-file", help="MCP placements plan JSON")],
+    root: Annotated[Path, typer.Option("--root", help="Source repository root")] = Path("."),
+    spans_file: Annotated[Path, typer.Option("--spans-file", help="Trace output file for the smoke run")] = Path(
+        "spans.jsonl"
+    ),
+    capability: Annotated[str, typer.Option("--capability", help="Capability name or slug fallback")] = "",
+    api_url: Annotated[
+        str, typer.Option(envvar="OVERMIND_API_URL", help="Overmind backend base URL")
+    ] = DEFAULT_API_URL,
+    api_key: Annotated[str, typer.Option(envvar="OVERMIND_API_KEY", help="Project API key", show_default=False)] = "",
+):
+    """Run check, smoke and verify in one pass; one JSON summary, non-zero on any failure."""
+    if not spans_file.is_absolute():
+        spans_file = root / spans_file
+    check = check_plan_file(plan_file, root)
+    summary: dict = {"check": {"ok": check["ok"], "failed": check["summary"]["failed"]}}
+    if check["ok"]:
+        ran, failed, _ = _run_smoke(_load_placements(plan_file), spans_file, root)
+        summary["smoke"] = {"ran": ran, "failed": failed}
+        if ran and not failed:
+            result = _verify_spans(spans_file, capability, api_url, api_key)
+            tasks = result.get("tasks") or []
+            summary["verify"] = {
+                "tasks": len(tasks),
+                "unbound": sum(task.get("binding_source") == "unbound" for task in tasks),
+            }
+    typer.echo(json.dumps(summary, indent=1))
+    verify = summary.get("verify") or {}
+    if not (check["ok"] and verify.get("tasks") and not verify["unbound"]):
         raise typer.Exit(1)
 
 
