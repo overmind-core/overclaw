@@ -239,6 +239,13 @@ edit / validate) and report the table at the end.
    `OVERMIND_SMOKE=1` patches the installed provider SDK clients (openai,
    anthropic, google.genai) one layer below the instrumentors with canned
    responses — instrumentor spans still fire, no network call is made.
+   A smoke script must call the REAL decorated entry points — import the
+   module and invoke the actual function with synthetic args. Never write
+   stand-in functions or synthesize spans: fabricated spans carry no code
+   identity and no git sha, so the anchor join has nothing to match and the
+   unit parks `unbound` (`missing_sha`). A body that throws is fine — wrap
+   the call in try/except; the span still exports and still binds.
+
    `OVERMIND_TRACE_FILE` makes `overmind.init()` write spans to that file (no
    API key required) instead of exporting over OTLP. These two env vars are
    the whole smoke contract — do not read the SDK source to verify how they
