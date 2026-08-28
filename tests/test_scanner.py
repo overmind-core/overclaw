@@ -66,6 +66,7 @@ def test_scan_symbol_shape(tmp_path):
         "docstring": "Does a thing.",
         "decorators": ["tool"],
         "lineno": 2,
+        "source_line": "def helper(a, b=1, *args, **kwargs):",
     }
 
 

@@ -276,6 +276,7 @@ def _scan_file(path: Path) -> tuple[list[dict[str, Any]], set[str]]:
     try:
         text = path.read_text()
         tree = ast.parse(text, filename=str(path))
+        lines = text.splitlines()
     except (OSError, SyntaxError, UnicodeDecodeError):
         return [], set()
 
@@ -292,6 +293,7 @@ def _scan_file(path: Path) -> tuple[list[dict[str, Any]], set[str]]:
             "docstring": _docstring(node),
             "decorators": decorators,
             "lineno": node.lineno,
+            "source_line": lines[node.lineno - 1].strip() if 0 < node.lineno <= len(lines) else "",
         })
 
     def _visit(node: ast.AST, scope: tuple[str, ...]) -> None:
@@ -306,6 +308,7 @@ def _scan_file(path: Path) -> tuple[list[dict[str, Any]], set[str]]:
                         "docstring": _docstring(child),
                         "decorators": [_decorator_name(d) for d in child.decorator_list],
                         "lineno": child.lineno,
+                        "source_line": lines[child.lineno - 1].strip() if 0 < child.lineno <= len(lines) else "",
                     })
                 _visit(child, (*scope, child.name))
             elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -337,6 +340,7 @@ def _scan_file(path: Path) -> tuple[list[dict[str, Any]], set[str]]:
             "docstring": None,
             "decorators": [],
             "lineno": 1,
+            "source_line": "",
         })
 
     symbols.sort(key=lambda s: s["lineno"])

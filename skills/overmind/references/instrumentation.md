@@ -147,8 +147,9 @@ Constraints for both routes:
 - Instrument every capability in one session — fan out across all of them at
   once, not one capability at a time.
 - Trust the plan. A placement's `file`, `qualname` and `lineno` are
-  scan-verified. Read the target function only — never re-read the module or
-  re-explore the repo before editing.
+  scan-verified. Verify a placement by comparing its `target.source_line` to the file at
+`target.lineno`; a match means the placement is proven — edit with no
+further reading. Never re-read the module or re-explore the repo.
 
 Invoke the CLI as the installed binary (`overmind …` on PATH or
 `.venv/bin/overmind …`), never through `uv run` / `poetry run`: those resync

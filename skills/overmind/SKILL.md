@@ -85,9 +85,12 @@ via the punch list.
 1. Act on Tier 1 punch-list items now; park Tier 2 for the ratchet loop.
 1. Report the per-stage timing table.
 
-Constraints: the placement's file/qualname/lineno are scan-verified. Read the
-target function only — never re-read the module or re-explore the repo before
-editing.
+Constraints: verify a placement by matching `target.source_line` against the
+file at `target.lineno` — a match proves it; edit with no further reading.
+Never re-read the module or re-explore the repo. Budget: all edits ≤2
+minutes — reading a second file for one placement is re-verifying, not
+editing. Produce every edit in one batch (one subagent per file, single
+dispatch), fill the scaffold TODO args, then run `gate` once.
 
 API signatures (verbatim — do NOT read the SDK source for these):
 
