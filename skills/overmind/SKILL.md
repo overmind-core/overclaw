@@ -78,7 +78,7 @@ via the punch list.
    the real app).
 1. `overmind instrumentation verify --spans-file spans.jsonl` — posts the
    spans to the server binder for you (never inline a large span array into a
-   tool call). Gate: every task `binding_source == "declared"`; exit 0 is the
+   tool call). Gate: no task `binding_source == "unbound"` (runs bind `anchor_join`, turns bind `declared`); exit 0 is the
    pass signal.
 1. Act on Tier 1 punch-list items now; park Tier 2 for the ratchet loop.
 1. Report the per-stage timing table.

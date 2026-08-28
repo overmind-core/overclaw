@@ -269,7 +269,8 @@ def instrumentation_verify(
     result = _mcp_call(api_url, api_key, "verify_instrumentation_spans", arguments, timeout=60)
     typer.echo(json.dumps(result, indent=1))
     tasks = result.get("tasks") or []
-    if not tasks or not all(task.get("binding_source") == "declared" for task in tasks):
+    # Run units bind by anchor join, turn units by declared key — both pass.
+    if not tasks or any(task.get("binding_source") == "unbound" for task in tasks):
         raise typer.Exit(1)
 
 

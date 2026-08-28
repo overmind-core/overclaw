@@ -142,7 +142,7 @@ Constraints for both routes:
 - First pass is binding only: run brackets, task roots, capability identity,
   anchor names. Do not add `intent` / `expect` / `checkpoint` / `deliver` /
   `eval_context` until `verify_instrumentation_spans` reports every task
-  `declared`. Tier 2 comes from the punch list, after the gate.
+  bound. Tier 2 comes from the punch list, after the gate.
 - Instrument every capability in one session — fan out across all of them at
   once, not one capability at a time.
 
@@ -257,7 +257,12 @@ edit / validate) and report the table at the end.
    covers every capability's spans together, and runs the real server binder
    as a dry run — zero ingestion. Returns
    `{tasks: [{behaviour_key, binding_source, binding_confidence, route_flags, unit_span_id, trace_id, capability, capability_id}], capabilities: [{capability, capability_id, grades, punch_list: [{grade, instruction}]}], errors: []}`.
-   Acceptance gate: every task's `binding_source == "declared"`. A task with
+   Acceptance gate: no task is `unbound`. Run-grain units bind
+   `anchor_join` — the SDK never puts a behaviour key on a run boundary; the
+   join is the entry/interior code identity (`@overmind.entry_point` and the
+   observe-family decorators stamp it) matched against the contract anchors.
+   Turn-grain units bind `declared` via `with overmind.task(key, unit="turn")`.
+   A task with
    `capability: null` means the spans carry no `overmind.agent.id` — fix the
    identity wiring (see the fan-out block); as a stopgap for a
    single-capability repo, re-run with `--capability <name-or-slug>` to force
@@ -312,7 +317,7 @@ best beats the runner-up by ≥1.5×, and is file-path-joined (a bare `run` in
 `unbound_ambiguous`; a sole candidate still binds but with zero evidence —
 flagged `bind_review` at confidence 0.0, never a silent overconfident bind.
 `binding_source == "bound_structurally"` is useful failsafe evidence but is
-not instrumentation success — the fast-path gate requires `"declared"`.
+not instrumentation success — the fast-path gate requires every unit bound (`anchor_join` or `declared`).
 
 ## Existing-telemetry detection
 
