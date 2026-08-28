@@ -40,14 +40,14 @@ def test_scan_classifies_kinds_and_frameworks(tmp_path):
 
     by_path = {file["path"]: file for file in result["files"]}
     assert by_path["api.py"]["symbols"][0]["kind"] == "route"
-    assert by_path["api.py"]["symbols"][0]["qualname"] == "list_items"
-    assert {s["qualname"]: s["kind"] for s in by_path["cli.py"]["symbols"]}["main"] == "entry"
-    assert {s["qualname"]: s["kind"] for s in by_path["agent.py"]["symbols"]}["MyAgent"] == "agent_class"
-    assert {s["qualname"]: s["kind"] for s in by_path["llm.py"]["symbols"]}["ask"] == "llm_call"
+    assert by_path["api.py"]["symbols"][0]["qualname"] == "api.list_items"
+    assert {s["qualname"]: s["kind"] for s in by_path["cli.py"]["symbols"]}["cli.main"] == "entry"
+    assert {s["qualname"]: s["kind"] for s in by_path["agent.py"]["symbols"]}["agent.MyAgent"] == "agent_class"
+    assert {s["qualname"]: s["kind"] for s in by_path["llm.py"]["symbols"]}["llm.ask"] == "llm_call"
 
     tool_symbols = {s["qualname"]: s["kind"] for s in by_path["tools.py"]["symbols"]}
-    assert tool_symbols["search"] == "tool"
-    assert tool_symbols["other_tool"] == "tool"
+    assert tool_symbols["tools.search"] == "tool"
+    assert tool_symbols["tools.other_tool"] == "tool"
 
     # Files with no symbols are omitted, and ordering is deterministic.
     assert list(by_path) == sorted(by_path)
@@ -60,7 +60,7 @@ def test_scan_symbol_shape(tmp_path):
     _write(tmp_path, "m.py", '@tool\ndef helper(a, b=1, *args, **kwargs):\n    """Does a thing."""\n    pass\n')
     symbol = scan(str(tmp_path))["files"][0]["symbols"][0]
     assert symbol == {
-        "qualname": "helper",
+        "qualname": "m.helper",
         "kind": "tool",
         "signature": "(a, b, *args, **kwargs)",
         "docstring": "Does a thing.",
@@ -94,7 +94,7 @@ def test_scan_llm_call_via_litellm_import(tmp_path):
         tmp_path, "llm.py", "import litellm\n\ndef ask():\n    return litellm.completion(model='gpt', messages=[])\n"
     )
     symbols = {s["qualname"]: s["kind"] for s in scan(str(tmp_path))["files"][0]["symbols"]}
-    assert symbols["ask"] == "llm_call"
+    assert symbols["llm.ask"] == "llm_call"
 
 
 def test_scan_llm_call_via_langchain_import(tmp_path):
@@ -104,7 +104,7 @@ def test_scan_llm_call_via_langchain_import(tmp_path):
         "from langchain_openai import ChatOpenAI\n\ndef ask():\n    return ChatOpenAI(model='gpt-4').invoke('hi')\n",
     )
     symbols = {s["qualname"]: s["kind"] for s in scan(str(tmp_path))["files"][0]["symbols"]}
-    assert symbols["ask"] == "llm_call"
+    assert symbols["llm.ask"] == "llm_call"
 
 
 def test_scan_llm_call_needs_an_imported_client(tmp_path):
@@ -116,3 +116,15 @@ def test_scan_llm_call_needs_an_imported_client(tmp_path):
 def test_scan_entry_excludes_nested_main(tmp_path):
     _write(tmp_path, "m.py", "class Runner:\n    def main(self):\n        pass\n")
     assert scan(str(tmp_path))["files"] == []
+
+
+def test_scan_qualifies_same_named_top_level_symbols(tmp_path):
+    _write(tmp_path, "one.py", "def main():\n    pass\n")
+    _write(tmp_path, "two.py", "def main():\n    pass\n")
+
+    result = scan(str(tmp_path))
+
+    assert [file["symbols"][0]["qualname"] for file in result["files"]] == [
+        "one.main",
+        "two.main",
+    ]

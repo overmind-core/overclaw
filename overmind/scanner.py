@@ -272,7 +272,14 @@ def _detect_frameworks(tree: ast.Module) -> set[str]:
     return found
 
 
-def _scan_file(path: Path) -> tuple[list[dict[str, Any]], set[str]]:
+def _module_scope(path: Path, root: Path) -> tuple[str, ...]:
+    parts = list(path.relative_to(root).with_suffix("").parts)
+    if parts[-1] == "__init__":
+        parts.pop()
+    return tuple(parts)
+
+
+def _scan_file(path: Path, root: Path) -> tuple[list[dict[str, Any]], set[str]]:
     try:
         text = path.read_text()
         tree = ast.parse(text, filename=str(path))
@@ -284,6 +291,10 @@ def _scan_file(path: Path) -> tuple[list[dict[str, Any]], set[str]]:
     main_guard_callable = _main_guard_callable(tree)
     llm_imports, litellm_imported = _collect_llm_imports(tree)
     symbols: list[dict[str, Any]] = []
+    module_scope = _module_scope(path, root)
+
+    def _qualname(scope: tuple[str, ...], name: str) -> str:
+        return ".".join((*module_scope, *scope, name))
 
     def _add(qualname: str, kind: str, node: ast.FunctionDef | ast.AsyncFunctionDef, decorators: list[str]) -> None:
         symbols.append({
@@ -300,7 +311,7 @@ def _scan_file(path: Path) -> tuple[list[dict[str, Any]], set[str]]:
         for child in ast.iter_child_nodes(node):
             if isinstance(child, ast.ClassDef):
                 if any(marker in _base_name(base) for base in child.bases for marker in _AGENT_BASE_MARKERS):
-                    qualname = ".".join((*scope, child.name))
+                    qualname = _qualname(scope, child.name)
                     symbols.append({
                         "qualname": qualname,
                         "kind": "agent_class",
@@ -312,7 +323,7 @@ def _scan_file(path: Path) -> tuple[list[dict[str, Any]], set[str]]:
                     })
                 _visit(child, (*scope, child.name))
             elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                qualname = ".".join((*scope, child.name))
+                qualname = _qualname(scope, child.name)
                 decorator_names = [_decorator_name(d) for d in child.decorator_list]
 
                 if any(_is_entry_decorator(name) for name in decorator_names) or (child.name == "main" and not scope):
@@ -330,11 +341,12 @@ def _scan_file(path: Path) -> tuple[list[dict[str, Any]], set[str]]:
 
     _visit(tree, ())
 
-    if main_guard_callable and not any(
-        sym["kind"] == "entry" and sym["qualname"] == main_guard_callable for sym in symbols
+    main_guard_qualname = _qualname((), main_guard_callable) if main_guard_callable else ""
+    if main_guard_qualname and not any(
+        sym["kind"] == "entry" and sym["qualname"] == main_guard_qualname for sym in symbols
     ):
         symbols.append({
-            "qualname": main_guard_callable,
+            "qualname": main_guard_qualname,
             "kind": "entry",
             "signature": None,
             "docstring": None,
@@ -377,7 +389,7 @@ def scan(root: str = ".") -> dict[str, Any]:
     files_result: list[dict[str, Any]] = []
     frameworks: set[str] = set()
     with ThreadPoolExecutor() as pool:
-        results = list(pool.map(lambda p: (p, *_scan_file(p)), py_files))
+        results = list(pool.map(lambda p: (p, *_scan_file(p, root_path)), py_files))
 
     for path, symbols, file_frameworks in results:
         frameworks |= file_frameworks
