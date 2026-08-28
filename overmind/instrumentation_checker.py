@@ -181,9 +181,11 @@ def _normalise_placement(raw: Any) -> tuple[_Placement | None, str | None]:
 
 
 def _is_task_ref(node: ast.AST) -> bool:
+    # entry_point declares the run-boundary contract the same way task declares
+    # a turn's: both carry the behaviour key a fixed placement pins.
     return (
         isinstance(node, ast.Attribute)
-        and node.attr == "task"
+        and node.attr in ("task", "entry_point")
         and isinstance(node.value, ast.Name)
         and node.value.id == "overmind"
     )
@@ -465,7 +467,7 @@ def check_plan(plan: Any, root: str | Path = ".") -> dict[str, Any]:
                     _issue(
                         "task.missing",
                         "fail",
-                        "target has no overmind.task boundary",
+                        "target has no overmind.task or entry_point boundary",
                         placement.file,
                         placement.qualname,
                     )
