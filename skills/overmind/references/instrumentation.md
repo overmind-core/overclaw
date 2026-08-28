@@ -146,6 +146,11 @@ Constraints for both routes:
 - Instrument every capability in one session — fan out across all of them at
   once, not one capability at a time.
 
+Invoke the CLI as the installed binary (`overmind …` on PATH or
+`.venv/bin/overmind …`), never through `uv run` / `poetry run`: those resync
+the project environment first and can silently swap the installed SDK for
+the version pinned in the repo's manifest.
+
 ## Fast-path workflow
 
 Target under 10 minutes total. Record wall-clock per stage (scan / plan /
@@ -154,7 +159,7 @@ edit / validate) and report the table at the end.
 1. **Scan + plan (one command).**
 
    ```bash
-   uv run overmind instrumentation plan --root . --out plan.json
+   overmind instrumentation plan --root . --out plan.json
    ```
 
    Runs the AST scan and posts it to the server's `plan_instrumentation` for
@@ -163,7 +168,7 @@ edit / validate) and report the table at the end.
    inspection:
 
    ```bash
-   uv run overmind instrumentation scan --root . --out candidates.json
+   overmind instrumentation scan --root . --out candidates.json
    ```
 
    Pure-AST, no imports of user code, no network. Emits
@@ -207,7 +212,7 @@ edit / validate) and report the table at the end.
 1. **Static gate.**
 
    ```bash
-   uv run overmind instrumentation check --plan-file plan.json [--root .] [--format text|json]
+   overmind instrumentation check --plan-file plan.json [--root .] [--format text|json]
    ```
 
    Deterministic, no network. Validates the task boundary, its key, nesting
@@ -222,7 +227,7 @@ edit / validate) and report the table at the end.
    - Wire the script's path as `smoke_script` on the placement, then:
 
      ```bash
-     uv run overmind instrumentation smoke --plan-file plan.json --out spans.jsonl [--root .]
+     overmind instrumentation smoke --plan-file plan.json --out spans.jsonl [--root .]
      ```
 
      This iterates the plan's top-level `placements` and runs each
@@ -254,7 +259,7 @@ edit / validate) and report the table at the end.
 1. **Verify.**
 
    ```bash
-   uv run overmind instrumentation verify --spans-file spans.jsonl
+   overmind instrumentation verify --spans-file spans.jsonl
    ```
 
    Posts the smoke spans to the server's `verify_instrumentation_spans` binder
