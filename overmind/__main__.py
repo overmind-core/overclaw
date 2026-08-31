@@ -434,8 +434,6 @@ def overmind_init(
     dest = get_destination_dir(ide)
 
     if ide == "codex":
-        if env in {"local", "development", "dev"}:
-            raise typer.BadParameter("Codex setup supports production or staging", param_hint="--env")
         if not os.environ.get("OVERMIND_API_KEY") and not api_key:
             raise typer.BadParameter("set OVERMIND_API_KEY before running init", param_hint="OVERMIND_API_KEY")
         mcp_path = Path.cwd() / ".codex" / "config.toml"
