@@ -145,6 +145,9 @@ Constraints for both routes:
   immediately add each applicable `intent`, `expect`, `checkpoint`,
   `eval_context`, tool/retrieval, provenance, observation, and delivery signal
   from its punch list, then re-smoke and re-verify in the same run.
+- An `observations` punch item means `overmind.eval_context(...)` with real
+  environment facts from that execution. `record_observation()` is not an SDK
+  API; do not invent facts solely to raise a grade.
 - Instrument every capability in one session — fan out across all of them at
   once, not one capability at a time.
 - Trust the plan. A placement's `file`, `qualname` and `lineno` are
@@ -335,7 +338,7 @@ table at the end.
    | `units`        | No turn/run boundaries                            | `task(key, unit="turn")` per phase, or a `capability` handoff          |
    | `tool_ops`     | Tool/retrieval spans missing or untyped           | `@overmind.tool()` / `@overmind.retrieval()` on the real call sites    |
    | `provenance`   | Spans without an inferable or declared provenance | `provenance="user\|agent\|environment\|harness"` on the span           |
-   | `observations` | No runtime evidence envelope                      | `intent()`, `expect()`, `eval_context()`, `checkpoint()`               |
+   | `observations` | No runtime evidence envelope                      | `eval_context(...)` with real environment facts                         |
    | `delivery`     | No terminal deliverable captured                  | `deliver(payload, grounded_by=[...])` inside the unit that produced it |
 
 1. Re-smoke and re-verify after each fix. Do not report completion until every
