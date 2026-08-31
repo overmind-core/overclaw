@@ -12,13 +12,13 @@ installed SDK — prefer the code if they ever disagree.
 Verify traces through Overmind MCP (`list_traces` / `get_trace`), not REST.
 See [telemetry.md](telemetry.md).
 
-## Tier model
+## Complete telemetry
 
-Tiering is a scheduling device, not a quality ceiling: the fast path ships
-Tier 0 + Tier 1 in one sitting; Tier 2 completes afterward through the
-punch-list loop.
+One instrumentation run covers initialization, task binding, and the evidence
+needed to score representative executions. Establish task binding first, then
+complete the returned evidence work before reporting completion.
 
-- **Tier 0 — auto-capture.** `overmind.init(providers=[...])` at process
+- **Auto-capture.** `overmind.init(providers=[...])` at process
   start. This alone gets LLM call spans (`gen_ai.request.model`,
   `gen_ai.usage.*`), provenance auto-stamping (`tool` spans →
   `environment`, `llm` spans → `agent`), `unit_kind` on run boundaries, code
@@ -27,14 +27,14 @@ punch-list loop.
   supported provider; `providers="auto"` turns on every provider whose
   library AND instrumentor are installed; omitting `providers` enables
   **none**.
-- **Tier 1 — binding.** Declares the scoring skeleton: `overmind.run(...)`
+- **Binding.** Declares the scoring skeleton: `overmind.run(...)`
   around the whole execution (the run boundary — without it a span that
   starts its own trace is suppressed as an orphan fragment),
   `overmind.task(key)` at each task's entry point, `capability_id` /
   `capability` at identity boundaries, and `name=` on
   `@overmind.tool` / `@overmind.workflow` / `@overmind.retrieval` to anchor
   discriminating symbols.
-- **Tier 2 — evidence.** Makes a bound trace *scorable*:
+- **Evidence.** Makes a bound trace *scorable*:
   `overmind.deliver(payload, grounded_by=[...])`, `overmind.intent(text)`,
   `overmind.expect(kind, spec, ...)`, `overmind.eval_context(**facts)`,
   `overmind.checkpoint(name)`, `overmind.end_conversation()`, and explicit
@@ -42,7 +42,7 @@ punch-list loop.
   (`tool` / `retrieval` → `environment`, `llm` → `agent`; everything else
   needs one of `user | agent | environment | harness`).
 
-### Tier 0 + 1 API reference
+### Initialization and binding API reference
 
 ```python
 overmind.init(overmind_api_key=None, *, service_name=None, environment=None,
@@ -89,7 +89,7 @@ overmind.force_flush_traces(timeout_millis=1000)
   `OVERMIND_AGENT_NAME` / `OVERMIND_AGENT_ID` env vars; passing either
   argument suppresses that fallback entirely.
 
-### Tier 2 API reference
+### Evidence API reference
 
 ```python
 overmind.intent(text, *, source="declared")
@@ -140,10 +140,11 @@ Constraints for both routes:
 - Write every artifact (candidates.json, plan.json, smoke scripts,
   spans.jsonl) **inside the repository**. Sandboxed agents cannot write `/tmp`
   or read outside the project; an absolute path outside the repo fails the run.
-- First pass is binding only: run brackets, task roots, capability identity,
-  anchor names. Do not add `intent` / `expect` / `checkpoint` / `deliver` /
-  `eval_context` until `verify_instrumentation_spans` reports every task
-  bound. Tier 2 comes from the punch list, after the gate.
+- Establish binding first: run brackets, task roots, capability identity, and
+  anchor names. Once `verify_instrumentation_spans` reports every task bound,
+  immediately add each applicable `intent`, `expect`, `checkpoint`,
+  `eval_context`, tool/retrieval, provenance, observation, and delivery signal
+  from its punch list, then re-smoke and re-verify in the same run.
 - Instrument every capability in one session — fan out across all of them at
   once, not one capability at a time.
 - Trust the plan. A placement's `file`, `qualname` and `lineno` are
@@ -158,8 +159,8 @@ the version pinned in the repo's manifest.
 
 ## Fast-path workflow
 
-Target under 10 minutes total. Record wall-clock per stage (scan / plan /
-edit / validate) and report the table at the end.
+Record wall-clock per stage (scan / plan / edit / validate) and report the
+table at the end.
 
 1. **Scan + plan (one command).**
 
@@ -312,21 +313,21 @@ edit / validate) and report the table at the end.
    `capability: null` means the spans carry no `overmind.agent.id` — fix the
    identity wiring (see the fan-out block); as a stopgap for a
    single-capability repo, re-run with `--capability <name-or-slug>` to force
-   the fallback. Act on `capabilities[].punch_list` items that are fixable now
-   (Tier 1 gaps — a missing task root, a wrong key); park Tier 2 items for the
-   ratchet loop.
+   the fallback. Work every applicable `capabilities[].punch_list` item before
+   completion. Do not fabricate a tool, observation, or delivery just to
+   improve a grade; mark it inapplicable only when the capability has no real
+   corresponding operation.
 
 1. **Report the timing table** (scan / plan / edit / validate wall-clock)
    alongside the pass/fail state of the static gate and the verify call.
 
-## Ratchet loop (after real traffic)
+## Complete the evidence in the same run
 
-1. Run the app, then audit a real trace via `list_traces` → `get_trace` on
-   that exact `trace_id` — never an unrelated newest trace. See
-   [telemetry.md](telemetry.md).
+1. Use bounded smoke scenarios that exercise the capability's real entry,
+   tools, retrieval, and terminal output. Do not run the real application.
 
 1. `verify_instrumentation_spans` grades each capability on six axes and
-   returns a punch list. Work it until all six are green:
+   returns a punch list. Resolve every applicable item:
 
    | Grade          | Gap it flags                                      | Fix                                                                    |
    | -------------- | ------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -337,7 +338,9 @@ edit / validate) and report the table at the end.
    | `observations` | No runtime evidence envelope                      | `intent()`, `expect()`, `eval_context()`, `checkpoint()`               |
    | `delivery`     | No terminal deliverable captured                  | `deliver(payload, grounded_by=[...])` inside the unit that produced it |
 
-1. Re-verify after each fix; don't move on until the grade flips.
+1. Re-smoke and re-verify after each fix. Do not report completion until every
+   applicable signal is present; list any inapplicable signal and the real
+   operation that is absent.
 
 ## Payload policy
 

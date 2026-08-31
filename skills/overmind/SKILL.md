@@ -59,8 +59,8 @@ Follow these for ALL Overmind MCP work:
 
 The complete command sequence; details in
 [references/instrumentation.md](references/instrumentation.md) — read it once,
-not per step. Target: under 10 minutes for Tier 0 + Tier 1, Tier 2 afterward
-via the punch list.
+not per step. One run is complete only when its representative smoke traces
+bind every task and carry every applicable evidence signal.
 
 1. `list_behaviours` per capability. Populated registry → placements come from
    `get_instrumentation_context`; empty (or no such tool) → step 2.
@@ -82,7 +82,11 @@ via the punch list.
    `binding_source == "unbound"`; runs bind `anchor_join`, turns bind
    `declared`). Individual `check` / `smoke` / `verify` commands are for
    debugging a failed gate — see the reference.
-1. Act on Tier 1 punch-list items now; park Tier 2 for the ratchet loop.
+1. Read every capability's `punch_list`, add each applicable signal at its
+   real call site, then rerun `gate`. Do not stop after task binding. Never
+   invent a tool, observation, or delivery solely to improve a grade; report a
+   signal as inapplicable only when the capability has no corresponding real
+   operation.
 1. Report the per-stage timing table.
 
 Constraints: verify a placement by matching `target.source_line` against the
@@ -118,9 +122,9 @@ reading for this workflow.
 
 ## Use-case references
 
-- Instrumenting an application from a server-minted placement plan (fast path:
-  `plan` → subagent fan-out → fill smoke scaffolds → `gate`, then the Tier 2
-  ratchet):
+- Instrumenting an application from a server-minted placement plan:
+  `plan` → subagent fan-out → fill smoke scaffolds → verify and complete the
+  returned evidence work in the same run:
   [references/instrumentation.md](references/instrumentation.md)
 - Resolving / updating agents, prompts, eval spec, and GitHub analyze:
   [references/agents.md](references/agents.md)
