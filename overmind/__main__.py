@@ -179,7 +179,8 @@ def _write_smoke_scaffolds(placements: list, root: Path) -> list[str]:
         path = root / script
         if path.exists():
             continue
-        symbol, _, method = str(qualname).partition(".")
+        local_qualname = str(qualname).removeprefix(f"{module}.")
+        symbol, _, method = local_qualname.partition(".")
         if method:
             call = (
                 f"    instance = {symbol}()  # TODO: constructor args\n"
@@ -281,6 +282,8 @@ def _run_smoke(placements: list, out: Path, root: Path) -> tuple[int, int, list[
             if not script_path.exists():
                 continue
             env = {**os.environ, "OVERMIND_SMOKE": "1", "OVERMIND_TRACE_FILE": str(out)}
+            env.pop("OVERMIND_API_KEY", None)
+            env.pop("OVERMIND_API_URL", None)
             # Run through the interpreter: agent-written scripts have no shebang/exec bit.
             runner = [sys.executable, str(script_path)] if script_path.suffix == ".py" else [str(script_path)]
             ran += 1
