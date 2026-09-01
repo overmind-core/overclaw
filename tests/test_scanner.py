@@ -110,12 +110,16 @@ def test_scan_llm_call_via_langchain_import(tmp_path):
 def test_scan_llm_call_needs_an_imported_client(tmp_path):
     """A bare ``.invoke()`` on an unknown object is not an LLM call."""
     _write(tmp_path, "plain.py", "def ask(thing):\n    return thing.invoke('hi')\n")
-    assert scan(str(tmp_path))["files"] == []
+    symbols = scan(str(tmp_path))["files"][0]["symbols"]
+    assert [s["kind"] for s in symbols] == ["function"]
 
 
 def test_scan_entry_excludes_nested_main(tmp_path):
+    """A class method named ``main`` is not a module-level entry, but the
+    complete index still emits it as a plain function for anchor matching."""
     _write(tmp_path, "m.py", "class Runner:\n    def main(self):\n        pass\n")
-    assert scan(str(tmp_path))["files"] == []
+    symbols = {s["qualname"]: s["kind"] for s in scan(str(tmp_path))["files"][0]["symbols"]}
+    assert symbols == {"m.Runner": "function", "m.Runner.main": "function"}
 
 
 def test_scan_qualifies_same_named_top_level_symbols(tmp_path):

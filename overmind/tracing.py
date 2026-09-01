@@ -788,8 +788,8 @@ def init(
             return True
 
         trace_file = os.environ.get("OVERMIND_TRACE_FILE")
-        # A file exporter replaces the network one, so the API key is optional.
-        file_export = bool(trace_file) and not (overmind_api_key or os.environ.get("OVERMIND_API_KEY"))
+        # A file exporter replaces the network one, so the API key is irrelevant.
+        file_export = bool(trace_file)
 
         # Optimise-step subprocess: the runner wrapper already set up a
         # file-exporter provider and stripped the API key — reuse it instead of

@@ -68,6 +68,21 @@ def test_file_exporter_roundtrip(tmp_path, monkeypatch):
     assert span["end_time_ns"] >= span["start_time_ns"]
 
 
+def test_file_exporter_wins_when_api_key_is_set(tmp_path, monkeypatch):
+    import overmind
+
+    trace_file = tmp_path / "trace.jsonl"
+    monkeypatch.setenv("OVERMIND_TRACE_FILE", str(trace_file))
+    monkeypatch.setenv("OVERMIND_API_KEY", "test-key")
+
+    assert overmind.init() is True
+    with overmind.run("smoke-run", capability_id="11111111-1111-1111-1111-111111111111"):
+        pass
+
+    assert trace_file.exists()
+    assert trace_file.read_text()
+
+
 def test_file_exporter_reuses_a_provider_someone_else_installed(tmp_path, monkeypatch):
     """The optimise runner wrapper installs its own file-exporter provider;
     init() must ride it instead of building a second one OTel would ignore."""

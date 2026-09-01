@@ -71,8 +71,13 @@ bind every task and carry every applicable evidence signal.
    skeleton per placement and wires it as `smoke_script`.
 1. One subagent per placement **file**, all dispatched in a single message:
    apply `required_task_decorator` at `target.qualname`, add
-   `target.import_line`, wire `required_identity`. Edits are independent by
-   construction. The lead keeps `ambiguous` (the dynamic-key judgment calls).
+   `target.import_line`, wire `required_identity`, and add every applicable
+   richer telemetry signal at its real call site in the same edit pass:
+   tool/workflow/retrieval decorators, intent, expectations, checkpoints,
+   runtime context, provenance, delivery, and conversation closure. Edits are
+   independent by construction. The lead keeps `ambiguous` (the dynamic-key
+   judgment calls). Do not make a binding-only pass and defer richer telemetry
+   until after verification.
 1. Fill the TODO args in each generated `smoke_<key>.py` — never write a smoke
    script from scratch. The skeleton already imports and calls the real
    decorated entry; only synthetic args are missing.
@@ -82,11 +87,12 @@ bind every task and carry every applicable evidence signal.
    `binding_source == "unbound"`; runs bind `anchor_join`, turns bind
    `declared`). Individual `check` / `smoke` / `verify` commands are for
    debugging a failed gate — see the reference.
-1. Read every capability's `punch_list`, add each applicable signal at its
-   real call site, then rerun `gate`. Do not stop after task binding. Never
-   invent a tool, observation, or delivery solely to improve a grade; report a
-   signal as inapplicable only when the capability has no corresponding real
-   operation.
+1. Use each capability's `punch_list` as a final completeness check after the
+   full edit pass. If it identifies applicable omissions, fix all omissions in
+   one batch and rerun `gate`; do not use verification to schedule a separate
+   binding-then-evidence workflow. Never invent a tool, observation, or
+   delivery solely to improve a grade; report a signal as inapplicable only
+   when the capability has no corresponding real operation.
 1. Report the per-stage timing table.
 
 Constraints: verify a placement by matching `target.source_line` against the
@@ -123,8 +129,8 @@ reading for this workflow.
 ## Use-case references
 
 - Instrumenting an application from a server-minted placement plan:
-  `plan` → subagent fan-out → fill smoke scaffolds → verify and complete the
-  returned evidence work in the same run:
+  `plan` → one-pass full instrumentation → fill smoke scaffolds → gate and
+  completeness check:
   [references/instrumentation.md](references/instrumentation.md)
 - Resolving / updating agents, prompts, eval spec, and GitHub analyze:
   [references/agents.md](references/agents.md)

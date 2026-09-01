@@ -307,20 +307,25 @@ def _scan_file(path: Path, root: Path) -> tuple[list[dict[str, Any]], set[str]]:
             "source_line": lines[node.lineno - 1].strip() if 0 < node.lineno <= len(lines) else "",
         })
 
+    def _add_class(qualname: str, node: ast.ClassDef, kind: str) -> None:
+        symbols.append({
+            "qualname": qualname,
+            "kind": kind,
+            "signature": None,
+            "docstring": _docstring(node),
+            "decorators": [_decorator_name(d) for d in node.decorator_list],
+            "lineno": node.lineno,
+            "source_line": lines[node.lineno - 1].strip() if 0 < node.lineno <= len(lines) else "",
+        })
+
     def _visit(node: ast.AST, scope: tuple[str, ...]) -> None:
         for child in ast.iter_child_nodes(node):
             if isinstance(child, ast.ClassDef):
+                qualname = _qualname(scope, child.name)
                 if any(marker in _base_name(base) for base in child.bases for marker in _AGENT_BASE_MARKERS):
-                    qualname = _qualname(scope, child.name)
-                    symbols.append({
-                        "qualname": qualname,
-                        "kind": "agent_class",
-                        "signature": None,
-                        "docstring": _docstring(child),
-                        "decorators": [_decorator_name(d) for d in child.decorator_list],
-                        "lineno": child.lineno,
-                        "source_line": lines[child.lineno - 1].strip() if 0 < child.lineno <= len(lines) else "",
-                    })
+                    _add_class(qualname, child, "agent_class")
+                else:
+                    _add_class(qualname, child, "function")
                 _visit(child, (*scope, child.name))
             elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 qualname = _qualname(scope, child.name)
@@ -336,6 +341,8 @@ def _scan_file(path: Path, root: Path) -> tuple[list[dict[str, Any]], set[str]]:
                     _add(qualname, "tool", child, decorator_names)
                 elif _function_has_llm_call(child, llm_imports, litellm_imported):
                     _add(qualname, "llm_call", child, decorator_names)
+                else:
+                    _add(qualname, "function", child, decorator_names)
 
                 _visit(child, (*scope, child.name))
 

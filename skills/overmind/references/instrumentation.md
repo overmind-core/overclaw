@@ -15,8 +15,9 @@ See [telemetry.md](telemetry.md).
 ## Complete telemetry
 
 One instrumentation run covers initialization, task binding, and the evidence
-needed to score representative executions. Establish task binding first, then
-complete the returned evidence work before reporting completion.
+needed to score representative executions. Plan and apply the complete
+telemetry surface in one edit pass; use verification to confirm coverage and
+catch omissions before reporting completion.
 
 - **Auto-capture.** `overmind.init(providers=[...])` at process
   start. This alone gets LLM call spans (`gen_ai.request.model`,
@@ -140,11 +141,12 @@ Constraints for both routes:
 - Write every artifact (candidates.json, plan.json, smoke scripts,
   spans.jsonl) **inside the repository**. Sandboxed agents cannot write `/tmp`
   or read outside the project; an absolute path outside the repo fails the run.
-- Establish binding first: run brackets, task roots, capability identity, and
-  anchor names. Once `verify_instrumentation_spans` reports every task bound,
-  immediately add each applicable `intent`, `expect`, `checkpoint`,
-  `eval_context`, tool/retrieval, provenance, observation, and delivery signal
-  from its punch list, then re-smoke and re-verify in the same run.
+- Implement the complete telemetry surface in one edit pass: run brackets, task
+  roots, capability identity, anchor names, and every applicable `intent`,
+  `expect`, `checkpoint`, `eval_context`, tool/retrieval, provenance,
+  observation, delivery, and conversation signal at its real call site. Use
+  `verify_instrumentation_spans` as a completeness check, not as a reason to
+  defer richer telemetry to a second implementation pass.
 - An `observations` punch item means `overmind.eval_context(...)` with real
   environment facts from that execution. `record_observation()` is not an SDK
   API; do not invent facts solely to raise a grade.
@@ -217,8 +219,13 @@ table at the end.
    > `overmind.init(providers=[], agent_id=<capability_id>)` before the entry
    > runs. Without identity on the spans the server cannot bind ANY task,
    > whatever the key says.
+   > In the same edit, add every applicable richer signal at real call sites in
+   > this file: `@overmind.tool` / `@overmind.workflow` /
+   > `@overmind.retrieval`, intent, expectations, checkpoints, runtime context,
+   > provenance, delivery, and conversation closure. Do not invent operations
+   > or evaluator logic solely to improve a grade.
    > Keep local code style (quotes, import grouping, line length). Make no
-   > other edits — no renames, no reformatting outside the touched lines, no
+   > unrelated edits — no renames, no reformatting outside touched lines, no
    > speculative anchors. Report the diff.
 
    The lead agent keeps the `ambiguous` list for itself: the dynamic-dispatch
@@ -290,6 +297,12 @@ table at the end.
    API key required) instead of exporting over OTLP. These two env vars are
    the whole smoke contract — do not read the SDK source to verify how they
    interact; set them and run. `spans.jsonl` ends up as one JSON span per line.
+   Never repeat a smoke run with `OVERMIND_API_KEY` set to obtain a
+   server-ingested trace. File export plus MCP verification is the bounded
+   instrumentation check; a real application trace is a separate, explicitly
+   requested test. If the process reaches an exporter despite
+   `OVERMIND_TRACE_FILE`, stop and report the environment conflict instead of
+   retrying.
 
 1. **Verify (debug).**
 
@@ -324,10 +337,12 @@ table at the end.
 1. **Report the timing table** (scan / plan / edit / validate wall-clock)
    alongside the pass/fail state of the static gate and the verify call.
 
-## Complete the evidence in the same run
+## Complete telemetry in the edit pass
 
-1. Use bounded smoke scenarios that exercise the capability's real entry,
-   tools, retrieval, and terminal output. Do not run the real application.
+1. During the edit pass, cover every applicable signal exposed by the real
+   capability: entry, tools, retrieval, intent, expectations, checkpoints,
+   runtime context, provenance, and terminal output. Use bounded smoke
+   scenarios to exercise those paths without running the real application.
 
 1. `verify_instrumentation_spans` grades each capability on six axes and
    returns a punch list. Resolve every applicable item:
@@ -341,9 +356,10 @@ table at the end.
    | `observations` | No runtime evidence envelope                      | `eval_context(...)` with real environment facts                         |
    | `delivery`     | No terminal deliverable captured                  | `deliver(payload, grounded_by=[...])` inside the unit that produced it |
 
-1. Re-smoke and re-verify after each fix. Do not report completion until every
-   applicable signal is present; list any inapplicable signal and the real
-   operation that is absent.
+1. Do not report completion until every applicable signal is present. If
+   verification identifies omissions, apply all actual fixes together and
+   rerun `gate` once; list any inapplicable signal and the real operation that
+   is absent.
 
 ## Payload policy
 
