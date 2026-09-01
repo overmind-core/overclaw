@@ -42,7 +42,7 @@ Do not invent a fifth.
 1. `list_datasets` — pick a **ft**-intent, model-surface training dataset, or
    build one from traces / a file. `list_finetune_jobs` /
    `list_finetune_base_models` show what's already been tried.
-1. `finetune_prerequisites(dataset_name, agent_name_or_slug?)` — **ALWAYS**
+1. `finetune_prerequisites(dataset_name, capability_name_or_slug?)` — **ALWAYS**
    call before launching. Returns `ready` / `missing` (train-intent check,
    surface check, validation, agent, default eval dataset, default eval set),
    train/eval `overlap_count`, `recommendations` (ranked models + hyperparams
@@ -54,7 +54,7 @@ Do not invent a fifth.
    `hyperparams`, `selected`. Exactly one row has `selected: true` — that is
    the recommender's top pick, not a multi-model default sweep. For the full
    ranking plus benchmark evidence, also call
-   `finetune_recommendation(dataset_name, agent_name_or_slug?)`. Present
+   `finetune_recommendation(dataset_name, capability_name_or_slug?)`. Present
    **only** ids from `recommendations` / `catalog` — never invent OpenAI
    API ids or Llama-2 names. Ask the user how many to train (one or
    several). Cap at 4. If they don't narrow it, launch the top pick
@@ -101,10 +101,10 @@ Do not invent a fifth.
    pointing the agent's code at the **winning** fine-tuned model (needs a
    SUCCEEDED job, a deployed model, and a linked GitHub repo;
    `analyze_github_repo` / `analyze_github_repo_url` link one —
-   [agents.md](agents.md)). The **alias
+   [capabilities.md](capabilities.md)). The **alias
    PR is once per agent**: after one merged PR, calling without `pin` is
    refused for later jobs. For a second or later fine-tune, either
    `pin=true` (writes the concrete `ft-…` id) or tell the user to promote
-   it in the Console ("Make live") or `update_agent(agent_name_or_slug, active_model=<READY deployed-model UUID>)` ([agents.md](agents.md)).
+   it in the Console ("Make live") or `update_capability(capability_name_or_slug, active_model=<READY deployed-model UUID>)` ([capabilities.md](capabilities.md)).
    Runs in the background —
    follow with `finetune_job_events`. `job_status(kind="model_pr", id=<finetune_job uuid>)` tracks the swap PR.

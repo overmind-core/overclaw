@@ -32,17 +32,15 @@ arguments.
 - `list_eval_sets(agent?)` before authoring a suite — the Console runs the
   same authoring pass as `generate_evaluators` automatically after a code
   scan, so the agent's Default eval set may already exist.
-- Whole suite for an agent: `generate_evaluators(agent_name_or_slug)` —
+- Whole suite for an agent: `generate_evaluators(capability_name_or_slug)` —
   authors grounded judges from the agent's codebase and merges them into its
   Default eval set. Runs in the background.
-- Fit check for a dataset: `dataset_eval_capabilities(dataset_name)` —
-  applicable kinds/scopes, recommended evaluators, semantic domain/task.
-  Suggestions without persisting: `generate_dataset_evals(dataset_name)`
+- Suggestions for a dataset without persisting: `generate_dataset_evals(dataset_name)`
   (spends LLM credits).
 - One judge: draft with
-  `generate_evaluator_prompt(description, agent_name_or_slug?, applicable_role?)` or `compile_rubric(rubric_md, score_type?)` (both spend
+  `generate_evaluator_prompt(description, capability_name_or_slug?, applicable_role?)` or `compile_rubric(rubric_md, score_type?)` (both spend
   LLM credits, persist nothing), then save with
-  `create_judge_evaluator(name, evaluation_prompt, score_type [numeric|boolean|categorical], categories? [required for categorical], agent_name_or_slug?, applicable_roles?, judge_model?)`.
+  `create_judge_evaluator(name, evaluation_prompt, score_type [numeric|boolean|categorical], task?, behaviour_role? [outcome|step], anchor_segment?, eval_set_name?, eval_set_role?, categories? [required for categorical], capability_name_or_slug?, applicable_roles?, judge_model?)`.
   Edit an existing judge in place (same id/version):
   `update_judge_evaluator(evaluator, evaluation_prompt, score_type, …)`.
 - Verify what a judge reads:
@@ -52,7 +50,7 @@ arguments.
 
 1. `list_eval_sets(agent?, limit?)` — member counts and each member's
    `id` / name / role / enabled.
-1. `create_eval_set(agent_name_or_slug, name, description?, activate?)`.
+1. `create_eval_set(capability_name_or_slug, name, description?, activate?)`.
 1. `add_evaluators_to_eval_set(eval_set_name, evaluator_names, role?)` —
    `role="generative"` grades eval-run outputs; `role="trace_scoring"` on the
    agent's ACTIVE set binds them as live scorers on incoming traces.
@@ -95,7 +93,7 @@ comparisons you drive yourself. See [finetuning.md](finetuning.md) and
   run-vs-run per-evaluator deltas. Use this after a finetune or optimizer
   loop, not a hand-rolled table from two `get_eval_run` payloads.
 - `eval_run_trend(eval_run_name)`,
-  `evaluator_score_history(agent_name_or_slug)`,
+  `evaluator_score_history(capability_name_or_slug)`,
   `eval_score_trends(days?, agent?, evaluator?)` — time series.
 - Human labels vs judges: `list_eval_annotations` /
   `create_eval_annotation` / `get_eval_annotation`. Calling

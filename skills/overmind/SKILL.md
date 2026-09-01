@@ -31,9 +31,9 @@ Follow these for ALL Overmind MCP work:
 1. **Names, not ids.** Tools take human names resolved against the project.
    Get them from the matching `list_*` tool first. UUIDs work as a fallback.
    Never paste raw UUIDs to the user when a name/slug exists. Exception:
-   stamp `list_agents` / `get_agent` `id` (bare UUID) into the SDK, and
-   pass a READY deployed-model UUID to `update_agent(..., active_model=)`
-   (empty clears it). See [references/agents.md](references/agents.md).
+   stamp `list_capabilities` / `get_capability` `id` (bare UUID) into the SDK, and
+   pass a READY deployed-model UUID to `update_capability(..., active_model=)`
+   (empty clears it). See [references/capabilities.md](references/capabilities.md).
 1. **Intent gates every dataset workflow.** Eval runs and optimizer
    experiments need **eval** intent; fine-tuning needs **ft** + model
    surface. Read the intent section below before creating or picking a
@@ -47,10 +47,10 @@ Follow these for ALL Overmind MCP work:
    MCP (`list_traces` → `get_trace`) and it carries everything the baseline
    in [references/telemetry.md](references/telemetry.md#what-a-good-trace-carries) requires.
 1. **One agent at a time.** Instrumentation tasks map to agents. Resolve the
-   agent's identity and capability card from `get_agent` — top-level `id`
+   agent's identity and capability card from `get_capability` — top-level `id`
    (bare UUID, stamp verbatim), `active_model`, `source_repo`, capped
    `flow` (`flow_truncated` when clipped) — and scope changes to that
-   agent's files ([references/agents.md](references/agents.md),
+   agent's files ([references/capabilities.md](references/capabilities.md),
    [references/telemetry.md](references/telemetry.md) Step 0 /
    5b). For repo-wide tasks, run the systematic one-at-a-time pass (Step 5c)
    — never a giant all-agents-at-once edit.
@@ -58,7 +58,7 @@ Follow these for ALL Overmind MCP work:
 ## Use-case references
 
 - Resolving / updating agents, prompts, eval spec, and GitHub analyze:
-  [references/agents.md](references/agents.md)
+  [references/capabilities.md](references/capabilities.md)
 - Telemetry (add tracing, inspect traces / sessions / health, connectors):
   [references/telemetry.md](references/telemetry.md)
 - Uploading / building datasets (from traces, failures, or an attached file)
@@ -74,13 +74,13 @@ Follow these for ALL Overmind MCP work:
 
 ## Conventions (read before any workflow)
 
-- **List first.** `list_datasets`, `list_agents`, `list_eval_sets`,
+- **List first.** `list_datasets`, `list_capabilities`, `list_eval_sets`,
   `list_evaluators`, `list_eval_runs`, `list_finetune_jobs`,
   `list_deployed_models`, `list_optimizer_experiments`, `list_traces`,
   `list_sessions`. Then pass `dataset_name`, `eval_set_name`,
-  `evaluator_names`, `agent_name_or_slug`, `eval_run_name`.
-  `list_agents` / `get_agent` return top-level `id` (bare UUID) and
-  `active_model`; `get_agent` also `source_repo` and a capped `flow`
+  `evaluator_names`, `capability_name_or_slug`, `eval_run_name`.
+  `list_capabilities` / `get_capability` return top-level `id` (bare UUID) and
+  `active_model`; `get_capability` also `source_repo` and a capped `flow`
   (`flow_truncated` when clipped).
 - **Async jobs.** Launch tools return `job_status: {kind, id}`. Kinds:
   `eval_run`, `finetune_job`, `optimizer_experiment`, plus poll-only
@@ -126,9 +126,9 @@ a running job is frozen until the job ends.
 Typical loop, always via MCP:
 
 1. **See what's happening** — [telemetry.md](references/telemetry.md)
-   (`agent_health` → `agent_failures` → `list_traces` / `get_trace`).
-   Resolve / retarget agents via [agents.md](references/agents.md)
-   (`list_agents` / `get_agent` / `update_agent`;
+   (`capability_health` → `capability_failures` → `list_traces` / `get_trace`).
+   Resolve / retarget agents via [capabilities.md](references/capabilities.md)
+   (`list_capabilities` / `get_capability` / `update_capability`;
    `analyze_github_repo` if none exist). If nothing is landing, add tracing
    in the same file — stamp each agent's `id` and instrument one at a time.
 1. **Turn traces into data** — [datasets.md](references/datasets.md)

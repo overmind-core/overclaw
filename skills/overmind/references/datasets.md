@@ -15,7 +15,7 @@ endpoint. Inspect each tool's schema for arguments.
 - [ ] 2. Build with the right intent:
          failures → create_dataset_from_failures
          OR traces → create_dataset_from_traces (last_n, don't copy ids off a page)
-         OR file → analyze_dataset_file then create_dataset_from_file
+         OR file → start_dataset_build then commit_dataset_build
 - [ ] 3. Confirm intent matches the downstream workflow (eval vs ft vs unstructured)
 - [ ] 4. open_workshop (once) / workshop_state — start here for quality
          (open_workshop / re-analysis spend credits; surface the verdict)
@@ -42,13 +42,13 @@ workshop UI:
 Preferred when telemetry already exists (see [telemetry.md](telemetry.md)).
 
 - Failures → dataset in one step:
-  `create_dataset_from_failures(agent_name_or_slug, dataset_name, since_days?, limit?)`. Prefer this over manually plumbing trace ids. Do **not** copy
-  ids from `agent_failures` into `create_dataset_from_traces`.
+  `create_dataset_from_failures(capability_name_or_slug, dataset_name, since_days?, limit?)`. Prefer this over manually plumbing trace ids. Do **not** copy
+  ids from `capability_failures` into `create_dataset_from_traces`.
 - Specific or recent traces:
-  `create_dataset_from_traces(agent_name_or_slug, trace_ids?, last_n?, dataset_name?, surface?, split_eval_fraction?, split_method?, eval_dataset_name?)`.
+  `create_dataset_from_traces(capability_name_or_slug, trace_ids?, last_n?, dataset_name?, surface?, split_eval_fraction?, split_method?, eval_dataset_name?)`.
   Omit `trace_ids` and pass `last_n` for the N most recent (default 20, max
   1000\) — better than copying ids off a `list_traces` page. `trace_ids`
-  accept bare OTel hex or `traces:<hex>` refs from `agent_failures`.
+  accept bare OTel hex or `traces:<hex>` refs from `capability_failures`.
   `surface` is `agent` | `model`. Set `split_eval_fraction` (0.01–0.9) plus
   optional `split_method` (`shuffle` | `tail`) to create train+eval
   datasets in one call.
@@ -66,13 +66,14 @@ being read by a running job is frozen until the job ends.
 There is no separate upload tool. The user attaches a CSV / TSV / JSON /
 JSONL; you get an `attachment_id`. Then:
 
-1. `analyze_dataset_file(attachment_id, intent?)` — inferred intent, field
-   mapping, per-intent viability, before→after preview. **Nothing is
-   persisted.** Same engine as the dataset upload wizard.
-1. Review the proposal with the user. Pass `intent` explicitly
-   (`eval | ft | unstructured`) if inference is wrong.
-1. `create_dataset_from_file(attachment_id?, dataset_name?, agent_name?, intent?, surface?, source_dataset?, split_eval_fraction?, split_method?, eval_dataset_name?)` — ingest. Returns the created dataset's name, intent,
-   surface, and `num_datapoints`. Bind `agent_name` when you know which
+1. `start_dataset_build(attachment_id, intent?, capability_name_or_slug?)` —
+   measures the full file: inferred intent, field mapping, accepted/rejected
+   counts, before→after preview. **Nothing is persisted.**
+1. Review with the user: `dataset_build_state(build_id)`; change the plan with
+   `plan_dataset_build` (intent `eval | ft | unstructured`, surface, split);
+   `commit_dataset_build(build_id)` writes, `abandon_dataset_build` discards.
+1. `create_dataset_from_file(attachment_id?, dataset_name?, capability_name_or_slug?, intent?, surface?, source_dataset?, split_eval_fraction?, split_method?, eval_dataset_name?)` — ingest. Returns the created dataset's name, intent,
+   surface, and `num_datapoints`. Bind `capability_name_or_slug` when you know which
    agent owns it. `surface` is `agent` | `model`. Set
    `split_eval_fraction` to create an **ft** train dataset plus an **eval**
    holdout — rows must be conversation-shaped (`messages`) or pass `intent`
