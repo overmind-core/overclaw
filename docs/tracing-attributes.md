@@ -35,6 +35,7 @@ absent.
 | `overmind.agent.id` | string (UUID) | if `init(agent_id=)` / `OVERMIND_AGENT_ID` | Agent PK. Server resolves this first (direct lookup). |
 | `overmind.agent.name` | string | if `init(agent_name=)` / `OVERMIND_AGENT_NAME` | Agent display name; server slugifies for stable identity. |
 | `overmind.project.id` | string (UUID) | if `init(project_id=)` / `OVERMIND_PROJECT_ID` | Project PK (session auth only; API tokens pin the project). |
+| `vcs.ref.head.revision` | string | if detectable | Commit sha of the running code (OTel VCS semconv). Auto-detected: `OVERMIND_GIT_SHA` (explicit override), then `GIT_SHA` / `GIT_COMMIT` / `GITHUB_SHA` / `RENDER_GIT_COMMIT` / `VERCEL_GIT_COMMIT_SHA` / `HEROKU_SLUG_COMMIT` / `CI_COMMIT_SHA`, then `.git/HEAD` (resolving the ref file / packed-refs) walking up from cwd. Silently omitted when undetectable. |
 
 Identity is *also* seeded into the OTel context, so the on-start processor stamps
 the same `overmind.agent.id` / `overmind.agent.name` / `overmind.project.id` onto
@@ -50,6 +51,8 @@ Emitted by `@observe` / `@entry_point` / `@workflow` / `@tool` / `@function` /
 | Key | Type | When present | Meaning |
 |-----|------|-------------|---------|
 | `overmind.span.type` | string | always | One of `function`, `entry_point`, `workflow`, `tool_call`, `llm_call`, `retrieval`. |
+| `code.namespace` | string | decorators only | `__module__` of the decorated function (after `inspect.unwrap`). Not stamped by `start_span` (no function to read). |
+| `code.function.name` | string | decorators only | `__qualname__` of the decorated function (includes the class for methods). `code.namespace` + `.` + `code.function.name` is the Behaviour Registry anchor the server binds spans to. |
 | `overmind.status` | string | always | `success` \| `failed` \| `cancelled`. |
 | `overmind.duration.seconds` | float | always | Wall-clock duration of the wrapped span. |
 | `overmind.error.type` | string | on failure | Exception class name. |
@@ -131,7 +134,78 @@ step-specific keys are set by the caller via `set_tag`.
 
 ---
 
-## 6. Server-ingest reconciliation (Phase 2 checklist)
+## 6. Eval envelope span events (`overmind.eval.*`) — wire contract v1
+
+Runtime eval declarations, emitted by `overmind.expect()` / `eval_context()` /
+`checkpoint()` / `end_conversation()` (`overmind/evals.py`) as **span events**
+on the current span (standard OTel `add_event`; no-ops without a recording
+span). The platform's evaluation layer parses `Span.events` against exactly
+these names and payload shapes — **pinned, do not rename**.
+
+Every envelope event carries the same two attributes:
+
+| Attribute | Type | Meaning |
+|-----------|------|---------|
+| `overmind.eval.schema_version` | int | Envelope schema version. Currently `1`. |
+| `overmind.eval.payload` | JSON string | Event payload; shape depends on the event name (below). |
+
+Payload shapes (v1):
+
+| Event name | Payload | Emitted by |
+|------------|---------|------------|
+| `overmind.eval.expectation` | `{"id": str, "kind": "contains"\|"regex"\|"schema"\|"constraint"\|"checkpoints", "spec": str or object, "scope": "span"\|"trace"\|"conversation", "gate": bool}` | `expect(kind, spec, *, id=None, scope="trace", gate=False)`. For `checkpoints`, `spec` is the ordered list of checkpoint names the run is expected to reach. `id` is auto-derived as a short stable hash of kind+spec when omitted. Bad `kind`/`scope` raise `ValueError`. |
+| `overmind.eval.context` | `{"facts": {str: JSON scalar or small object}}` | `eval_context(**facts)`. Values are coerced the same way `set_tag` coerces attribute values (rich values become JSON strings). |
+| `overmind.eval.checkpoint` | `{"name": str}` | `checkpoint(name)` — named trajectory milestone / turn boundary. |
+| `overmind.eval.conversation_end` | `{}` | `end_conversation()` — triggers conversation-scope scoring. |
+
+---
+
+## 7. Evaluation evidence contract (`overmind.provenance` / `overmind.unit_kind` / `overmind.delivery`) — pinned
+
+The platform's evaluation judges read these keys to distinguish evidence by
+who produced it, find user-visible unit boundaries, and locate the terminal
+deliverable. All four are inert extras: old platforms ignore them, nothing
+requires them, and integrations that never call `deliver()` are unaffected.
+Pinned in `tests/test_evidence_contract.py` — do not rename.
+
+| Key | Type | When present | Meaning |
+|-----|------|-------------|---------|
+| `overmind.provenance` | string | auto on `@tool` / `@retrieval` (`environment`) and `llm_call` (`agent`) spans; any span via `provenance=` | Provenance class of the span's payloads: `user` \| `agent` \| `environment` \| `harness`. Tool results and observations are `environment`; model/agent-authored text is `agent`; real end-user input is `user`; scaffold/framework text is `harness`. |
+| `overmind.unit_kind` | string | auto (`run`) on `@entry_point` spans; auto (`turn`) on the first span of a capability handoff; any span via `mark_unit()` | Declared unit marker (ATSC agent-turn vocabulary): `turn` begins a user-visible unit of work, `run` is the root of a full agent run. A handoff-boundary `turn` is never downgraded: an `@entry_point` span that already carries `turn` keeps it. |
+| `overmind.delivery` | bool | `deliver()` span | `true` on the span carrying the terminal deliverable (payload serialised into `outputs`). |
+| `overmind.grounded_by` | JSON string | `deliver(grounded_by=)` | JSON array of span_id hex strings naming the evidence spans the deliverable rests on. |
+
+Emitters: the `provenance=` parameter on `@observe` (and the decorator
+shorthands) / `start_span` / `start_child_span`; `overmind.mark_unit(kind)`;
+`overmind.deliver(payload, *, grounded_by=None, name="deliver",
+provenance="agent")` — `grounded_by` accepts span_id hex strings or OTel span
+handles (e.g. the span yielded by `start_span`).
+
+### Capability scoping and handoffs
+
+`overmind.capability(name=..., id=...)` — context manager (`with` /
+`async with`) or decorator — declares that all work inside belongs to one
+capability. Every span created in the scope is stamped with the scope's
+`overmind.agent.name` / `overmind.agent.id` (via the OTel context, so
+auto-instrumented spans are covered too); on exit the outer identity is
+restored, async-safely. A name-only scope clears any outer `agent.id` so the
+server's id-first resolution can't bind inner spans to the outer capability.
+
+Entering a capability that differs from the currently active identity while a
+trace is open is a **handoff**: the first span of the new scope is stamped
+`overmind.unit_kind = "turn"`, opening a new scoring unit. No dedicated
+handoff wire attribute exists — the platform draws handoffs from consecutive
+units' capability bindings. Identities are compared on the finest shared
+grain (ids when both sides have one, else names); nothing is stamped that the
+app didn't declare, and unknown identities stay unbound server-side.
+
+`agent_id=` on `@observe` and the decorator shorthands routes through the
+same mechanism: the decorated span *and* its children carry the identity, and
+a differing identity mid-trace marks a handoff boundary.
+
+---
+
+## 8. Server-ingest reconciliation (Phase 2 checklist)
 
 The server **already reads** these keys today (`_build_span_usage` /
 `_resolve_agent` / `_classify_span_type`):
@@ -149,6 +223,10 @@ call out for Phase 2 server work if you want them surfaced:
 - `genai.response.message_chars` / `genai.response.finish_reason`
 - `genai.streaming` / `genai.time_to_first_token_seconds`
 - `overmind.retrieval.query_chars` / `overmind.retrieval.result_count`
+- the `overmind.eval.*` span events (§6) — envelope parsing is the platform's
+  Phase 1 ingest work
+- the evaluation evidence keys (§7) — the platform's evaluation-framework
+  ingest is being built against them in parallel
 
 These are all additive and namespaced; ingesting spans that carry them is safe
 today (unknown attributes are stored, just not aggregated).

@@ -12,18 +12,17 @@ from overmind.tracing import SpanType, observe, observe_safe
 
 @pytest.fixture(autouse=True)
 def reset_sdk_state():
-    """Reset SDK state before each test; restore conftest tracer after.
+    """Force-mark the SDK initialised so observe() doesn't call through.
 
-    Tests here patch ``get_tracer`` and do not need a live SDK, but leaving
-    ``_initialized`` false breaks later tests on the same pytest-xdist worker
-    (which rely on the no-op tracer installed in ``tests/conftest.py``).
+    Tests here patch ``get_tracer`` and do not need a live SDK; the flag is
+    restored so later tests on the same pytest-xdist worker keep the no-op
+    tracer installed in ``tests/conftest.py``.
     """
     from overmind import tracing
 
     saved_initialized = tracing._initialized
     saved_tracer = tracing._tracer
-    tracing._initialized = False
-    tracing._tracer = None
+    tracing._initialized = True
     yield
     tracing._initialized = saved_initialized
     tracing._tracer = saved_tracer
@@ -56,7 +55,8 @@ def test_observe_sync_basic(mock_tracer):
         result = add_numbers(5, 3)
 
         assert result == 8
-        mock_tracer_obj.start_as_current_span.assert_called_once_with("add_numbers")
+        (span_name,) = mock_tracer_obj.start_as_current_span.call_args.args
+        assert span_name.endswith("add_numbers")
         assert mock_span.set_attribute.call_count >= 2
         mock_span.set_status.assert_called_once()
         assert mock_span.set_status.call_args[0][0].status_code == StatusCode.OK
@@ -76,7 +76,8 @@ def test_observe_with_custom_span_name(mock_tracer):
         result = my_function(10)
 
         assert result == 20
-        mock_tracer_obj.start_as_current_span.assert_called_once_with("custom_operation")
+        mock_tracer_obj.start_as_current_span.assert_called_once()
+        assert mock_tracer_obj.start_as_current_span.call_args.args == ("custom_operation",)
 
 
 def test_observe_captures_inputs(mock_tracer):
@@ -133,7 +134,7 @@ def test_observe_handles_exceptions(mock_tracer):
         # Check that exception was recorded
         mock_span.record_exception.assert_called_once()
         # Check that error status was set
-        status_calls = [c for c in mock_span.set_status.call_args_list]
+        status_calls = list(mock_span.set_status.call_args_list)
         assert len(status_calls) > 0
         # Verify error status
         error_call = status_calls[-1]
@@ -156,7 +157,8 @@ def test_observe_async(mock_tracer):
         result = asyncio.run(async_add(10, 20))
 
         assert result == 30
-        mock_tracer_obj.start_as_current_span.assert_called_once_with("async_operation")
+        mock_tracer_obj.start_as_current_span.assert_called_once()
+        assert mock_tracer_obj.start_as_current_span.call_args.args == ("async_operation",)
         mock_span.set_status.assert_called_once()
         assert mock_span.set_status.call_args[0][0].status_code == StatusCode.OK
 
@@ -178,8 +180,29 @@ def test_observe_async_with_exception(mock_tracer):
             asyncio.run(async_fail())
 
         mock_span.record_exception.assert_called_once()
-        status_calls = [c for c in mock_span.set_status.call_args_list]
+        status_calls = list(mock_span.set_status.call_args_list)
         assert status_calls[-1][0][0].status_code == StatusCode.ERROR
+
+
+def test_observe_async_cancellation_marks_cancelled(mock_tracer):
+    """asyncio.CancelledError ends the span cancelled, not failed, and propagates."""
+    import asyncio
+
+    mock_tracer_obj, mock_span = mock_tracer
+
+    with patch("overmind.tracing.get_tracer", return_value=mock_tracer_obj):
+
+        @observe()
+        async def cancelled_op():
+            raise asyncio.CancelledError
+
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(cancelled_op())
+
+        attributes = {c.args[0]: c.args[1] for c in mock_span.set_attribute.call_args_list}
+        assert attributes["overmind.status"] == "cancelled"
+        assert "overmind.error.type" not in attributes
+        mock_span.record_exception.assert_called_once()
 
 
 def test_observe_with_kwargs(mock_tracer):
@@ -357,7 +380,8 @@ def test_observe_safe_does_not_capture_io(mock_tracer):
         result = secure_func("sk-secret", {"a": 1})
 
         assert result == {"ok": True}
-        mock_tracer_obj.start_as_current_span.assert_called_once_with("secure_func")
+        mock_tracer_obj.start_as_current_span.assert_called_once()
+        assert mock_tracer_obj.start_as_current_span.call_args.args[0].endswith("secure_func")
         assert mock_span.set_status.call_args[0][0].status_code == StatusCode.OK
         io_calls = [c for c in mock_span.set_attribute.call_args_list if "inputs" in str(c) or "outputs" in str(c)]
         assert io_calls == []
@@ -377,7 +401,7 @@ def test_observe_safe_async(mock_tracer):
             return "data"
 
         assert asyncio.run(async_fetch("t0ken")) == "data"
-        mock_tracer_obj.start_as_current_span.assert_called_once_with("secure_async")
+        assert mock_tracer_obj.start_as_current_span.call_args.args == ("secure_async",)
         assert mock_span.set_status.call_args[0][0].status_code == StatusCode.OK
 
 
@@ -408,6 +432,8 @@ def test_observe_safe_tool_metadata(mock_tracer):
     from overmind.attrs import TOOL_ARG_KEYS, TOOL_NAME
 
     mock_tracer_obj, mock_span = mock_tracer
+    # Tool spans are environment evidence; a mock span has no real context to remember.
+    mock_span.get_span_context.return_value.is_valid = False
 
     with patch("overmind.tracing.get_tracer", return_value=mock_tracer_obj):
 

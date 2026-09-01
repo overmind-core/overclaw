@@ -55,8 +55,83 @@ Follow these for ALL Overmind MCP work:
    5b). For repo-wide tasks, run the systematic one-at-a-time pass (Step 5c)
    — never a giant all-agents-at-once edit.
 
+## Instrumentation fast path (digest)
+
+The complete command sequence; details in
+[references/instrumentation.md](references/instrumentation.md) — read it once,
+not per step. One run is complete only when its representative smoke traces
+bind every task and carry every applicable evidence signal.
+
+1. `list_behaviours` per capability. Populated registry → placements come from
+   `get_instrumentation_context`; empty (or no such tool) → step 2.
+1. `overmind instrumentation plan --root . --out plan.json` — scans AND posts
+   to the server's planner in one command; writes plan.json and prints a
+   summary with `ambiguous` + `dropped` (report dropped). Never paste scan or
+   plan JSON into a tool call yourself. It also writes a `smoke_<key>.py`
+   skeleton per placement and wires it as `smoke_script`.
+1. One subagent per placement **file**, all dispatched in a single message:
+   apply `required_task_decorator` at `target.qualname`, add
+   `target.import_line`, wire `required_identity`, and add every applicable
+   richer telemetry signal at its real call site in the same edit pass:
+   tool/workflow/retrieval decorators, intent, expectations, checkpoints,
+   runtime context, provenance, delivery, and conversation closure. Edits are
+   independent by construction. The lead keeps `ambiguous` (the dynamic-key
+   judgment calls). Do not make a binding-only pass and defer richer telemetry
+   until after verification.
+1. Fill the TODO args in each generated `smoke_<key>.py` — never write a smoke
+   script from scratch. The skeleton already imports and calls the real
+   decorated entry; only synthetic args are missing.
+1. `overmind instrumentation gate --plan-file plan.json` — runs check, smoke
+   and verify in one pass and prints one summary
+   `{check, smoke, verify}`. Exit 0 is the pass signal (no task
+   `binding_source == "unbound"`; runs bind `anchor_join`, turns bind
+   `declared`). Individual `check` / `smoke` / `verify` commands are for
+   debugging a failed gate — see the reference.
+1. Use each capability's `punch_list` as a final completeness check after the
+   full edit pass. If it identifies applicable omissions, fix all omissions in
+   one batch and rerun `gate`; do not use verification to schedule a separate
+   binding-then-evidence workflow. Never invent a tool, observation, or
+   delivery solely to improve a grade; report a signal as inapplicable only
+   when the capability has no corresponding real operation.
+1. Report the per-stage timing table.
+
+Constraints: verify a placement by matching `target.source_line` against the
+file at `target.lineno` — a match proves it; edit with no further reading.
+Never re-read the module or re-explore the repo. Budget: all edits ≤2
+minutes — reading a second file for one placement is re-verifying, not
+editing. Produce every edit in one batch (one subagent per file, single
+dispatch), fill the scaffold TODO args, then run `gate` once.
+
+API signatures (verbatim — do NOT read the SDK source for these):
+
+```python
+overmind.init(overmind_api_key=None, *, service_name=None, environment=None,
+              providers=None,   # [] = all; "auto" = all installed; None = none
+              overmind_base_url=None, agent_id=None, agent_name=None,
+              project_id=None, redact_keys=None, export_orphan_spans=False,
+              debug=False) -> bool
+overmind.run(name=None, *, capability=None, capability_id=None, intent=None,
+             conversation_id=None, tags=None)   # context manager or decorator
+overmind.task(key, *, unit=None)                # context manager or decorator
+overmind.capability(name=None, *, id=None)      # context manager or decorator
+@overmind.tool(name=None) / @overmind.workflow(name=None) / @overmind.retrieval(name=None)
+overmind.force_flush_traces()
+```
+
+`init(...)` must run before the traced entry executes. Identity is
+`capability_id` (the capability UUID) — pass it to `run()`, or to
+`capability(id=...)`, or as `init(agent_id=...)` for the process-wide default;
+`providers=[]` plus that id is the whole identity story. `task()` takes a
+plain string key, so dynamic dispatch computes it first
+(`with overmind.task(route_for(request)):`). Nothing else in the SDK needs
+reading for this workflow.
+
 ## Use-case references
 
+- Instrumenting an application from a server-minted placement plan:
+  `plan` → one-pass full instrumentation → fill smoke scaffolds → gate and
+  completeness check:
+  [references/instrumentation.md](references/instrumentation.md)
 - Resolving / updating agents, prompts, eval spec, and GitHub analyze:
   [references/agents.md](references/agents.md)
 - Telemetry (add tracing, inspect traces / sessions / health, connectors):

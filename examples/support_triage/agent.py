@@ -110,13 +110,13 @@ def run(input_data: dict[str, Any]) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    # Trace this run to Overmind. Prefer ``agent_id`` (the Agent's UUID from the
-    # console) — it's a drift-proof direct lookup. ``agent_name`` also works and
-    # is slugified server-side, so keep it stable across runs.
+    # Trace this run to Overmind. ``agent_id`` (the capability's UUID from the
+    # Console) is the identifier — resolved first and stable through renames.
+    # ``agent_name`` is a display label the server resolves via its alias table.
     import overmind
 
     overmind.init(
-        agent_id=os.environ.get("OVERMIND_AGENT_ID"),  # e.g. "6f1c…"; omit to fall back to name
+        agent_id=os.environ.get("OVERMIND_AGENT_ID"),  # e.g. "6f1c…"
         agent_name="Support Triage",
         service_name="support-triage",
         environment=os.environ.get("ENVIRONMENT", "development"),

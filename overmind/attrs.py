@@ -238,6 +238,33 @@ OPTIMIZE_BACKTEST_MODEL = "overmind.optimize.backtest_model"
 OPTIMIZE_BACKTEST_SCORE = "overmind.optimize.backtest_score"
 
 # ---------------------------------------------------------------------------
+# Runtime eval envelope (overmind/evals.py) — SPAN EVENT names plus the two
+# attributes every envelope event carries.  These are wire contract v1: the
+# platform parses them server-side (see docs/tracing-attributes.md §6), so
+# the values are pinned in tests/test_attrs.py — never rename.
+# ---------------------------------------------------------------------------
+EVAL_EXPECTATION_EVENT = "overmind.eval.expectation"
+EVAL_CONTEXT_EVENT = "overmind.eval.context"
+EVAL_CHECKPOINT_EVENT = "overmind.eval.checkpoint"
+EVAL_CONVERSATION_END_EVENT = "overmind.eval.conversation_end"
+EVAL_INTENT_EVENT = "overmind.eval.intent"
+EVAL_SCHEMA_VERSION = "overmind.eval.schema_version"  # int, currently 1
+EVAL_PAYLOAD = "overmind.eval.payload"  # JSON-serialized payload string
+
+# ---------------------------------------------------------------------------
+# Evaluation evidence contract — the platform's judges read these exact keys
+# (pinned in tests/test_evidence_contract.py; see docs/tracing-attributes.md
+# §7).  ``unit_kind`` / ``grounded_by`` deliberately break the dotted-segments
+# naming rule above: the platform ingest is built against these literal keys.
+# ---------------------------------------------------------------------------
+PROVENANCE = "overmind.provenance"  # "user" | "agent" | "environment" | "harness"
+UNIT_KIND = "overmind.unit_kind"  # "turn" | "run" (ATSC agent-turn vocabulary)
+DELIVERY = "overmind.delivery"  # true on the span carrying the terminal deliverable
+GROUNDED_BY = "overmind.grounded_by"  # JSON array of span_id hex strings
+# Declared Behaviour.slug. Optional; the server binds structurally without it.
+BEHAVIOUR_KEY = "overmind.behaviour.key"
+
+# ---------------------------------------------------------------------------
 # Evaluator (overmind/optimize/evaluator.py)
 # ---------------------------------------------------------------------------
 EVAL_BATCH_SIZE = "overmind.eval.batch_size"
@@ -435,6 +462,16 @@ OTEL_LLM_USAGE_COMPLETION_TOKENS = "gen_ai.usage.completion_tokens"
 OTEL_LLM_USAGE_TOTAL_TOKENS = "gen_ai.usage.total_tokens"
 
 # ---------------------------------------------------------------------------
+# OTel code semantic-convention keys — stamped by ``observe()`` on every
+# decorated span so the server can bind spans to Behaviour Registry anchors
+# (``module.qualname``).  ``code.function.name`` is the stable semconv key
+# (carries ``__qualname__``); ``code.namespace`` is deprecated upstream but
+# kept so module and qualname stay separately queryable server-side.
+# ---------------------------------------------------------------------------
+CODE_NAMESPACE = "code.namespace"
+CODE_FUNCTION_NAME = "code.function.name"
+
+# ---------------------------------------------------------------------------
 # Tool-call metadata (server reads these to classify + attribute tool spans).
 # ---------------------------------------------------------------------------
 TOOL_NAME = "tool.name"
@@ -453,6 +490,9 @@ RETRIEVAL_RESULT_COUNT = "overmind.retrieval.result_count"
 # ---------------------------------------------------------------------------
 SDK_NAME = "overmind.sdk.name"
 SDK_VERSION = "overmind.sdk.version"
+# Commit sha of the running code (OTel VCS semconv), auto-detected in
+# ``init()`` from env vars or ``.git/HEAD``.  Omitted when undetectable.
+VCS_REF_HEAD_REVISION = "vcs.ref.head.revision"
 
 # ---------------------------------------------------------------------------
 # Span-level classification / error summary

@@ -6,31 +6,30 @@ Overmind: automatic observability for LLM applications.
 
 """
 
-__version__ = "0.1.60"
+__version__ = "0.1.68"
 
 from opentelemetry.overmind.prompt import PromptString
 
 from .client import Client, ModelDeleted, OvermindInferenceError
+from .evals import checkpoint, end_conversation, eval_context, expect, intent
+from .lifecycle import RunHandle, run
 from .tracing import (
     SpanType,
+    capability,
     capture_exception,
-    conversation,
+    deliver,
     entry_point,
     force_flush_traces,
-    function,
-    get_tracer,
     init,
+    normalize_messages,
     observe,
-    observe_safe,
     retrieval,
-    set_agent_id,
-    set_agent_name,
     set_conversation_id,
-    set_project_id,
     set_tag,
     set_user,
     set_workflow_name,
     start_span,
+    task,
     tool,
     workflow,
 )
@@ -40,25 +39,29 @@ __all__ = [
     "ModelDeleted",
     "OvermindInferenceError",
     "PromptString",
+    "RunHandle",
     "SpanType",
+    "capability",
     "capture_exception",
-    "conversation",
+    "checkpoint",
+    "deliver",
+    "end_conversation",
     "entry_point",
+    "eval_context",
+    "expect",
     "force_flush_traces",
-    "function",
-    "get_tracer",
     "init",
+    "intent",
+    "normalize_messages",
     "observe",
-    "observe_safe",
     "retrieval",
-    "set_agent_id",
-    "set_agent_name",
+    "run",
     "set_conversation_id",
-    "set_project_id",
     "set_tag",
     "set_user",
     "set_workflow_name",
     "start_span",
+    "task",
     "tool",
     "workflow",
 ]

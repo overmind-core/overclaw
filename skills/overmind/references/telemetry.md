@@ -136,16 +136,16 @@ Audit every integration — new or existing — against this baseline before
 calling it done. Fetch a real trace with `list_traces` → `get_trace`; do
 not ask the user to describe the Console.
 
-| Requirement             | How                                                                                                                                                                                                                                        | Why                                                                                                                                                                                                                                                     |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Agent identity          | `agent_id=` **and** `agent_name=` in `init()` (or `set_agent_id()` + `set_agent_name()`). Get BOTH from `get_agent` via MCP — copy top-level `id` verbatim into `agent_id=` (bare UUID; never invent, truncate, or reformat it)            | The server resolves `overmind.agent.id` by direct UUID lookup (drift-proof); `agent_name` is display + fallback. Name-only stamps risk a slug mismatch with the code-scan agent, which mints a duplicate agent whose live trace scoring silently no-ops |
-| Per-agent scoping       | When your task names ONE agent in a multi-agent repo, stamp THAT agent's identity only — never the repo's, never a generic name                                                                                                            | Traces group under the right agent in the Console; sibling agents' spans are untouched                                                                                                                                                                  |
-| Model + token usage     | Automatic via provider auto-instrumentation (Step 4); raw-OTel spans should carry `gen_ai.request.model` / `gen_ai.usage.*`                                                                                                                | Cost is computed server-side from these                                                                                                                                                                                                                 |
-| Inputs and outputs      | The decorators (Step 5) capture call args and return values automatically; make sure the entry point and key steps are decorated so the trace shows what the agent saw and produced                                                        | A trace without I/O can't be debugged or turned into eval data                                                                                                                                                                                          |
-| Sensitive data excluded | Not for agents — trace normally and mask credential fields (API keys, tokens, passwords) before they reach decorated functions. `@observe_safe()` (traces timing/status, no values) is a manual escape hatch for human implementation only | Inputs/outputs are stored verbatim                                                                                                                                                                                                                      |
-| Session grouping        | `set_conversation_id(...)` per conversation/thread (stamped as `conversation.id`) whenever the app has multi-turn interactions                                                                                                             | Groups traces into Sessions                                                                                                                                                                                                                             |
-| User attribution        | `set_user(user_id, email=...)` where the app has accounts                                                                                                                                                                                  | Per-user filtering and cost attribution                                                                                                                                                                                                                 |
-| Span hierarchy + types  | One `@entry_point` at the top; `@workflow` / `@tool` / `@retrieval` for the steps under it, with descriptive names                                                                                                                         | Shows which step failed or was slow, instead of one flat LLM call                                                                                                                                                                                       |
+| Requirement             | How                                                                                                                                                                                                                                | Why                                                                                                                                                                                                                                                     |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent identity          | `agent_id=` **and** `agent_name=` in `init()` (or `set_agent_id()` + `set_agent_name()`). Get BOTH from `get_agent` via MCP — copy top-level `id` verbatim into `agent_id=` (bare UUID; never invent, truncate, or reformat it)    | The server resolves `overmind.agent.id` by direct UUID lookup (drift-proof); `agent_name` is display + fallback. Name-only stamps risk a slug mismatch with the code-scan agent, which mints a duplicate agent whose live trace scoring silently no-ops |
+| Per-agent scoping       | When your task names ONE agent in a multi-agent repo, stamp THAT agent's identity only — never the repo's, never a generic name                                                                                                    | Traces group under the right agent in the Console; sibling agents' spans are untouched                                                                                                                                                                  |
+| Model + token usage     | Automatic via provider auto-instrumentation (Step 4); raw-OTel spans should carry `gen_ai.request.model` / `gen_ai.usage.*`                                                                                                        | Cost is computed server-side from these                                                                                                                                                                                                                 |
+| Inputs and outputs      | The decorators (Step 6) capture call args and return values automatically; make sure the entry point and key steps are decorated so the trace shows what the agent saw and produced                                                | A trace without I/O can't be debugged or turned into eval data                                                                                                                                                                                          |
+| Sensitive data excluded | Not for agents — trace normally and mask credential fields (API keys, tokens, passwords) before they reach decorated functions. `capture="none"` (timing/status, no values) is a manual escape hatch for human implementation only | Inputs/outputs are stored verbatim                                                                                                                                                                                                                      |
+| Session grouping        | `set_conversation_id(...)` per conversation/thread (stamped as `conversation.id`) whenever the app has multi-turn interactions                                                                                                     | Groups traces into Sessions                                                                                                                                                                                                                             |
+| User attribution        | `set_user(user_id, email=...)` where the app has accounts                                                                                                                                                                          | Per-user filtering and cost attribution                                                                                                                                                                                                                 |
+| Span hierarchy + types  | One `@entry_point` at the top; `@workflow` / `@tool` / `@retrieval` for the steps under it, with descriptive names                                                                                                                 | Shows which step failed or was slow, instead of one flat LLM call                                                                                                                                                                                       |
 
 ## Step 0 — Resolve the agent's identity
 
@@ -215,12 +215,26 @@ overmind.init(
     service_name="my-agent",
     agent_id="<agent-uuid>",  # copy verbatim from get_agent — never invent
     agent_name="My Agent",  # this agent's constant display name
-    providers=["openai", "anthropic"],  # auto-instrument these SDKs; see Step 4
+    providers="auto",  # instrument every installed provider SDK
 )
 ```
 
-`providers=[]` (empty list) enables every supported provider;
-omitting `providers` enables none.
+`providers="auto"` detects the installed target libraries (openai, anthropic,
+google, agno, langchain) and enables every one whose instrumentor is also
+present, logging the resolved list. Name providers explicitly
+(`providers=["openai"]`) to pin the set; `providers=[]` enables all known;
+omitting `providers` enables none. `init()` is graceful: without
+`OVERMIND_API_KEY` it logs, returns `False`, and every decorator/helper
+becomes a no-op — safe to ship in apps where Overmind is optional. Set
+`OVERMIND_STRICT_MODE=true` to make a missing key raise. `init(debug=True)`
+prints the endpoint, resolved identity, enabled instrumentors, and export
+mode.
+
+The core package is tracing-only. Add extras when needed:
+`overmind[langchain]` (LangChain/LangGraph auto-instrumentation),
+`overmind[inference]` (token-cost enrichment via litellm),
+`overmind[cli]` (the `overmind` command), `overmind[tracing-full]`
+(requests/httpx/logging spans).
 
 ## Step 3b — Fan-out onto an existing telemetry provider
 
@@ -251,7 +265,7 @@ if not isinstance(provider, TracerProvider):
         service_name="my-agent",
         agent_id="<agent-uuid>",  # copy verbatim from get_agent
         agent_name="My Agent",
-        providers=["openai"],
+        providers="auto",
     )
 else:
     provider.add_span_processor(
@@ -263,9 +277,9 @@ else:
         )
     )
     # Auto-instrument the LLM SDKs against the existing provider.
-    enable_tracing(["openai", "anthropic"])
+    enable_tracing("auto")
     # Fan-out path: identity is NOT stamped by an on-start processor, so stamp it
-    # explicitly on the spans you decorate (Step 5) and via the context helpers.
+    # explicitly on the spans you decorate (Step 6) and via the context helpers.
     set_agent_id("<agent-uuid>")  # verbatim from get_agent
     set_agent_name("My Agent")
 ```
@@ -277,18 +291,86 @@ Notes:
   third-party auto-instrumentors that only emit OTel `gen_ai.*` keys are
   bridged automatically **only when Overmind owns the provider**. On the
   fan-out path, prefer Overmind's own auto-instrumentation (`enable_tracing`)
-  or the decorators in Step 5 so token/cost rollups populate.
+  or the decorators in Step 6 so token/cost rollups populate.
 
-## Step 4 — Auto-instrument LLM providers
+## Step 4 — Bracket the run
 
-Supported providers: `openai`, `anthropic`, `google`, `agno`. Each needs the
-matching instrumentation package installed (bundled with `overmind`). Pass them
-to `init(providers=[...])` (greenfield) or `enable_tracing([...])` (fan-out).
-Instrumentation is idempotent and safe to call more than once.
+Every agent execution needs exactly one run boundary. `overmind.run(...)` is
+the one scope that covers it — capability identity, the entry-point run span,
+intent, conversation id, error status, and a flush on exit:
 
-## Step 5 — Add custom spans
+```python
+with overmind.run(
+    "triage-run", intent=request["question"], conversation_id=ticket_id
+) as run:
+    answer = agent.invoke(request)
+    run.deliver(answer)  # terminal deliverable, auto-grounded
+```
 
-Decorators (sync and async) — use the type that matches the code:
+As a decorator (sync or async) every parameter except `name` also accepts a
+callable receiving the wrapped call's arguments, and the run span carries the
+function's code identity — one decoration also satisfies an entry-point
+scan-contract anchor:
+
+```python
+class Agent:
+    @overmind.run(
+        intent=lambda self, *a, **k: self.task,
+        conversation_id=lambda self, *a, **k: self.task_id,
+    )
+    async def run(self): ...
+```
+
+Spans created **outside** any run boundary that would start their own trace
+are suppressed as orphan fragments (the SDK warns once). If a trace is
+missing, the fix is this bracket — not `init(export_orphan_spans=True)`.
+
+## Step 5 — Carve phases into turn units
+
+`task(key, unit="turn")` makes a phase an independently scored unit. The key
+is a `Behaviour.slug` from the project's scanned task map. Re-entering the
+same key re-uses the still-open turn span, so a re-entrant phase (tool loop,
+debate rounds) lands in one unit:
+
+```python
+with overmind.task("investment-debate", unit="turn"):
+    ...  # spans here nest under the debate's turn unit
+```
+
+Rules that matter:
+
+- `deliver()` runs **inside the unit that produced the deliverable**.
+- Internal fan-out/retries/loop bodies must **not** declare `unit`.
+- Multi-capability agents scope identity with `overmind.capability(name)`;
+  entering a different capability mid-trace is a handoff and opens a new unit
+  automatically.
+
+For LangGraph agents, `overmind.integrations.langgraph.bind()` does this
+declaratively — call it on the `StateGraph` after `add_node()`, before
+`compile()`:
+
+```python
+from overmind.integrations import langgraph as overmind_langgraph
+
+overmind_langgraph.bind(
+    workflow,
+    # Default key per node: slugified node name. Override where the task map
+    # groups nodes differently; None opts a node out.
+    behaviours={
+        "Bull Researcher": "investment-debate",
+        "Bear Researcher": "investment-debate",
+    },
+    deliver="Portfolio Manager",  # this node's return value is the deliverable
+)
+app = workflow.compile()
+```
+
+## Step 6 — Decorate anchors and add custom spans
+
+**Every function the scanned task map anchors on must be decorated** — an
+undecorated anchor emits no `code.namespace`/`code.function.name`, so its step
+judges silently skip it. Decorators (sync and async) — use the type that
+matches the code:
 
 ```python
 @overmind.entry_point()  # top-level request handler
@@ -307,9 +389,15 @@ def search(query: str) -> list[dict]: ...
 def fetch_docs(q: str): ...
 
 
-@overmind.function()  # any other traced function
+@overmind.observe()  # any other traced function
 def score(x): ...
 ```
+
+All decorators accept `capture=` (`"auto"` scrubbed args/result, `"none"`,
+`"messages"`), `ignore=` (argument names never captured), `capability=`, and
+`format_input=`/`format_output=` hooks. Captured payloads are scrubbed
+automatically: secret-named keys redacted, base64/data-URL blobs replaced,
+text kept in full.
 
 Context manager and current-span helpers:
 
@@ -336,12 +424,12 @@ whichever provider is active — greenfield or fan-out.
 function the agent's code path actually calls that is a meaningful step — a
 tool the agent can invoke, a policy lookup, a retrieval, a scoring step —
 decorate it with the matching type (`@tool`, `@retrieval`, `@function`,
-`@workflow`). A trace whose spans are all `entry_point` is flat: it cannot
+`@workflow`, `@observe`). A trace whose spans are all `entry_point` is flat: it cannot
 show which step failed or was slow. Rule of thumb: if the function has a name
 a human would use to describe the agent's work ("search", "lookup_policy",
 "rerank"), it should be a span.
 
-## Step 5b — Instrumenting ONE agent in a multi-agent repo
+## Step 6b — Instrumenting ONE agent in a multi-agent repo
 
 Most instrumentation tasks name **one specific agent**. Everything in this
 skill is scoped to that agent:
@@ -369,11 +457,11 @@ skill is scoped to that agent:
   task/context, so calling them in each handler keeps that agent's spans
   attributed to it. Span-level stamps win over the stale resource identity on
   the server.
-- **Verify per agent.** In Step 6, fetch traces filtered to THIS agent's UUID
+- **Verify per agent.** In Step 7, fetch traces filtered to THIS agent's UUID
   (`list_traces` with the agent filter) and confirm they carry
   `overmind.agent.id` = the agent's UUID and its `agent_name`.
 
-## Step 5c — Multi-agent repos: the systematic one-at-a-time pass
+## Step 6c — Multi-agent repos: the systematic one-at-a-time pass
 
 When the task covers every agent in a repo (or the repo as a whole), do NOT
 try to instrument everything in one giant pass. Work ONE agent at a time,
@@ -391,11 +479,11 @@ The loop:
 1. **Fetch its card.** `get_agent` → top-level `id` (bare UUID) and `flow`
    (`flow_truncated` when clipped). Note `agent_path` /
    `modes[*].entrypoint_fn` — the exact files this agent owns.
-1. **Instrument only that agent.** Follow Steps 0-5b scoped to THIS agent:
+1. **Instrument only that agent.** Follow Steps 0-6b scoped to THIS agent:
    touch only its files, stamp its UUID verbatim, leave sibling agents' code
    alone (shared infrastructure is fine to instrument once).
 1. **Run + verify only that agent.** Run its entrypoint, flush, then fetch
-   traces filtered to ITS UUID (Step 6). Audit against the baseline: the
+   traces filtered to ITS UUID (Step 7). Audit against the baseline: the
    trace's `agent` equals this agent's UUID, `agent_name` constant, model +
    tokens + cost populated, inputs/outputs on the entry point, no secrets.
 1. **Close it.** Fix gaps until this agent's trace clears. Then move to the
@@ -403,10 +491,10 @@ The loop:
 
 Only at the end, report each agent with its trace link.
 
-## Step 6 — Flush on shutdown, then run and audit (required)
+## Step 7 — Flush, then run and audit (required)
 
-Batch export is async; flush before a short-lived process exits or spans are
-lost:
+`overmind.run(...)` flushes on exit. Code paths without it (short scripts,
+signal handlers) need an explicit flush before the process exits:
 
 ```python
 overmind.force_flush_traces()
@@ -441,21 +529,24 @@ If nothing shows up:
 - On the fan-out path, confirm the existing object really is an SDK
   `TracerProvider` (a no-op default won't accept processors) and that
   `force_flush_traces()` (or the app) ran long enough to export.
-- Set `OVERMIND_STRICT_MODE=true` to make missing instrumentation packages
-  raise instead of warn.
+- Spans emitted outside a run boundary are dropped as orphans — add the
+  `overmind.run(...)` bracket (Step 4).
+- `init(debug=True)` prints the resolved endpoint, identity, instrumentors,
+  and export mode; `OVERMIND_STRICT_MODE=true` makes missing keys and
+  instrumentation packages raise instead of warn.
 - Empty `list_traces` means ingest failed — fix instrumentation, don't poll
   REST.
 
 ## Common mistakes
 
-| Mistake                                                              | Consequence                                              | Fix                                                                                                                                               |
-| -------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No flush in scripts/serverless                                       | Traces silently never sent                               | `force_flush_traces()` before exit                                                                                                                |
-| Init after LLM clients are created                                   | Provider calls not instrumented                          | Call `init()` at process start, before client construction                                                                                        |
-| `overmind.init()` on top of an existing `TracerProvider`             | OTel keeps the first provider; Overmind attaches nothing | Fan-out path (Step 3b)                                                                                                                            |
-| Agent name varies per run/env                                        | Each variant becomes a separate agent                    | Set `agent_id` (UUID) once and keep `agent_name` constant — distinct names across DIFFERENT agents are correct, drift on ONE agent is the bug     |
-| Invented / mangled `agent_id` (UUID)                                 | Traces attribute to the wrong or a brand-new agent       | Copy the UUID verbatim from `get_agent` (Step 0); if it is missing or not a UUID, stop and report                                                 |
-| Several agents share one process and one global identity             | All spans land under one agent                           | Stamp each agent's `agent_id`/`agent_name` at its own entry point (Step 5b)                                                                       |
-| Only auto-instrumentation, no decorators                             | Flat traces with no inputs/outputs and no step structure | Decorate the entry point and key steps (Step 5)                                                                                                   |
-| Credentials (API keys, tokens, passwords) in decorated function args | Stored verbatim in the trace                             | Mask them before passing; `@observe_safe()` only as a manual, human-maintained escape hatch — never preemptively for data that might be sensitive |
-| No `set_conversation_id` in a chat app                               | Sessions view stays empty                                | Stamp the thread/conversation id per request                                                                                                      |
+| Mistake                                                              | Consequence                                              | Fix                                                                                                                                              |
+| -------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| No flush in scripts/serverless                                       | Traces silently never sent                               | `force_flush_traces()` before exit                                                                                                               |
+| Init after LLM clients are created                                   | Provider calls not instrumented                          | Call `init()` at process start, before client construction                                                                                       |
+| `overmind.init()` on top of an existing `TracerProvider`             | OTel keeps the first provider; Overmind attaches nothing | Fan-out path (Step 3b)                                                                                                                           |
+| Agent name varies per run/env                                        | Each variant becomes a separate agent                    | Set `agent_id` (UUID) once and keep `agent_name` constant — distinct names across DIFFERENT agents are correct, drift on ONE agent is the bug    |
+| Invented / mangled `agent_id` (UUID)                                 | Traces attribute to the wrong or a brand-new agent       | Copy the UUID verbatim from `get_agent` (Step 0); if it is missing or not a UUID, stop and report                                                |
+| Several agents share one process and one global identity             | All spans land under one agent                           | Stamp each agent's `agent_id`/`agent_name` at its own entry point (Step 6b)                                                                      |
+| Only auto-instrumentation, no decorators                             | Flat traces with no inputs/outputs and no step structure | Decorate the entry point and key steps (Step 6)                                                                                                  |
+| Credentials (API keys, tokens, passwords) in decorated function args | Stored verbatim in the trace                             | Mask them before passing; `capture="none"` only as a manual, human-maintained escape hatch — never preemptively for data that might be sensitive |
+| No `set_conversation_id` in a chat app                               | Sessions view stays empty                                | Stamp the thread/conversation id per request                                                                                                     |

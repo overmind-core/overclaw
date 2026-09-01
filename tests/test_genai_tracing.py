@@ -28,10 +28,9 @@ from overmind import attrs
 from overmind.genai_usage import canonical_usage_updates, compute_cost
 from overmind.tracing import (
     _GenAiUsageSpanProcessor,
+    _seed_identity_context,
     _span_processor_on_start,
-    set_agent_id,
-    set_agent_name,
-    set_project_id,
+    _sanitize_span_attributes,
 )
 
 
@@ -140,9 +139,7 @@ def test_identity_stamped_on_spans(inmem):
     provider, exporter = inmem
 
     def _run():
-        set_agent_id("agent-uuid-123")
-        set_agent_name("Lead Qualifier")
-        set_project_id("proj-uuid-9")
+        _seed_identity_context("agent-uuid-123", "Lead Qualifier", "proj-uuid-9")
         tracer = provider.get_tracer("overmind")
         with tracer.start_as_current_span("work"):
             pass
@@ -210,8 +207,32 @@ def test_nested_tool_under_workflow_keeps_parent(inmem):
     outer()
     provider.force_flush()
 
-    spans = {s.name: s for s in exporter.get_finished_spans()}
+    spans = {s.name.rsplit(".", 1)[-1]: s for s in exporter.get_finished_spans()}
     parent = spans["outer"]
     child = spans["inner_tool"]
     assert child.parent is not None
     assert child.parent.span_id == parent.context.span_id
+
+
+def test_sanitize_stringifies_structured_outputs_for_otlp(inmem):
+    """Dict/bytes ``outputs`` written to the span backing store must become
+    a JSON string the OTLP encoder accepts. ``set_attribute`` drops dicts.
+    """
+    from opentelemetry.exporter.otlp.proto.common._internal import _encode_key_value
+
+    provider, exporter = inmem
+    tracer = provider.get_tracer("overmind")
+    with tracer.start_as_current_span("step") as span:
+        sink = getattr(span._attributes, "_dict", span._attributes)
+        sink["outputs"] = {"extracted_content": "ok", "nested": {"n": 1}}
+        sink["inputs"] = {"action": {"navigate": {"url": "https://news.ycombinator.com"}}}
+        _sanitize_span_attributes(span)
+
+    provider.force_flush()
+    finished = exporter.get_finished_spans()[-1]
+    outputs = finished.attributes["outputs"]
+    inputs = finished.attributes["inputs"]
+    assert isinstance(outputs, str)
+    assert isinstance(inputs, str)
+    _encode_key_value("outputs", outputs)
+    _encode_key_value("inputs", inputs)
