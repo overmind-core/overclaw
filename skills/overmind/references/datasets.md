@@ -49,7 +49,7 @@ Preferred when telemetry already exists (see [telemetry.md](telemetry.md)).
   Omit `trace_ids` and pass `last_n` for the N most recent (default 20, max
   1000\) — better than copying ids off a `list_traces` page. `trace_ids`
   accept bare OTel hex or `traces:<hex>` refs from `capability_failures`.
-  `surface` is `agent` | `model`. Set `split_eval_fraction` (0.01–0.9) plus
+  `surface` is `capability` | `model`. Set `split_eval_fraction` (0.01–0.9) plus
   optional `split_method` (`shuffle` | `tail`) to create train+eval
   datasets in one call.
 - Append to an existing mutable dataset:
@@ -74,7 +74,7 @@ JSONL; you get an `attachment_id`. Then:
    `commit_dataset_build(build_id)` writes, `abandon_dataset_build` discards.
 1. `create_dataset_from_file(attachment_id?, dataset_name?, capability_name_or_slug?, intent?, surface?, source_dataset?, split_eval_fraction?, split_method?, eval_dataset_name?)` — ingest. Returns the created dataset's name, intent,
    surface, and `num_datapoints`. Bind `capability_name_or_slug` when you know which
-   agent owns it. `surface` is `agent` | `model`. Set
+   agent owns it. `surface` is `capability` | `model`. Set
    `split_eval_fraction` to create an **ft** train dataset plus an **eval**
    holdout — rows must be conversation-shaped (`messages`) or pass `intent`
    if they aren't. Re-ingest an

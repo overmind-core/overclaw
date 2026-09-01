@@ -116,7 +116,7 @@ Intent never mutates. Convert intent or surface by creating a NEW dataset
 (`source_dataset` / `derived_from`) via `create_dataset_from_file`. If a
 tool rejects a dataset for intent, pick another or re-ingest; don't retry
 the same one. Train+eval split (`split_eval_fraction` + `split_method`) and
-`surface` (`agent` | `model`) are available on
+`surface` (`capability` | `model`) are available on
 `create_dataset_from_file` / `create_dataset_from_traces`.
 `start_dataset_build` infers intent from content. A dataset being read by
 a running job is frozen until the job ends.

@@ -152,7 +152,7 @@ not ask the user to describe the Console.
 The authoritative source for agent identity is `get_capability` via MCP (see
 [capabilities.md](capabilities.md)): it returns a top-level `id` (bare UUID),
 `active_model`, `source_repo`, and a capped `flow` (`flow_truncated` when
-clipped) — the capability card with `agent_path`, `modes[*].entrypoint_fn`,
+clipped) — the capability card with `source_path`, `modes[*].entrypoint_fn`,
 system prompt, and tool surface. Call it with the agent's name/slug before
 writing any instrumentation. Copy `id` verbatim — never invent, shorten,
 re-format, or "fix" it, and never substitute another agent's id. If `id` is
@@ -431,7 +431,7 @@ skill is scoped to that agent:
   It is a UUID — copy it verbatim into `init(capability_id=)`, a
   `capability(..., id=)` scope, or `OVERMIND_CAPABILITY_ID`. Never invent,
   shorten, re-format, or substitute another agent's id.
-- **Scope.** Only touch the named agent's files (`agent_path`,
+- **Scope.** Only touch the named agent's files (`source_path`,
   `modes[*].entrypoint_fn`, its own tools and prompt). Do not edit sibling
   agents, and do not re-decorate code they own. Shared infrastructure (a
   common LLM client, a shared `core/` module) is usually fine to instrument
@@ -468,7 +468,7 @@ The loop:
 1. **Pick one agent.** Start with the first, and never start the next until
    the current one is done and verified.
 1. **Fetch its card.** `get_capability` → top-level `id` (bare UUID) and `flow`
-   (`flow_truncated` when clipped). Note `agent_path` /
+   (`flow_truncated` when clipped). Note `source_path` /
    `modes[*].entrypoint_fn` — the exact files this agent owns.
 1. **Instrument only that agent.** Follow Steps 0-6b scoped to THIS agent:
    touch only its files, stamp its UUID verbatim, leave sibling agents' code

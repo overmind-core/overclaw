@@ -28,10 +28,10 @@ in later tool args — never paste ids to the user. Copy `id` verbatim into
 
 - `source_repo` — linked GitHub repo (`name`, `repo_id`, branch, `head_sha`)
   or null
-- `flow` — capability card (`agent_path`, `modes[*].entrypoint_fn`, system
+- `flow` — capability card (`source_path`, `modes[*].entrypoint_fn`, system
   prompt, tools, schemas). Capped; `flow_truncated` is true when clipped.
   Use the paths you got — don't invent files that weren't in the card.
-- `agent_path`, `active_eval_set`, `alias_pr`, `status`, `model`,
+- `source_path`, `active_eval_set`, `alias_pr`, `status`, `model`,
   `description`
 
 `capability_prompts(capability_name_or_slug, limit?)` — versioned snapshots plus
