@@ -31,7 +31,7 @@ Conventions (names not ids, errors-as-values, mutations) live in
 1. `list_capabilities` — `id` (bare UUID), names, slugs, model, `active_model`,
    status. Use slug or display name in every later call. Card, prompts,
    `update_capability`, and GitHub analyze: [capabilities.md](capabilities.md).
-1. `capability_health(days?, agent?)` — **start here** for "how is this agent
+1. `capability_health(days?, capability?)` — **start here** for "how is this agent
    doing". Returns offline eval-run rollups in `scores` AND live production
    trace scoring in `live_trace_scores` (what the traces UI shows). Each
    block has per-evaluator count, avg, pass rate, failures, and deltas vs the
@@ -40,15 +40,15 @@ Conventions (names not ids, errors-as-values, mutations) live in
 1. `cost_rollup(since?)` — inference spend per served model.
 1. `tool_stats(tool)` / `tool_error_trends(days?)` — tool-call volume, error
    rate, naming drift vs capability cards.
-1. `contract_drift(agent, since?)` — declared schema vs what traces actually
+1. `contract_drift(capability, since?)` — declared schema vs what traces actually
    wrote.
 1. `evaluator_stats(evaluator?, since?)` — noisy judges (abstain + error).
-1. `eval_score_trends(days?, agent?, evaluator?)` — daily pass_rate / avg
+1. `eval_score_trends(days?, capability?, evaluator?)` — daily pass_rate / avg
    over a window.
 
 ## Failures
 
-`capability_failures(agent, since_days?, limit?)` — one-call digest of recent
+`capability_failures(capability, since_days?, limit?)` — one-call digest of recent
 traces with at least one failing score: failed evaluator names + reasoning,
 tools the trace called, violated schema_field refs. Use this instead of
 walking traces by hand.
@@ -59,9 +59,9 @@ copy trace ids from this result into `create_dataset_from_traces`.
 
 ## Traces
 
-- `list_traces(agent?, search?, status?, model?, min_duration_ms?, max_duration_ms?, start_after?, start_before?, session?, all_spans?, ordering?, limit?, offset?)` — production spans. Default is **root-only**;
+- `list_traces(capability?, search?, status?, model?, min_duration_ms?, max_duration_ms?, start_after?, start_before?, session?, all_spans?, ordering?, limit?, offset?)` — production spans. Default is **root-only**;
   `all_spans=true` includes children (adds `span_id` on rows). Compact
-  rows: `trace_id`, name, agent, status, duration, `total_tokens`,
+  rows: `trace_id`, name, capability, status, duration, `total_tokens`,
   `total_cost`, model, live `trace_scores`, `n_scored`, `any_failed`,
   `graph_ref`. The `summary` object aggregates the **full** filtered set
   (counts, errors, sum/avg tokens and cost, duration stats) regardless of

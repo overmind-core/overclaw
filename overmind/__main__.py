@@ -122,7 +122,7 @@ def _write_codex_mcp(path: Path, url: str, api_key: str | None = None) -> None:
 
 
 def overmind_init(
-    env: Annotated[str, typer.Option(help="production, staging or dev")] = "production",
+    env: Annotated[str, typer.Option(help="production, staging or local")] = "production",
     api_key: Annotated[str, typer.Option(envvar="OVERMIND_API_KEY", help="Overmind API key")] = API_KEY,
     ide: Annotated[str, typer.Option(..., help="cursor, claude, claude_code, opencode or codex")] = "cursor",
 ):
