@@ -27,12 +27,11 @@ def reset_sdk_state():
 
 @pytest.fixture
 def mock_opentelemetry():
-    """Mock all OpenTelemetry dependencies."""
-    mock_fastapi_class = MagicMock()
-    mock_openai_class = MagicMock()
-
+    """Mock only the process-global boundaries — the exporter (network), the
+    batch processor (threads), and the trace API (global provider slot). The
+    ``TracerProvider`` stays real so ``init()`` exercises the class the SDK
+    ships against."""
     with (
-        patch("overmind.tracing.TracerProvider") as mock_provider,
         patch("overmind.tracing.OTLPSpanExporter") as mock_exporter,
         patch("overmind.tracing.BatchSpanProcessor") as mock_processor,
         patch("overmind.tracing.trace") as mock_trace,
@@ -42,7 +41,6 @@ def mock_opentelemetry():
         mock_trace.get_tracer.return_value = mock_tracer
 
         yield {
-            "provider": mock_provider,
             "exporter": mock_exporter,
             "processor": mock_processor,
             "trace": mock_trace,
@@ -87,7 +85,6 @@ def test_sdk_init_only_once():
     from overmind import tracing
 
     with (
-        patch("overmind.tracing.TracerProvider"),
         patch("overmind.tracing.OTLPSpanExporter"),
         patch("overmind.tracing.BatchSpanProcessor"),
         patch("overmind.tracing.trace") as mock_trace,
@@ -169,7 +166,6 @@ def test_sdk_init_handles_missing_deps():
     from overmind import tracing
 
     with (
-        patch("overmind.tracing.TracerProvider"),
         patch("overmind.tracing.OTLPSpanExporter"),
         patch("overmind.tracing.BatchSpanProcessor"),
         patch("overmind.tracing.trace"),
@@ -246,7 +242,6 @@ def test_service_name_from_env():
     from overmind import tracing
 
     with (
-        patch("overmind.tracing.TracerProvider") as mock_provider,
         patch("overmind.tracing.OTLPSpanExporter"),
         patch("overmind.tracing.BatchSpanProcessor"),
         patch("overmind.tracing.trace"),

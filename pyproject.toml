@@ -94,7 +94,7 @@ filterwarnings = [
 ]
 
 [tool.ruff]
-exclude = ["bae", "dspy", "openapi_client", "tests", "agents"]
+exclude = ["bae", "dspy", "tests", "agents"]
 fix = true
 include = ["overmind/**/*.py", "tests/**/*.py"]
 indent-width = 4

@@ -29,8 +29,19 @@ entries here cover the SDK surface.
   instrumentors, export mode) plus DEBUG logging for the `overmind` logger.
 - `py.typed`: the package ships type information; decorators preserve wrapped
   signatures.
-- Docs: [carving runs into units](docs/carving-runs-into-units.md) and
-  [troubleshooting](docs/troubleshooting.md).
+- Docs: the pinned wire contract in [tracing-attributes](docs/tracing-attributes.md);
+  integration guidance lives in the `overmind` skill's telemetry reference.
+
+### Removed
+
+- `observe_safe` — use `observe(capture="none")` (or `init(redact_keys=...)`).
+- `function`, `conversation`, `get_tracer`, `set_agent_id`, `set_agent_name`,
+  `set_project_id` are no longer exported; identity rides on
+  `init(capability_id=...)` or a `capability(name, id=...)` scope.
+- `start_child_span` is private; open child spans with `start_span`.
+- Wire attributes renamed `overmind.agent.*` → `overmind.capability.*` with no
+  aliases; `OVERMIND_AGENT_ID` / `OVERMIND_AGENT_NAME` are inert — use
+  `OVERMIND_CAPABILITY_ID` / `OVERMIND_CAPABILITY_NAME`.
 
 ### Changed
 

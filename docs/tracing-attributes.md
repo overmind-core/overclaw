@@ -46,7 +46,7 @@ ______________________________________________________________________
 ## 2. Common attributes (every SDK span)
 
 Emitted by `@observe` / `@entry_point` / `@workflow` / `@tool` / `@function` /
-`@retrieval` and by `start_span` / `start_child_span`.
+`@retrieval` and by `start_span`.
 
 | Key                                                                           | Type        | When present                                           | Meaning                                                                                                                                                                              |
 | ----------------------------------------------------------------------------- | ----------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -171,12 +171,12 @@ Pinned in `tests/test_evidence_contract.py` — do not rename.
 | Key                    | Type        | When present                                                                                                              | Meaning                                                                                                                                                                                                                                               |
 | ---------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `overmind.provenance`  | string      | auto on `@tool` / `@retrieval` (`environment`) and `llm_call` (`agent`) spans; any span via `provenance=`                 | Provenance class of the span's payloads: `user` \| `agent` \| `environment` \| `harness`. Tool results and observations are `environment`; model/agent-authored text is `agent`; real end-user input is `user`; scaffold/framework text is `harness`. |
-| `overmind.unit_kind`   | string      | auto (`run`) on `@entry_point` spans; auto (`turn`) on the first span of a capability handoff; any span via `mark_unit()` | Declared unit marker (ATSC agent-turn vocabulary): `turn` begins a user-visible unit of work, `run` is the root of a full agent run. A handoff-boundary `turn` is never downgraded: an `@entry_point` span that already carries `turn` keeps it.      |
+| `overmind.unit_kind`   | string      | auto (`run`) on `@entry_point` spans; auto (`turn`) on the first span of a capability handoff; any span via `start_span(unit=...)` / `task(key, unit="turn")` | Declared unit marker (ATSC agent-turn vocabulary): `turn` begins a user-visible unit of work, `run` is the root of a full agent run. A handoff-boundary `turn` is never downgraded: an `@entry_point` span that already carries `turn` keeps it.      |
 | `overmind.delivery`    | bool        | `deliver()` span                                                                                                          | `true` on the span carrying the terminal deliverable (payload serialised into `outputs`).                                                                                                                                                             |
 | `overmind.grounded_by` | JSON string | `deliver(grounded_by=)`                                                                                                   | JSON array of span_id hex strings naming the evidence spans the deliverable rests on.                                                                                                                                                                 |
 
 Emitters: the `provenance=` parameter on `@observe` (and the decorator
-shorthands) / `start_span` / `start_child_span`; `overmind.mark_unit(kind)`;
+shorthands) / `start_span`; `start_span(unit=...)` and `task(key, unit="turn")` for units;
 `overmind.deliver(payload, *, grounded_by=None, name="deliver", provenance="agent")` — `grounded_by` accepts span_id hex strings or OTel span
 handles (e.g. the span yielded by `start_span`).
 

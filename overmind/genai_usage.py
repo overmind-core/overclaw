@@ -70,6 +70,8 @@ _MODEL_KEYS: tuple[str, ...] = (
     "llm.model_name",
 )
 
+_USAGE_SOURCE_KEYS = frozenset((*_PROMPT_TOKEN_KEYS, *_COMPLETION_TOKEN_KEYS, *_TOTAL_TOKEN_KEYS, *_MODEL_KEYS))
+
 
 def _first_int(attributes: Mapping[str, Any], keys: tuple[str, ...]) -> int | None:
     """Return the first key's value coerced to a positive int, else ``None``."""
@@ -134,6 +136,9 @@ def canonical_usage_updates(attributes: Mapping[str, Any]) -> dict[str, Any]:
     the SDK's own LLM wrapper) always wins.
     """
     updates: dict[str, Any] = {}
+    # Most spans carry no usage keys at all; skip the alias probing for them.
+    if not _USAGE_SOURCE_KEYS.intersection(attributes):
+        return updates
 
     prompt_tokens = _first_int(attributes, _PROMPT_TOKEN_KEYS)
     completion_tokens = _first_int(attributes, _COMPLETION_TOKEN_KEYS)

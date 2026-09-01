@@ -301,6 +301,7 @@ def enable_tracing(providers: list[str] | str | None = None) -> None:
     enables every provider whose target library and instrumentor are both
     installed. For fan-out setups that skip ``init()`` and export through
     their own TracerProvider."""
+    global _initialized, _tracer
     if providers is None:
         return
     if isinstance(providers, str):
@@ -310,6 +311,18 @@ def enable_tracing(providers: list[str] | str | None = None) -> None:
         logger.info('providers="auto" resolved to: %s', ", ".join(providers) or "none")
     elif providers == []:  # empty list means "all"
         providers = list(_PROVIDER_MODULES)
+    if not _initialized:
+        provider = trace.get_tracer_provider()
+        if isinstance(provider, TracerProvider):
+            # Fan-out path (skill Step 3b): the app owns the provider and
+            # skips init(). Arm the SDK on it — decorators, start_span, task
+            # and deliver gate on _initialized — and attach the stamping +
+            # genai processors, or every span lands unscorable.
+            _ensure_pipeline_processors(provider)
+            from overmind import __version__ as sdk_version
+
+            _tracer = trace.get_tracer("overmind", sdk_version)
+            _initialized = True
     logger.info(f"Enabling tracing for providers: {providers}")
     for name in providers:
         spec = _PROVIDER_MODULES.get(name)
@@ -468,11 +481,16 @@ class _OrphanSpanSampler(Sampler):
         parent = trace.get_current_span(parent_context).get_span_context()
         if parent.is_valid:
             keep = parent.is_remote or parent.trace_flags.sampled
-            return SamplingResult(Decision.RECORD_AND_SAMPLE if keep else Decision.DROP, attributes)
+            return SamplingResult(Decision.RECORD_AND_SAMPLE if keep else Decision.DROP, attributes, trace_state)
         declared = attributes or {}
-        is_orphan = _boundary_kind(declared) is None and declared.get(attrs.SPAN_TYPE) == SpanType.FUNCTION.value
+        # A delivery span is by definition deliberate — never an orphan fragment.
+        is_orphan = (
+            _boundary_kind(declared) is None
+            and declared.get(attrs.SPAN_TYPE) == SpanType.FUNCTION.value
+            and attrs.DELIVERY not in declared
+        )
         if _export_orphan_spans or not is_orphan:
-            return SamplingResult(Decision.RECORD_AND_SAMPLE, attributes)
+            return SamplingResult(Decision.RECORD_AND_SAMPLE, attributes, trace_state)
         global _orphan_suppressed_logged
         if not _orphan_suppressed_logged:
             _orphan_suppressed_logged = True
@@ -482,7 +500,7 @@ class _OrphanSpanSampler(Sampler):
                 "init(export_orphan_spans=True) to export orphan spans.",
                 name,
             )
-        return SamplingResult(Decision.DROP, attributes)
+        return SamplingResult(Decision.DROP, attributes, trace_state)
 
     def get_description(self) -> str:
         return "OvermindOrphanSpanSampler"
@@ -656,6 +674,15 @@ def _log_debug_summary(
     )
 
 
+def env_identity() -> tuple[str | None, str | None]:
+    """The ``(capability_id, capability_name)`` pair from the environment.
+    Env identity is all-or-nothing against explicit arguments: a caller that
+    declared either half must never pick up the other from a process-global
+    env var — a stale env id would silently outrank the declared name
+    server-side, and a stale env name would mislabel the id."""
+    return os.environ.get("OVERMIND_CAPABILITY_ID"), os.environ.get("OVERMIND_CAPABILITY_NAME")
+
+
 def init(
     overmind_api_key: str | None = None,
     *,
@@ -707,8 +734,10 @@ def init(
     if debug:
         _enable_debug_logging()
 
-    capability_id = capability_id or os.environ.get("OVERMIND_CAPABILITY_ID")
-    capability_name = capability or os.environ.get("OVERMIND_CAPABILITY_NAME")
+    if capability_id is None and capability is None:
+        capability_id, capability_name = env_identity()
+    else:
+        capability_name = capability
     project_id = project_id or os.environ.get("OVERMIND_PROJECT_ID")
     _export_orphan_spans = bool(export_orphan_spans)
 
@@ -736,6 +765,7 @@ def init(
                 "OVERMIND_API_KEY available; reusing the local file-exporter "
                 "TracerProvider configured by the optimise runner wrapper.",
             )
+            _ensure_pipeline_processors(trace.get_tracer_provider())
             _tracer = trace.get_tracer("overmind", sdk_version)
             _seed_identity_context(capability_id, capability_name, project_id)
             enable_tracing(providers)
@@ -804,7 +834,7 @@ def init(
             max_export_batch_size=max_export_batch_size,
         )
         provider.add_span_processor(span_processor)
-        span_processor.on_start = _span_processor_on_start  # type: ignore[method-assign]
+        provider._overmind_processors_attached = True  # noqa: SLF001
 
         trace.set_tracer_provider(provider)
 
@@ -898,12 +928,13 @@ def set_conversation_id(conversation_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-# Matches the platform's Capability.slug convention: lowercase,
-# non-alphanumeric runs collapse to single hyphens.
+# Matches the platform's slug convention (Capability.slug, Behaviour.slug):
+# lowercase, non-alphanumeric runs collapse to single hyphens. The one copy —
+# langgraph behaviour keys and handoff detection must agree.
 _IDENTITY_SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
-def _identity_slug(value: str) -> str:
+def identity_slug(value: str) -> str:
     return _IDENTITY_SLUG_RE.sub("-", value.lower()).strip("-")
 
 
@@ -923,7 +954,7 @@ def _is_handoff(name: str | None, id: str | None) -> bool:
     if id and active_id:
         return str(id) != str(active_id)
     if name and active_name:
-        return _identity_slug(str(name)) != _identity_slug(str(active_name))
+        return identity_slug(str(name)) != identity_slug(str(active_name))
     return False
 
 
@@ -1016,18 +1047,33 @@ class _TurnRegistry:
 
     def get_or_start(self, key: str) -> trace.Span:
         ambient = trace.get_current_span().get_span_context()
+        evicted: list[tuple[trace.Span, int | None]] = []
         with self._lock:
-            if ambient.is_valid and (span := self._spans.get((ambient.trace_id, key))) is not None:
+            if ambient.is_valid and (span := self._spans.pop((ambient.trace_id, key), None)) is not None:
+                # Re-insert so eviction takes the least recently used entry.
+                self._spans[(ambient.trace_id, key)] = span
                 return span
             span = get_tracer().start_span(
                 key, attributes=_declared_attributes(SpanType.FUNCTION, None, "turn", behaviour_key=key)
             )
             self._spans[(span.get_span_context().trace_id, key)] = span
-            return span
+            # Without a run boundary nothing ever ends these; cap like the
+            # evidence registry so a long-lived process cannot leak live spans.
+            while len(self._spans) > _MAX_TRACKED_TRACES:
+                entry = next(iter(self._spans))
+                evicted.append((self._spans.pop(entry), self._last_activity_ns.pop(entry, None)))
+        for old_span, end_ns in evicted:
+            old_span.end(end_time=end_ns)
+        return span
 
     def touch(self, span: trace.Span, key: str) -> None:
+        entry = (span.get_span_context().trace_id, key)
         with self._lock:
-            self._last_activity_ns[(span.get_span_context().trace_id, key)] = time.time_ns()
+            # Only a still-tracked span records activity — a touch after
+            # eviction must not resurrect the bookkeeping for an ended span.
+            if (live := self._spans.pop(entry, None)) is not None:
+                self._spans[entry] = live
+                self._last_activity_ns[entry] = time.time_ns()
 
     def end_for_trace(self, trace_id: int) -> None:
         self._end(lambda entry: entry[0] == trace_id)
@@ -1049,23 +1095,38 @@ _turn_registry = _TurnRegistry()
 
 
 def _span_processor_on_end(span) -> None:
-    """End the trace's open turn spans when its run-boundary span ends."""
+    """End the trace's open turn spans when its run-boundary span ends, and
+    drop its unclaimed evidence bucket so the registry stays bounded."""
     if _boundary_kind(getattr(span, "attributes", None) or {}) != "run":
         return
     ctx = span.get_span_context()
     if ctx.is_valid:
         _turn_registry.end_for_trace(ctx.trace_id)
+        _pop_evidence(ctx.trace_id)
 
 
 class _TurnLifecycleSpanProcessor(SpanProcessor):
-    """Carrier for :func:`_span_processor_on_end` — unlike ``on_start``, the
-    batch processor's ``on_end`` does the exporting and cannot be overridden."""
+    """First-class home for the stamping resolver and the turn lifecycle, so
+    every provider that carries it gets identity/unit stamping — including
+    providers ``init()`` did not build."""
 
     def on_start(self, span: trace.Span, parent_context: trace.Context | None = None) -> None:
-        return
+        _span_processor_on_start(span, parent_context)
 
     def on_end(self, span) -> None:
         _span_processor_on_end(span)
+
+
+def _ensure_pipeline_processors(provider) -> None:
+    """Attach the genai-enrichment and stamping/turn processors once to an SDK
+    provider the SDK did not construct (trace-file runner, fan-out setups)."""
+    if not isinstance(provider, TracerProvider):
+        return
+    if getattr(provider, "_overmind_processors_attached", False):
+        return
+    provider.add_span_processor(_GenAiUsageSpanProcessor())
+    provider.add_span_processor(_TurnLifecycleSpanProcessor())
+    provider._overmind_processors_attached = True  # noqa: SLF001
 
 
 class _TaskScope:
@@ -1223,11 +1284,14 @@ def _remember_evidence(otel_span) -> None:
     if not ctx.is_valid:
         return
     with _evidence_lock:
-        bucket = _trace_evidence.get(ctx.trace_id)
+        bucket = _trace_evidence.pop(ctx.trace_id, None)
         if bucket is None:
             while len(_trace_evidence) >= _MAX_TRACKED_TRACES:
                 _trace_evidence.pop(next(iter(_trace_evidence)))
-            bucket = _trace_evidence[ctx.trace_id] = []
+            bucket = []
+        # Re-insert at the end: eviction is LRU on last evidence, so a
+        # long-lived active trace is not the first casualty.
+        _trace_evidence[ctx.trace_id] = bucket
         bucket.append(format(ctx.span_id, "016x"))
 
 
@@ -1396,10 +1460,11 @@ def _traced_call(
     try:
         with scope, get_tracer().start_as_current_span(name, attributes=declared) as otel_span:
             bound = {}
-            try:
-                bound = _bound_arguments(func, args, kwargs, ignore)
-            except Exception:
-                logger.debug("observe(): argument binding failed for %s", name, exc_info=True)
+            if span_type is SpanType.TOOL or capture != "none":
+                try:
+                    bound = _bound_arguments(func, args, kwargs, ignore)
+                except Exception:
+                    logger.debug("observe(): argument binding failed for %s", name, exc_info=True)
             if span_type is SpanType.TOOL:
                 _stamp_tool_metadata(otel_span, tool_name, bound)
             if capture != "none":
@@ -1571,6 +1636,7 @@ def _start_child_span(
     *,
     span_type: SpanType = SpanType.FUNCTION,
     provenance: str | None = None,
+    attributes: Mapping[str, Any] | None = None,
 ):
     """Open a span as an explicit child of the current OTel span; re-attaching
     the parent keeps the tree stable across mixed instrumentation stacks."""
@@ -1579,7 +1645,7 @@ def _start_child_span(
     try:
         if current is not None and current.get_span_context().is_valid:
             token = attach(trace.set_span_in_context(current))
-        with start_span(name, span_type=span_type, provenance=provenance) as span:
+        with start_span(name, span_type=span_type, provenance=provenance, attributes=attributes) as span:
             yield span
     finally:
         if token is not None:
@@ -1639,26 +1705,33 @@ def deliver(
     _validate_provenance(provenance)
     if grounded_by is None:
         grounded_by = _pop_evidence(_current_trace_id())
-    with _start_child_span(name, provenance=provenance) as otel_span:
-        otel_span.set_attribute(attrs.DELIVERY, True)
+    with _start_child_span(name, provenance=provenance, attributes={attrs.DELIVERY: True}) as otel_span:
         if grounded_by:
             otel_span.set_attribute(attrs.GROUNDED_BY, json.dumps([_grounding_span_id(h) for h in grounded_by]))
         _capture_output(otel_span, payload)
 
 
-def force_flush_traces(timeout_millis: int = 1000) -> None:
-    """Best-effort exporter flush before exit; no-op if the provider
-    lacks ``force_flush``. Ends any still-open turn spans first so a run
-    that never closed its boundary span still exports its units."""
-    _turn_registry.end_all()
+def flush_traces(timeout_millis: int = 1000) -> None:
+    """Best-effort exporter flush; no-op if the provider lacks ``force_flush``.
+    Touches no turn spans — safe while other runs are live in the process."""
     provider = trace.get_tracer_provider()
     if hasattr(provider, "force_flush"):
         provider.force_flush(timeout_millis=timeout_millis)
 
 
+def force_flush_traces(timeout_millis: int = 1000) -> None:
+    """Process-exit flush: ends every still-open turn span first, so a run
+    that never closed its boundary span still exports its units. Inside a
+    live process prefer :func:`flush_traces` — this one truncates other
+    concurrent runs' turns."""
+    _turn_registry.end_all()
+    flush_traces(timeout_millis=timeout_millis)
+
+
 __all__ = [
     "SpanType",
     "capability",
+    "flush_traces",
     "capture_exception",
     "deliver",
     "enable_tracing",

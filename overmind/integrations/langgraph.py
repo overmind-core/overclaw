@@ -11,7 +11,7 @@ Call it on the built graph, after the ``add_node`` calls and before
 ``compile()``::
 
     workflow = build_my_state_graph()
-    overmind.integrations.langgraph.bind(workflow, behaviours={...})
+    langgraph.bind(workflow, behaviours={...})
     app = workflow.compile()
 
 This module never imports langgraph — it works structurally on the graph's
@@ -22,22 +22,17 @@ from __future__ import annotations
 
 import functools
 import inspect
-import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
 from overmind.tracing import deliver as _deliver
-from overmind.tracing import observe, task
-
-# Matches the platform scan's Behaviour.slug convention: lowercase,
-# non-alphanumeric runs collapse to single hyphens.
-_SLUG_RE = re.compile(r"[^a-z0-9]+")
+from overmind.tracing import identity_slug, observe, task
 
 
 def slug(name: str) -> str:
     """Default behaviour key for a node name (``"Market Analyst"`` →
     ``"market-analyst"``, ``"tools_market"`` → ``"tools-market"``)."""
-    return _SLUG_RE.sub("-", name.lower()).strip("-")
+    return identity_slug(name)
 
 
 def _with_identity(target: Callable, name: str) -> Callable:

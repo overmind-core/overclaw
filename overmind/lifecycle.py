@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import inspect
 import logging
-import os
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager, nullcontext
 from functools import wraps
@@ -22,7 +21,8 @@ from overmind.tracing import (
     SpanType,
     code_identity_attributes,
     deliver,
-    force_flush_traces,
+    env_identity,
+    flush_traces,
     set_conversation_id,
     start_span,
 )
@@ -70,12 +70,12 @@ def _run_scope(
     tags: Mapping[str, Any] | None,
     identity: Mapping[str, str] | None = None,
 ):
-    # Env identity is all-or-nothing: an explicitly declared capability must
-    # never pick up the other half from a process-global env var — a stale
-    # OVERMIND_CAPABILITY_ID would silently outrank the declared name server-side.
     if capability is None and capability_id is None:
-        capability = os.environ.get("OVERMIND_CAPABILITY_NAME")
-        capability_id = os.environ.get("OVERMIND_CAPABILITY_ID")
+        env_id, env_name = env_identity()
+        # A name-only env would enter a scope that CLEARS the ambient id
+        # init() seeded — the id is the only key ingest binds by.
+        if env_id:
+            capability, capability_id = env_name, env_id
     scope = _capability_scope(capability, id=capability_id) if capability or capability_id else nullcontext()
     attributes = dict(identity or {})
     if tags:
@@ -89,9 +89,10 @@ def _run_scope(
                     _intent(str(intent))
                 yield RunHandle(span)
     finally:
-        # After the boundary span ends, so still-open turn spans close under
-        # it (turn lifecycle rides the run span's end) and export in the flush.
-        force_flush_traces()
+        # After the boundary span ends, so this run's turn spans (closed by the
+        # run span's own on_end) export in the flush. Never end_all(): another
+        # run may be live in this process with its turns still open.
+        flush_traces()
 
 
 class _RunScope:

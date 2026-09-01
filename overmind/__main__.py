@@ -139,7 +139,9 @@ def overmind_init(
         if not os.environ.get("OVERMIND_API_KEY") and not api_key:
             raise typer.BadParameter("set OVERMIND_API_KEY before running init", param_hint="OVERMIND_API_KEY")
         mcp_path = Path.cwd() / ".codex" / "config.toml"
-        _write_codex_mcp(mcp_path, url, None if os.environ.get("OVERMIND_API_KEY") else api_key)
+        # Only fall back to the env var when the key actually came from it; an
+        # explicit --api-key must always win.
+        _write_codex_mcp(mcp_path, url, None if api_key == os.environ.get("OVERMIND_API_KEY") else api_key)
         console.print(f"overmind MCP server written to {mcp_path}")
         sync_skills(["overmind"], ide=ide)
         console.print(f"overmind skill installed to {dest}/skills/overmind")

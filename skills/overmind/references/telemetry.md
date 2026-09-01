@@ -142,7 +142,7 @@ not ask the user to describe the Console.
 | Per-agent scoping       | When your task names ONE agent in a multi-agent repo, stamp THAT agent's identity only — never the repo's, never a generic name                                                                                                            | Traces group under the right agent in the Console; sibling agents' spans are untouched                                                                                     |
 | Model + token usage     | Automatic via provider auto-instrumentation (Step 4); raw-OTel spans should carry `gen_ai.request.model` / `gen_ai.usage.*`                                                                                                                | Cost is computed server-side from these                                                                                                                                    |
 | Inputs and outputs      | The decorators (Step 6) capture call args and return values automatically; make sure the entry point and key steps are decorated so the trace shows what the agent saw and produced                                                        | A trace without I/O can't be debugged or turned into eval data                                                                                                             |
-| Sensitive data excluded | Not for agents — trace normally and mask credential fields (API keys, tokens, passwords) before they reach decorated functions. `@observe_safe()` (traces timing/status, no values) is a manual escape hatch for human implementation only | Inputs/outputs are stored verbatim                                                                                                                                         |
+| Sensitive data excluded | Not for agents — trace normally and mask credential fields (API keys, tokens, passwords) before they reach decorated functions. `capture="none"` on the decorator (traces timing/status, no values) is a manual escape hatch for human implementation only; `init(redact_keys=...)` masks named fields everywhere | Inputs/outputs are stored verbatim                                                                                                                                         |
 | Session grouping        | `set_conversation_id(...)` per conversation/thread (stamped as `conversation.id`) whenever the app has multi-turn interactions                                                                                                             | Groups traces into Sessions                                                                                                                                                |
 | User attribution        | `set_user(user_id, email=...)` where the app has accounts                                                                                                                                                                                  | Per-user filtering and cost attribution                                                                                                                                    |
 | Span hierarchy + types  | One `@entry_point` at the top; `@workflow` / `@tool` / `@retrieval` for the steps under it, with descriptive names                                                                                                                         | Shows which step failed or was slow, instead of one flat LLM call                                                                                                          |
@@ -271,10 +271,11 @@ else:
             )
         )
     )
-    # Auto-instrument the LLM SDKs against the existing provider.
+    # Auto-instrument the LLM SDKs and arm the SDK on this provider —
+    # enable_tracing attaches Overmind's stamping and genai processors to it.
     enable_tracing("auto")
-    # Fan-out path: identity is NOT stamped by an on-start processor — wrap the
-    # request path in a capability scope so every span carries the id.
+    # Identity still enters through a scope: wrap the request path in a
+    # capability scope so every span carries the id.
     # with overmind.capability("My Agent", id="<capability-uuid>"): ...
 ```
 
@@ -283,9 +284,8 @@ Notes:
 - The project's existing backend keeps receiving spans; Overmind gets a copy.
 - Overmind's server reads canonical `genai.*` usage attributes. Spans from
   third-party auto-instrumentors that only emit OTel `gen_ai.*` keys are
-  bridged automatically **only when Overmind owns the provider**. On the
-  fan-out path, prefer Overmind's own auto-instrumentation (`enable_tracing`)
-  or the decorators in Step 6 so token/cost rollups populate.
+  bridged automatically once `enable_tracing` has armed the provider — it
+  attaches the same genai-enrichment processor `init()` installs.
 
 ## Step 4 — Bracket the run
 
