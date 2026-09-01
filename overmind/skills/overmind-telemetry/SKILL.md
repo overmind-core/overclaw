@@ -1,9 +1,9 @@
 ---
-name: overmind-agent-telemetry
+name: overmind-telemetry
 description: Add Overmind tracing to an existing AI/LLM project so its traces are sent to Overmind. Handles projects that already have OpenTelemetry or another telemetry library configured (fan-out) as well as greenfield projects. Use when the user asks to add Overmind telemetry/observability/tracing, send traces to Overmind, or instrument an existing agent with Overmind.
 ---
 
-# Overmind Agent Telemetry
+# Overmind Telemetry
 
 Wire an existing Python project into Overmind so every LLM call and traced
 function is exported to Overmind (`https://api.overmindlab.ai/api/v1/traces`).
