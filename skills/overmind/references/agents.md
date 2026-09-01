@@ -22,7 +22,7 @@ All of this is Overmind MCP. Inspect each tool's schema for arguments.
 `list_agents` and `get_agent` both return a top-level `id` (bare UUID) and
 `active_model` (`{id, model_id, status}` or null). Use slug or display name
 in later tool args — never paste ids to the user. Copy `id` verbatim into
-`overmind.init(agent_id=)` / `set_agent_id()` / `OVERMIND_AGENT_ID`.
+`overmind.init(capability_id=)` / a `capability(..., id=)` scope / `OVERMIND_CAPABILITY_ID`.
 
 `get_agent(agent_name_or_slug)` also returns:
 

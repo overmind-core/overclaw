@@ -406,10 +406,10 @@ def _span_processor_on_start(span: trace.Span, parent_context: trace.Context | N
     """
     if value := get_value(_CTX_KEY_WORKFLOW_NAME):
         span.set_attribute(SpanAttributes.TRACELOOP_WORKFLOW_NAME, str(value))
-    if agent_name := get_value(attrs.AGENT_NAME):
-        span.set_attribute(attrs.AGENT_NAME, str(agent_name))
-    if agent_id := get_value(attrs.AGENT_ID):
-        span.set_attribute(attrs.AGENT_ID, str(agent_id))
+    if capability_name := get_value(attrs.CAPABILITY_NAME):
+        span.set_attribute(attrs.CAPABILITY_NAME, str(capability_name))
+    if capability_id := get_value(attrs.CAPABILITY_ID):
+        span.set_attribute(attrs.CAPABILITY_ID, str(capability_id))
     if project_id := get_value(attrs.PROJECT_ID):
         span.set_attribute(attrs.PROJECT_ID, str(project_id))
     if conversation_id := get_value(_CTX_KEY_CONVERSATION_ID):
@@ -606,16 +606,16 @@ def _detect_git_sha(start: Path | None = None) -> str | None:
 
 
 def _seed_identity_context(
-    agent_id: str | None,
-    agent_name: str | None,
+    capability_id: str | None,
+    capability_name: str | None,
     project_id: str | None,
 ) -> None:
     """Attach identity values to the OTel context; the on-start processor
     copies them onto every span (including auto-instrumented ones)."""
-    if agent_id:
-        attach(set_value(attrs.AGENT_ID, str(agent_id)))
-    if agent_name:
-        attach(set_value(attrs.AGENT_NAME, str(agent_name)))
+    if capability_id:
+        attach(set_value(attrs.CAPABILITY_ID, str(capability_id)))
+    if capability_name:
+        attach(set_value(attrs.CAPABILITY_NAME, str(capability_name)))
     if project_id:
         attach(set_value(attrs.PROJECT_ID, str(project_id)))
 
@@ -633,8 +633,8 @@ def _enable_debug_logging() -> None:
 
 def _log_debug_summary(
     endpoint: str,
-    agent_id: str | None,
-    agent_name: str | None,
+    capability_id: str | None,
+    capability_name: str | None,
     project_id: str | None,
     flush_interval_ms: int | None = None,
     max_batch_size: int | None = None,
@@ -645,10 +645,10 @@ def _log_debug_summary(
         else "pre-configured provider"
     )
     logger.info(
-        "Overmind debug: endpoint=%s | agent_id=%s agent_name=%s project_id=%s | providers=%s | export=%s | export_orphan_spans=%s",
+        "Overmind debug: endpoint=%s | capability_id=%s capability=%s project_id=%s | providers=%s | export=%s | export_orphan_spans=%s",
         endpoint,
-        agent_id,
-        agent_name,
+        capability_id,
+        capability_name,
         project_id,
         ", ".join(sorted(_providers)) or "none",
         export,
@@ -663,8 +663,8 @@ def init(
     environment: str | None = None,
     providers: list[str] | str | None = None,
     overmind_base_url: str | None = None,
-    agent_id: str | None = None,
-    agent_name: str | None = None,
+    capability_id: str | None = None,
+    capability: str | None = None,
     project_id: str | None = None,
     redact_keys: Iterable[str] | None = None,
     export_orphan_spans: bool = False,
@@ -687,8 +687,10 @@ def init(
             ``overmind[langchain]`` extra). ``"auto"`` detects and enables
             every provider whose library and instrumentor are both installed.
         overmind_base_url: Trace endpoint base URL; defaults to Overmind Cloud.
-        agent_id: Agent UUID (preferred over agent_name); defaults to OVERMIND_AGENT_ID.
-        agent_name: Human-readable agent name; defaults to OVERMIND_AGENT_NAME.
+        capability_id: The capability's UUID from the Console; ingest maps spans
+            to tasks and behaviours by this id alone. Defaults to OVERMIND_CAPABILITY_ID.
+        capability: Display label stamped beside the id; never resolves a
+            capability. Defaults to OVERMIND_CAPABILITY_NAME.
         project_id: Project UUID, only needed for session auth; defaults to OVERMIND_PROJECT_ID.
         redact_keys: Extra dict keys (exact, case-insensitive) redacted from
             captured inputs/outputs, on top of the built-in secret patterns.
@@ -705,8 +707,8 @@ def init(
     if debug:
         _enable_debug_logging()
 
-    agent_id = agent_id or os.environ.get("OVERMIND_AGENT_ID")
-    agent_name = agent_name or os.environ.get("OVERMIND_AGENT_NAME")
+    capability_id = capability_id or os.environ.get("OVERMIND_CAPABILITY_ID")
+    capability_name = capability or os.environ.get("OVERMIND_CAPABILITY_NAME")
     project_id = project_id or os.environ.get("OVERMIND_PROJECT_ID")
     _export_orphan_spans = bool(export_orphan_spans)
 
@@ -717,10 +719,10 @@ def init(
         if _initialized:
             # Re-init only refreshes identity + providers; exporters stay as-is.
             logger.debug(f"Overmind SDK already initialised, reinitialising with providers: {providers}")
-            _seed_identity_context(agent_id, agent_name, project_id)
+            _seed_identity_context(capability_id, capability_name, project_id)
             enable_tracing(providers)
             if debug:
-                _log_debug_summary("(unchanged — already initialised)", agent_id, agent_name, project_id)
+                _log_debug_summary("(unchanged — already initialised)", capability_id, capability_name, project_id)
             return True
 
         # Optimise-step subprocess: the runner wrapper set up a file-exporter
@@ -735,12 +737,14 @@ def init(
                 "TracerProvider configured by the optimise runner wrapper.",
             )
             _tracer = trace.get_tracer("overmind", sdk_version)
-            _seed_identity_context(agent_id, agent_name, project_id)
+            _seed_identity_context(capability_id, capability_name, project_id)
             enable_tracing(providers)
             _attach_remote_parent_if_present()
             _initialized = True
             if debug:
-                _log_debug_summary(f"file:{os.environ['OVERMIND_TRACE_FILE']}", agent_id, agent_name, project_id)
+                _log_debug_summary(
+                    f"file:{os.environ['OVERMIND_TRACE_FILE']}", capability_id, capability_name, project_id
+                )
             return True
 
         overmind_api_key = overmind_api_key or os.getenv("OVERMIND_API_KEY")
@@ -772,10 +776,10 @@ def init(
             attrs.SDK_VERSION: sdk_version,
         }
         # Identity on the resource lets the server resolve Agent/Project directly.
-        if agent_id:
-            resource_attributes[attrs.AGENT_ID] = agent_id
-        if agent_name:
-            resource_attributes[attrs.AGENT_NAME] = agent_name
+        if capability_id:
+            resource_attributes[attrs.CAPABILITY_ID] = capability_id
+        if capability_name:
+            resource_attributes[attrs.CAPABILITY_NAME] = capability_name
         if project_id:
             resource_attributes[attrs.PROJECT_ID] = project_id
         # Commit sha binds every trace to the exact code the process runs.
@@ -805,7 +809,7 @@ def init(
         trace.set_tracer_provider(provider)
 
         _tracer = trace.get_tracer("overmind", sdk_version)
-        _seed_identity_context(agent_id, agent_name, project_id)
+        _seed_identity_context(capability_id, capability_name, project_id)
         enable_tracing(providers)
         _attach_remote_parent_if_present()
 
@@ -814,8 +818,8 @@ def init(
         if debug:
             _log_debug_summary(
                 endpoint,
-                agent_id,
-                agent_name,
+                capability_id,
+                capability_name,
                 project_id,
                 flush_interval_ms=schedule_delay_millis,
                 max_batch_size=max_export_batch_size,
@@ -914,8 +918,8 @@ def _is_handoff(name: str | None, id: str | None) -> bool:
     boundary is only declared when the identities are provably different."""
     if not trace.get_current_span().get_span_context().is_valid:
         return False
-    active_id = get_value(attrs.AGENT_ID)
-    active_name = get_value(attrs.AGENT_NAME)
+    active_id = get_value(attrs.CAPABILITY_ID)
+    active_name = get_value(attrs.CAPABILITY_NAME)
     if id and active_id:
         return str(id) != str(active_id)
     if name and active_name:
@@ -940,8 +944,8 @@ class _CapabilityScope:
         ctx = set_value(_CTX_KEY_PENDING_TURN, _PendingTurn() if _is_handoff(self._name, self._id) else None)
         # Both keys are always written: a name-only scope must not inherit the
         # outer scope's id (the server resolves id before name).
-        ctx = set_value(attrs.AGENT_NAME, self._name, ctx)
-        ctx = set_value(attrs.AGENT_ID, self._id, ctx)
+        ctx = set_value(attrs.CAPABILITY_NAME, self._name, ctx)
+        ctx = set_value(attrs.CAPABILITY_ID, self._id, ctx)
         # Behaviour keys are capability-scoped: a key declared under the outer
         # capability means nothing here, so the ambient key resets with the
         # identity (detach restores it once this scope closes).
@@ -989,7 +993,7 @@ def capability(name: str | None = None, *, id: str | None = None) -> _Capability
     ``id`` but never load-bearing when an id is present.
 
     Usable as a context manager (``with`` / ``async with``) or decorator.
-    Every span created inside carries ``overmind.agent.id`` / ``.name``; on
+    Every span created inside carries ``overmind.capability.id`` / ``.name``; on
     exit the outer identity is restored. Entering a *different* capability
     mid-trace is a handoff: the first span of the new scope is stamped
     ``overmind.unit_kind = "turn"`` so the platform opens a new scoring unit.

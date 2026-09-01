@@ -47,7 +47,8 @@ import overmind
 # safe to ship.
 overmind.init(
     service_name="my-agent",
-    agent_name="Support Triage",  # the capability declared in the Console
+    capability_id="<capability-uuid>",  # ingest maps traces by this id alone
+    capability="Support Triage",  # display label; never resolves anything
     providers="auto",  # instrument every installed provider SDK
 )  # (or name them: providers=["openai", "anthropic"])
 
@@ -85,7 +86,7 @@ Spans declare evidence provenance for the platform's evaluation judges: tool and
 
 [`docs/carving-runs-into-units.md`](docs/carving-runs-into-units.md) is the integrator's guide to all of this — run vs. turn, deliver placement, handoffs, and the anchor-decoration rule, with a worked LangGraph example. The wire-level attribute contract is **pinned** in [`docs/tracing-attributes.md`](docs/tracing-attributes.md); nothing there is renamed. When traces don't show up, work through [`docs/troubleshooting.md`](docs/troubleshooting.md) — `init(debug=True)` prints the endpoint, identity, enabled instrumentors, and export mode.
 
-Multi-capability agents scope identity with `overmind.capability` — a context manager or decorator that stamps `overmind.agent.name` / `.id` on every span created inside and restores the outer identity on exit (`capability="..."` on any decorator is shorthand for the name-only scope):
+Multi-capability agents scope identity with `overmind.capability` — a context manager or decorator that stamps `overmind.capability.id` / `.name` on every span created inside and restores the outer identity on exit (`capability="..."` on any decorator is shorthand for the name-only scope):
 
 ```python
 with overmind.capability("DOM Element Locator", id="..."):  # id optional
@@ -101,7 +102,7 @@ with overmind.task("investment-debate", unit="turn"):
     ...  # spans here nest under the behaviour's turn span
 ```
 
-`overmind.run(...)` brackets a whole agent run in one scope — capability identity (args, else `OVERMIND_AGENT_NAME` / `OVERMIND_AGENT_ID`), the entry-point run span, intent, conversation id, tags, error status, and a flush on exit. The yielded handle delivers the terminal payload; call it inside the unit that produced it:
+`overmind.run(...)` brackets a whole agent run in one scope — capability identity (args, else `OVERMIND_CAPABILITY_ID` / `OVERMIND_CAPABILITY_NAME`), the entry-point run span, intent, conversation id, tags, error status, and a flush on exit. The yielded handle delivers the terminal payload; call it inside the unit that produced it:
 
 ```python
 with overmind.run(
@@ -130,9 +131,7 @@ class Agent:
 ```python
 from overmind.integrations import langgraph as overmind_langgraph
 
-overmind.init(
-    providers=["openai", "langchain"], agent_name="Multi-Agent Trading Analysis"
-)
+overmind.init(providers=["openai", "langchain"], capability_id="<capability-uuid>")
 
 workflow = build_state_graph()
 overmind_langgraph.bind(

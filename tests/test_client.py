@@ -6,9 +6,7 @@ All HTTP is mocked via unittest.mock; no real network traffic is made.
 from __future__ import annotations
 
 import json
-import os
-from io import BytesIO
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import requests
@@ -16,8 +14,6 @@ import requests
 from overmind.client import (
     ChatCompletion,
     ChatCompletionChunk,
-    ChatCompletions,
-    ChatMessage,
     Choice,
     Client,
     Delta,
@@ -31,7 +27,6 @@ from overmind.client import (
     _parse_model,
     _raise_for_status,
 )
-
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
 

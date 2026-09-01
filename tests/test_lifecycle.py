@@ -39,7 +39,7 @@ def _in_fresh_context(fn):
 
 
 def _by_name(exporter, name):
-    (span,) = [s for s in exporter.get_finished_spans() if s.name == name]
+    (span,) = (s for s in exporter.get_finished_spans() if s.name == name)
     return span
 
 
@@ -58,30 +58,32 @@ def test_run_opens_an_entry_point_run_boundary(exporter):
 
 def test_run_stamps_capability_intent_conversation_and_tags(exporter):
     def _main():
-        with run(
-            "my-run",
-            capability="Research Agent",
-            intent="Answer the question",
-            conversation_id="conv-1",
-            tags={"ticker": "AAPL"},
+        with (
+            run(
+                "my-run",
+                capability="Research Agent",
+                intent="Answer the question",
+                conversation_id="conv-1",
+                tags={"ticker": "AAPL"},
+            ),
+            start_span("child"),
         ):
-            with start_span("child"):
-                pass
+            pass
 
     _in_fresh_context(_main)
     root = _by_name(exporter, "my-run")
     child = _by_name(exporter, "child")
     for span in (root, child):
-        assert span.attributes[attrs.AGENT_NAME] == "Research Agent"
+        assert span.attributes[attrs.CAPABILITY_NAME] == "Research Agent"
         assert span.attributes["conversation.id"] == "conv-1"
     assert root.attributes["ticker"] == "AAPL"
-    (event,) = [e for e in root.events if e.name == attrs.EVAL_INTENT_EVENT]
+    (event,) = (e for e in root.events if e.name == attrs.EVAL_INTENT_EVENT)
     assert "Answer the question" in event.attributes[attrs.EVAL_PAYLOAD]
 
 
 def test_run_capability_falls_back_to_env(exporter, monkeypatch):
-    monkeypatch.setenv("OVERMIND_AGENT_NAME", "Env Agent")
-    monkeypatch.setenv("OVERMIND_AGENT_ID", "env-id")
+    monkeypatch.setenv("OVERMIND_CAPABILITY_NAME", "Env Agent")
+    monkeypatch.setenv("OVERMIND_CAPABILITY_ID", "env-id")
 
     def _main():
         with run():
@@ -89,13 +91,13 @@ def test_run_capability_falls_back_to_env(exporter, monkeypatch):
 
     _in_fresh_context(_main)
     root = _by_name(exporter, "run")
-    assert root.attributes[attrs.AGENT_NAME] == "Env Agent"
-    assert root.attributes[attrs.AGENT_ID] == "env-id"
+    assert root.attributes[attrs.CAPABILITY_NAME] == "Env Agent"
+    assert root.attributes[attrs.CAPABILITY_ID] == "env-id"
 
 
 def test_run_explicit_identity_suppresses_env_fallback(exporter, monkeypatch):
-    monkeypatch.setenv("OVERMIND_AGENT_NAME", "Env Agent")
-    monkeypatch.setenv("OVERMIND_AGENT_ID", "env-id")
+    monkeypatch.setenv("OVERMIND_CAPABILITY_NAME", "Env Agent")
+    monkeypatch.setenv("OVERMIND_CAPABILITY_ID", "env-id")
 
     def _main():
         with run(capability="Declared Agent"):
@@ -103,13 +105,13 @@ def test_run_explicit_identity_suppresses_env_fallback(exporter, monkeypatch):
 
     _in_fresh_context(_main)
     root = _by_name(exporter, "run")
-    assert root.attributes[attrs.AGENT_NAME] == "Declared Agent"
-    assert attrs.AGENT_ID not in root.attributes
+    assert root.attributes[attrs.CAPABILITY_NAME] == "Declared Agent"
+    assert attrs.CAPABILITY_ID not in root.attributes
 
 
 def test_run_without_identity_needs_no_capability_scope(exporter, monkeypatch):
-    monkeypatch.delenv("OVERMIND_AGENT_NAME", raising=False)
-    monkeypatch.delenv("OVERMIND_AGENT_ID", raising=False)
+    monkeypatch.delenv("OVERMIND_CAPABILITY_NAME", raising=False)
+    monkeypatch.delenv("OVERMIND_CAPABILITY_ID", raising=False)
 
     def _main():
         with run():
@@ -117,14 +119,13 @@ def test_run_without_identity_needs_no_capability_scope(exporter, monkeypatch):
 
     _in_fresh_context(_main)
     root = _by_name(exporter, "run")
-    assert attrs.AGENT_NAME not in root.attributes
+    assert attrs.CAPABILITY_NAME not in root.attributes
 
 
 def test_handle_delivers_inside_the_producing_unit(exporter):
     def _main():
-        with run("my-run") as handle:
-            with task("portfolio-manager", unit="turn"):
-                handle.deliver({"decision": "BUY"})
+        with run("my-run") as handle, task("portfolio-manager", unit="turn"):
+            handle.deliver({"decision": "BUY"})
 
     _in_fresh_context(_main)
     turn = _by_name(exporter, "portfolio-manager")
@@ -137,9 +138,8 @@ def test_handle_delivers_inside_the_producing_unit(exporter):
 
 def test_open_turn_spans_close_when_the_run_ends(exporter):
     def _main():
-        with run("my-run"):
-            with task("phase-a", unit="turn"):
-                pass
+        with run("my-run"), task("phase-a", unit="turn"):
+            pass
             # phase-a's turn span stays open here (re-entrant registry)…
 
     _in_fresh_context(_main)
@@ -199,7 +199,7 @@ def test_run_decorator_resolves_callable_params_from_bound_args(exporter):
     assert root.attributes[attrs.SPAN_TYPE] == "entry_point"
     assert root.attributes[attrs.UNIT_KIND] == "run"
     assert root.attributes["conversation.id"] == "task-7"
-    (event,) = [e for e in root.events if e.name == attrs.EVAL_INTENT_EVENT]
+    (event,) = (e for e in root.events if e.name == attrs.EVAL_INTENT_EVENT)
     assert "Book the flight" in event.attributes[attrs.EVAL_PAYLOAD]
 
 
@@ -229,7 +229,7 @@ def test_run_decorator_supports_async(exporter):
     root = _by_name(exporter, "async-run")
     assert root.attributes[attrs.UNIT_KIND] == "run"
     assert root.attributes["chars"] == 2
-    (event,) = [e for e in root.events if e.name == attrs.EVAL_INTENT_EVENT]
+    (event,) = (e for e in root.events if e.name == attrs.EVAL_INTENT_EVENT)
     assert "hi" in event.attributes[attrs.EVAL_PAYLOAD]
 
 

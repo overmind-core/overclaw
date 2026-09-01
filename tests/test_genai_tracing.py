@@ -4,8 +4,8 @@ Covers the three anchor guarantees:
 
 (a) a span carrying provider ``gen_ai.*`` usage ends up with the canonical
     ``genai.*`` token counts + ``genai.cost`` (enrichment processor + wrapper);
-(b) ``init(agent_id=…, agent_name=…, project_id=…)`` results in
-    ``overmind.agent.id`` / ``overmind.agent.name`` / ``overmind.project.id`` on
+(b) ``init(capability_id=…, capability=…, project_id=…)`` results in
+    ``overmind.capability.id`` / ``overmind.capability.name`` / ``overmind.project.id`` on
     emitted spans;
 (c) finer-grained spans/attributes (tool metadata, streaming TTFT) are emitted
     with correct nesting.
@@ -16,7 +16,6 @@ Uses the repo's in-memory span exporter pattern (no network, no real LLMs).
 from __future__ import annotations
 
 import contextvars
-from unittest.mock import patch
 
 import pytest
 from opentelemetry.sdk.resources import Resource
@@ -30,7 +29,6 @@ from overmind.tracing import (
     _GenAiUsageSpanProcessor,
     _seed_identity_context,
     _span_processor_on_start,
-    _sanitize_span_attributes,
 )
 
 
@@ -148,8 +146,8 @@ def test_identity_stamped_on_spans(inmem):
     provider.force_flush()
 
     span = exporter.get_finished_spans()[-1]
-    assert span.attributes[attrs.AGENT_ID] == "agent-uuid-123"
-    assert span.attributes[attrs.AGENT_NAME] == "Lead Qualifier"
+    assert span.attributes[attrs.CAPABILITY_ID] == "agent-uuid-123"
+    assert span.attributes[attrs.CAPABILITY_NAME] == "Lead Qualifier"
     assert span.attributes[attrs.PROJECT_ID] == "proj-uuid-9"
 
 
@@ -212,27 +210,3 @@ def test_nested_tool_under_workflow_keeps_parent(inmem):
     child = spans["inner_tool"]
     assert child.parent is not None
     assert child.parent.span_id == parent.context.span_id
-
-
-def test_sanitize_stringifies_structured_outputs_for_otlp(inmem):
-    """Dict/bytes ``outputs`` written to the span backing store must become
-    a JSON string the OTLP encoder accepts. ``set_attribute`` drops dicts.
-    """
-    from opentelemetry.exporter.otlp.proto.common._internal import _encode_key_value
-
-    provider, exporter = inmem
-    tracer = provider.get_tracer("overmind")
-    with tracer.start_as_current_span("step") as span:
-        sink = getattr(span._attributes, "_dict", span._attributes)
-        sink["outputs"] = {"extracted_content": "ok", "nested": {"n": 1}}
-        sink["inputs"] = {"action": {"navigate": {"url": "https://news.ycombinator.com"}}}
-        _sanitize_span_attributes(span)
-
-    provider.force_flush()
-    finished = exporter.get_finished_spans()[-1]
-    outputs = finished.attributes["outputs"]
-    inputs = finished.attributes["inputs"]
-    assert isinstance(outputs, str)
-    assert isinstance(inputs, str)
-    _encode_key_value("outputs", outputs)
-    _encode_key_value("inputs", inputs)

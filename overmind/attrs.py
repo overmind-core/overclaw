@@ -9,8 +9,8 @@ first, then import the constant at the call site — never inline a raw
 Naming rule
 -----------
 Keys under ``overmind.*`` use dotted segments
-(``overmind.agent.id``, ``overmind.error.type``, …); never a single
-underscore-blob like ``overmind.agent_id``.
+(``overmind.capability.id``, ``overmind.error.type``, …); never a single
+underscore-blob like ``overmind.capability_id``.
 
 Deprecations
 ------------
@@ -51,20 +51,16 @@ DURATION_SECONDS = "overmind.duration.seconds"  # walltime of the wrapped span
 # Top-level resource / context tags (link spans to server-side entities).
 #
 # These are the identity keys the Overmind server uses to attach a span to a
-# concrete row.  ``overmind.agent.id`` is a direct primary-key lookup (server
-# resolves it from the resource attributes OR any span attribute); when it is
-# absent the server falls back to slugifying ``overmind.agent.name``.  Prefer
-# stamping ``overmind.agent.id`` when you have it — it is drift-proof.
+# concrete row.  ``overmind.capability.id`` is the mapping key: ingest binds
+# spans to tasks, trajectories, and behaviours by this UUID alone (resource
+# attributes OR any span attribute).  ``overmind.capability.name`` is an
+# accessibility label and never resolves a capability.
 # ---------------------------------------------------------------------------
-AGENT_ID = "overmind.agent.id"
+CAPABILITY_ID = "overmind.capability.id"
 PROJECT_ID = "overmind.project.id"
 JOB_ID = "overmind.job.id"
 
-# ---------------------------------------------------------------------------
-# Agent registry / `overmind agent ...` commands
-# (overmind/commands/agent_cmd.py)
-# ---------------------------------------------------------------------------
-AGENT_NAME = "overmind.agent.name"
+CAPABILITY_NAME = "overmind.capability.name"
 # Tracelo­op-compatible workflow label attached to every downstream span by
 # the on-start processor.  Stored in the OTel context so child spans pick
 # it up automatically.
@@ -72,16 +68,6 @@ WORKFLOW_NAME = "overmind.workflow.name"
 # Stable per-conversation identifier used by chat agents to group multiple
 # traces under the same user-visible session.
 CONVERSATION_ID = "overmind.conversation.id"
-AGENT_ENTRYPOINT = "overmind.agent.entrypoint"
-AGENT_NEW_ENTRYPOINT = "overmind.agent.new_entrypoint"
-AGENT_OLD_ENTRYPOINT = "overmind.agent.old_entrypoint"
-AGENT_FILE_PATH = "overmind.agent.file_path"
-AGENT_FUNCTION_NAME = "overmind.agent.function_name"
-AGENT_REGISTERED_COUNT = "overmind.agent.registered_count"
-AGENT_REMOVED = "overmind.agent.removed"
-AGENT_FILE_EXISTS = "overmind.agent.file_exists"
-AGENT_SETUP_SPEC_READY = "overmind.agent.setup_spec_ready"
-AGENT_EXPERIMENT_FILE_COUNT = "overmind.agent.experiment_file_count"
 
 # ---------------------------------------------------------------------------
 # `overmind init` (overmind/commands/init_cmd.py)
@@ -117,8 +103,6 @@ SETUP_EVAL_SPEC_TOOL_COUNT = "overmind.setup.eval_spec_tool_count"
 SETUP_EVAL_SPEC_CONSISTENCY_RULE_COUNT = "overmind.setup.eval_spec_consistency_rule_count"
 SETUP_CRITERIA_SOURCE = "overmind.setup.criteria_source"
 SETUP_POLICY_SOURCE = "overmind.setup.policy_source"
-SETUP_AGENT_POLICY_MARKDOWN = "overmind.agent.policy.markdown"
-SETUP_AGENT_POLICY_DATA = "overmind.agent.policy.data"
 # Agent description and full eval spec snapshot (text / JSON string).
 SETUP_AGENT_DESCRIPTION = "overmind.setup.agent_description"
 SETUP_EVAL_SPEC = "overmind.setup.eval_spec"
@@ -136,7 +120,6 @@ SETUP_OPTIMIZABLE_ELEMENTS = "overmind.setup.optimizable_elements"
 # ---------------------------------------------------------------------------
 # `overmind optimise` (overmind/commands/optimize_cmd.py)
 # ---------------------------------------------------------------------------
-OPTIMIZE_AGENT_NAME = "overmind.optimize.agent_name"
 OPTIMIZE_AGENT_PATH = "overmind.optimize.agent_path"
 OPTIMIZE_FAST = "overmind.optimize.fast"
 OPTIMIZE_ENTRYPOINT_FN = "overmind.optimize.entrypoint_fn"

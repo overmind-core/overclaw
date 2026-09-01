@@ -41,7 +41,7 @@ def _in_fresh_context(fn):
 
 
 def _by_name(exporter, name):
-    (span,) = [s for s in exporter.get_finished_spans() if s.name == name]
+    (span,) = (s for s in exporter.get_finished_spans() if s.name == name)
     return span
 
 

@@ -64,7 +64,7 @@ def _in_fresh_context(fn):
 
 
 def _by_name(exporter, name):
-    (span,) = [s for s in exporter.get_finished_spans() if s.name == name]
+    (span,) = (s for s in exporter.get_finished_spans() if s.name == name)
     return span
 
 
@@ -202,10 +202,9 @@ def test_nested_task_inside_turn_task_does_not_rebind_turn(exporter):
     the turn span's key — the same hijack class as the root-boundary bug."""
 
     def _run():
-        with start_span("run-root", span_type="entry_point"):
-            with task("a", unit="turn"):
-                with task("b"), start_span("inside-b"):
-                    pass
+        with start_span("run-root", span_type="entry_point"), task("a", unit="turn"):
+            with task("b"), start_span("inside-b"):
+                pass
 
     _in_fresh_context(_run)
     turn = _by_name(exporter, "a")
@@ -222,9 +221,8 @@ def test_handoff_scope_never_inherits_outer_task_key(exporter):
     def _run():
         _seed_identity_context(None, "Outer", None)
         with start_span("run-root", span_type="entry_point"), task("x"):
-            with capability("Inner"):
-                with start_span("handoff-turn"), start_span("inner-child"):
-                    pass
+            with capability("Inner"), start_span("handoff-turn"), start_span("inner-child"):
+                pass
             with start_span("outer-again"):
                 pass
 
@@ -261,9 +259,8 @@ def test_task_never_overwrites_existing_key(exporter):
 
 def test_run_declared_inside_task_scope_carries_no_key(exporter):
     def _run():
-        with task("outer-key"), start_span("root", span_type="entry_point"):
-            with start_span("inside"):
-                pass
+        with task("outer-key"), start_span("root", span_type="entry_point"), start_span("inside"):
+            pass
 
     _in_fresh_context(_run)
     root = _by_name(exporter, "root")
@@ -274,9 +271,8 @@ def test_run_declared_inside_task_scope_carries_no_key(exporter):
 
 def test_nested_entry_point_demotes_to_turn(exporter):
     def _run():
-        with start_span("root", span_type="entry_point"):
-            with start_span("sub-run", span_type="entry_point"):
-                pass
+        with start_span("root", span_type="entry_point"), start_span("sub-run", span_type="entry_point"):
+            pass
 
     _in_fresh_context(_run)
     assert _by_name(exporter, "root").attributes[attrs.UNIT_KIND] == "run"
@@ -310,9 +306,8 @@ def test_threaded_nested_tasks_never_rebind_shared_turn(exporter):
         with start_span("run-root", span_type="entry_point"):
 
             def worker(i: int) -> None:
-                with task("shared", unit="turn"):
-                    with task(f"inner-{i}"), start_span(f"step-{i}"):
-                        pass
+                with task("shared", unit="turn"), task(f"inner-{i}"), start_span(f"step-{i}"):
+                    pass
 
             threads = [
                 threading.Thread(target=contextvars.copy_context().run, args=(worker, i)) for i in range(8)

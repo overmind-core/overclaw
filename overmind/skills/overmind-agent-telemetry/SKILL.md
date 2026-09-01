@@ -60,13 +60,13 @@ export OVERMIND_API_KEY=<your-api-key>
 
 Optional identity/config (all have env-var equivalents read by `init()`):
 
-| Env var | Purpose |
-| --- | --- |
-| `OVERMIND_SERVICE_NAME` | Service name on the traces |
-| `OVERMIND_AGENT_ID` | Capability UUID from the Console — the identifier; stable through renames |
-| `OVERMIND_AGENT_NAME` | Optional display label (slug or name); advisory when an id is set |
-| `OVERMIND_ENVIRONMENT` | e.g. `production` (default `development`) |
-| `OVERMIND_API_URL` | Override the trace endpoint base URL |
+| Env var                    | Purpose                                                                   |
+| -------------------------- | ------------------------------------------------------------------------- |
+| `OVERMIND_SERVICE_NAME`    | Service name on the traces                                                |
+| `OVERMIND_CAPABILITY_ID`   | Capability UUID from the Console — the identifier; stable through renames |
+| `OVERMIND_CAPABILITY_NAME` | Optional display label (slug or name); advisory when an id is set         |
+| `OVERMIND_ENVIRONMENT`     | e.g. `production` (default `development`)                                 |
+| `OVERMIND_API_URL`         | Override the trace endpoint base URL                                      |
 
 ## Step 3a — Greenfield init
 
@@ -77,7 +77,7 @@ import overmind
 
 overmind.init(
     service_name="my-agent",
-    providers="auto",   # instrument every installed provider SDK
+    providers="auto",  # instrument every installed provider SDK
 )
 ```
 
@@ -128,6 +128,7 @@ else:
 ```
 
 Notes:
+
 - The project's existing backend keeps receiving spans; Overmind gets a copy.
 - Overmind's server reads canonical `genai.*` usage attributes. Spans from
   third-party auto-instrumentors that only emit OTel `gen_ai.*` keys are
@@ -142,9 +143,11 @@ the one scope that covers it — capability identity, the entry-point run span,
 intent, conversation id, error status, and a flush on exit:
 
 ```python
-with overmind.run("triage-run", intent=request["question"], conversation_id=ticket_id) as run:
+with overmind.run(
+    "triage-run", intent=request["question"], conversation_id=ticket_id
+) as run:
     answer = agent.invoke(request)
-    run.deliver(answer)   # terminal deliverable, auto-grounded
+    run.deliver(answer)  # terminal deliverable, auto-grounded
 ```
 
 As a decorator (sync or async) every parameter except `name` also accepts a
@@ -154,10 +157,11 @@ scan-contract anchor:
 
 ```python
 class Agent:
-    @overmind.run(intent=lambda self, *a, **k: self.task,
-                  conversation_id=lambda self, *a, **k: self.task_id)
-    async def run(self):
-        ...
+    @overmind.run(
+        intent=lambda self, *a, **k: self.task,
+        conversation_id=lambda self, *a, **k: self.task_id,
+    )
+    async def run(self): ...
 ```
 
 Spans created **outside** any run boundary that would start their own trace
@@ -177,6 +181,7 @@ with overmind.task("investment-debate", unit="turn"):
 ```
 
 Rules that matter:
+
 - `deliver()` runs **inside the unit that produced the deliverable**.
 - Internal fan-out/retries/loop bodies must **not** declare `unit`.
 - Multi-capability agents scope identity with
@@ -195,7 +200,10 @@ overmind_langgraph.bind(
     workflow,
     # Default key per node: slugified node name. Override where the task map
     # groups nodes differently; None opts a node out.
-    behaviours={"Bull Researcher": "investment-debate", "Bear Researcher": "investment-debate"},
+    behaviours={
+        "Bull Researcher": "investment-debate",
+        "Bear Researcher": "investment-debate",
+    },
     deliver="Portfolio Manager",  # this node's return value is the deliverable
 )
 app = workflow.compile()
@@ -210,16 +218,19 @@ undecorated anchor emits no `code.namespace`/`code.function.name`, so its step
 judges silently skip it. Use the type that matches the code:
 
 ```python
-@overmind.workflow()      # multi-step orchestration
+@overmind.workflow()  # multi-step orchestration
 def pipeline(): ...
 
-@overmind.tool()          # a tool/function the agent can call
+
+@overmind.tool()  # a tool/function the agent can call
 def search(query: str) -> list[dict]: ...
 
-@overmind.retrieval()     # RAG / vector lookup
+
+@overmind.retrieval()  # RAG / vector lookup
 def fetch_docs(q: str): ...
 
-@overmind.observe()       # any other traced function
+
+@overmind.observe()  # any other traced function
 def score(x): ...
 ```
 
@@ -237,8 +248,8 @@ with overmind.start_span("rerank", span_type=overmind.SpanType.FUNCTION) as span
     overmind.set_tag("candidate_count", len(candidates))
 
 overmind.set_user("user-123", email="a@b.com")
-overmind.set_conversation_id("conv-abc")   # groups spans into one session
-overmind.capture_exception(exc)            # marks the current span errored
+overmind.set_conversation_id("conv-abc")  # groups spans into one session
+overmind.capture_exception(exc)  # marks the current span errored
 ```
 
 `start_span` and the decorators use the ambient tracer, so they attach to

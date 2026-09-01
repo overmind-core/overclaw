@@ -72,10 +72,10 @@ def _run_scope(
 ):
     # Env identity is all-or-nothing: an explicitly declared capability must
     # never pick up the other half from a process-global env var — a stale
-    # OVERMIND_AGENT_ID would silently outrank the declared name server-side.
+    # OVERMIND_CAPABILITY_ID would silently outrank the declared name server-side.
     if capability is None and capability_id is None:
-        capability = os.environ.get("OVERMIND_AGENT_NAME")
-        capability_id = os.environ.get("OVERMIND_AGENT_ID")
+        capability = os.environ.get("OVERMIND_CAPABILITY_NAME")
+        capability_id = os.environ.get("OVERMIND_CAPABILITY_ID")
     scope = _capability_scope(capability, id=capability_id) if capability or capability_id else nullcontext()
     attributes = dict(identity or {})
     if tags:
@@ -173,8 +173,8 @@ def run(
 
     Enters the capability identity — ``capability_id`` (the UUID, resolved
     first server-side and stable through renames) and/or ``capability`` (slug
-    or display name). When neither is given the ``OVERMIND_AGENT_ID`` /
-    ``OVERMIND_AGENT_NAME`` env vars fill both; an explicit arg suppresses
+    or display name). When neither is given the ``OVERMIND_CAPABILITY_ID`` /
+    ``OVERMIND_CAPABILITY_NAME`` env vars fill both; an explicit arg suppresses
     the env fallback entirely, and with no identity at all there is no scope
     (``init()``'s ambient identity already covers single-capability agents).
     It then

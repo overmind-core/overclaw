@@ -111,8 +111,8 @@ class TestInitDebug:
         with caplog.at_level("INFO", logger="overmind"):
             assert tr.init(debug=True) is True
 
-        (record,) = [r for r in caplog.records if r.message.startswith("Overmind debug:")]
-        for fragment in ("endpoint=", "agent_id=", "providers=", "export=", "export_orphan_spans="):
+        (record,) = (r for r in caplog.records if r.message.startswith("Overmind debug:"))
+        for fragment in ("endpoint=", "capability_id=", "providers=", "export=", "export_orphan_spans="):
             assert fragment in record.message
 
 

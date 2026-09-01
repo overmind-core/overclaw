@@ -56,7 +56,7 @@ def test_observed_function_outside_any_boundary_is_not_exported(exporter, caplog
         assert _in_fresh_context(reconstruct_agent_state) == "state"
 
     assert _names(exporter) == []
-    (record,) = [r for r in caplog.records if "not exported" in r.message]
+    (record,) = (r for r in caplog.records if "not exported" in r.message)
     assert "overmind.run" in record.message
     assert "export_orphan_spans=True" in record.message
 

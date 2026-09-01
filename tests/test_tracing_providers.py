@@ -175,7 +175,7 @@ class TestAutoProviders:
         ):
             tracing.enable_tracing("auto")
 
-        (record,) = [r for r in caplog.records if 'providers="auto"' in r.message]
+        (record,) = (r for r in caplog.records if 'providers="auto"' in r.message)
         assert "openai, anthropic" in record.message
 
     def test_nothing_installed_resolves_to_none(self, caplog):

@@ -48,7 +48,7 @@ def _in_fresh_context(fn):
 
 
 def _by_name(exporter, name):
-    (span,) = [s for s in exporter.get_finished_spans() if s.name == name]
+    (span,) = (s for s in exporter.get_finished_spans() if s.name == name)
     return span
 
 
@@ -59,19 +59,18 @@ def test_capability_requires_identity():
 
 def test_spans_inside_scope_carry_identity(exporter):
     def _run():
-        with capability("DOM Element Locator", id="cap-1"):
-            with start_span("inside"):
-                pass
+        with capability("DOM Element Locator", id="cap-1"), start_span("inside"):
+            pass
         with start_span("outside"):
             pass
 
     _in_fresh_context(_run)
     inside = _by_name(exporter, "inside")
-    assert inside.attributes[attrs.AGENT_NAME] == "DOM Element Locator"
-    assert inside.attributes[attrs.AGENT_ID] == "cap-1"
+    assert inside.attributes[attrs.CAPABILITY_NAME] == "DOM Element Locator"
+    assert inside.attributes[attrs.CAPABILITY_ID] == "cap-1"
     outside = _by_name(exporter, "outside")
-    assert attrs.AGENT_NAME not in outside.attributes
-    assert attrs.AGENT_ID not in outside.attributes
+    assert attrs.CAPABILITY_NAME not in outside.attributes
+    assert attrs.CAPABILITY_ID not in outside.attributes
 
 
 def test_nested_scope_restores_outer_identity(exporter):
@@ -83,10 +82,10 @@ def test_nested_scope_restores_outer_identity(exporter):
                 pass
 
     _in_fresh_context(_run)
-    assert _by_name(exporter, "inner").attributes[attrs.AGENT_ID] == "cap-in"
+    assert _by_name(exporter, "inner").attributes[attrs.CAPABILITY_ID] == "cap-in"
     after = _by_name(exporter, "after-inner")
-    assert after.attributes[attrs.AGENT_ID] == "cap-out"
-    assert after.attributes[attrs.AGENT_NAME] == "Outer"
+    assert after.attributes[attrs.CAPABILITY_ID] == "cap-out"
+    assert after.attributes[attrs.CAPABILITY_NAME] == "Outer"
 
 
 def test_name_only_scope_clears_outer_id(exporter):
@@ -97,8 +96,8 @@ def test_name_only_scope_clears_outer_id(exporter):
 
     _in_fresh_context(_run)
     inner = _by_name(exporter, "inner")
-    assert inner.attributes[attrs.AGENT_NAME] == "Inner"
-    assert attrs.AGENT_ID not in inner.attributes
+    assert inner.attributes[attrs.CAPABILITY_NAME] == "Inner"
+    assert attrs.CAPABILITY_ID not in inner.attributes
 
 
 def test_handoff_mid_trace_stamps_turn_on_first_span_only(exporter):
@@ -118,9 +117,8 @@ def test_handoff_mid_trace_stamps_turn_on_first_span_only(exporter):
 def test_same_capability_is_not_a_handoff(exporter):
     def _run():
         _seed_identity_context(None, "Browser Automation Agent", None)
-        with start_span("run-root"), capability("Browser Automation Agent"):
-            with start_span("step"):
-                pass
+        with start_span("run-root"), capability("Browser Automation Agent"), start_span("step"):
+            pass
 
     _in_fresh_context(_run)
     assert attrs.UNIT_KIND not in _by_name(exporter, "step").attributes
@@ -129,9 +127,8 @@ def test_same_capability_is_not_a_handoff(exporter):
 def test_slug_and_display_name_are_the_same_identity(exporter):
     def _run():
         _seed_identity_context(None, "Browser Automation Agent", None)
-        with start_span("run-root"), capability("browser-automation-agent"):
-            with start_span("step"):
-                pass
+        with start_span("run-root"), capability("browser-automation-agent"), start_span("step"):
+            pass
 
     _in_fresh_context(_run)
     assert attrs.UNIT_KIND not in _by_name(exporter, "step").attributes
@@ -140,9 +137,8 @@ def test_slug_and_display_name_are_the_same_identity(exporter):
 def test_matching_ids_are_never_a_handoff_even_when_names_differ(exporter):
     def _run():
         _seed_identity_context("cap-1", "Old Name", None)
-        with start_span("run-root"), capability("New Name", id="cap-1"):
-            with start_span("step"):
-                pass
+        with start_span("run-root"), capability("New Name", id="cap-1"), start_span("step"):
+            pass
 
     _in_fresh_context(_run)
     assert attrs.UNIT_KIND not in _by_name(exporter, "step").attributes
@@ -161,15 +157,14 @@ def test_scope_without_active_trace_stamps_no_turn(exporter):
 def test_mixed_identity_grains_are_not_a_handoff(exporter):
     def _run():
         _seed_identity_context(None, "Outer", None)
-        with start_span("run-root"), capability(id="cap-9"):
-            with start_span("inside"):
-                pass
+        with start_span("run-root"), capability(id="cap-9"), start_span("inside"):
+            pass
 
     _in_fresh_context(_run)
     inside = _by_name(exporter, "inside")
     assert attrs.UNIT_KIND not in inside.attributes
-    assert inside.attributes[attrs.AGENT_ID] == "cap-9"
-    assert attrs.AGENT_NAME not in inside.attributes
+    assert inside.attributes[attrs.CAPABILITY_ID] == "cap-9"
+    assert attrs.CAPABILITY_NAME not in inside.attributes
 
 
 def test_entry_point_handoff_boundary_keeps_turn(exporter):
@@ -203,7 +198,7 @@ def test_capability_as_decorator_composes_with_tool(exporter):
 
     _in_fresh_context(lambda: extract("https://example.com"))
     span = _by_name(exporter, "extract")
-    assert span.attributes[attrs.AGENT_NAME] == "Page Markdown Extractor"
+    assert span.attributes[attrs.CAPABILITY_NAME] == "Page Markdown Extractor"
     assert span.attributes[attrs.PROVENANCE] == "environment"
 
 
@@ -220,8 +215,8 @@ def test_async_decorator_and_context_manager(exporter):
                 pass
 
     _in_fresh_context(lambda: asyncio.run(_main()))
-    assert _by_name(exporter, "decorated").attributes[attrs.AGENT_ID] == "cap-async"
-    assert _by_name(exporter, "managed").attributes[attrs.AGENT_NAME] == "Async CM"
+    assert _by_name(exporter, "decorated").attributes[attrs.CAPABILITY_ID] == "cap-async"
+    assert _by_name(exporter, "managed").attributes[attrs.CAPABILITY_NAME] == "Async CM"
 
 
 def test_observe_capability_routes_through_capability_scope(exporter):
@@ -237,9 +232,9 @@ def test_observe_capability_routes_through_capability_scope(exporter):
 
     _in_fresh_context(_run)
     span = _by_name(exporter, "delegate")
-    assert span.attributes[attrs.AGENT_NAME] == "Inner"
+    assert span.attributes[attrs.CAPABILITY_NAME] == "Inner"
     assert span.attributes[attrs.UNIT_KIND] == "turn"
-    assert _by_name(exporter, "child").attributes[attrs.AGENT_NAME] == "Inner"
+    assert _by_name(exporter, "child").attributes[attrs.CAPABILITY_NAME] == "Inner"
 
 
 def test_observe_capability_id_pins_uuid_and_marks_handoff(exporter):
@@ -255,10 +250,10 @@ def test_observe_capability_id_pins_uuid_and_marks_handoff(exporter):
 
     _in_fresh_context(_run)
     span = _by_name(exporter, "delegate")
-    assert span.attributes[attrs.AGENT_ID] == "cap-2"
-    assert attrs.AGENT_NAME not in span.attributes
+    assert span.attributes[attrs.CAPABILITY_ID] == "cap-2"
+    assert attrs.CAPABILITY_NAME not in span.attributes
     assert span.attributes[attrs.UNIT_KIND] == "turn"
-    assert _by_name(exporter, "child").attributes[attrs.AGENT_ID] == "cap-2"
+    assert _by_name(exporter, "child").attributes[attrs.CAPABILITY_ID] == "cap-2"
 
 
 def test_observe_same_capability_is_not_a_handoff(exporter):

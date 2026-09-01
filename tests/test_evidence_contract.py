@@ -126,9 +126,8 @@ def test_unit_param_on_observe(exporter):
 def test_unit_param_validates_kind():
     with pytest.raises(ValueError, match="unit"):
         observe(unit="phase")
-    with pytest.raises(ValueError, match="unit"):
-        with start_span("step", unit="phase"):
-            pass
+    with pytest.raises(ValueError, match="unit"), start_span("step", unit="phase"):
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -201,9 +200,8 @@ def test_cancelled_entry_point_flushes(exporter):
     def run() -> None:
         raise KeyboardInterrupt
 
-    with patch.object(tracing, "force_flush_traces") as flush:
-        with pytest.raises(KeyboardInterrupt):
-            run()
+    with patch.object(tracing, "force_flush_traces") as flush, pytest.raises(KeyboardInterrupt):
+        run()
     flush.assert_called_once()
     assert _only_span(exporter).attributes[attrs.STATUS] == "cancelled"
 
@@ -213,7 +211,6 @@ def test_cancelled_inner_span_does_not_flush(exporter):
     def step() -> None:
         raise KeyboardInterrupt
 
-    with patch.object(tracing, "force_flush_traces") as flush:
-        with pytest.raises(KeyboardInterrupt):
-            step()
+    with patch.object(tracing, "force_flush_traces") as flush, pytest.raises(KeyboardInterrupt):
+        step()
     flush.assert_not_called()
