@@ -163,9 +163,24 @@ overmind skills sync overmind
 overmind init --ide codex
 ```
 
-Codex setup writes `.codex/config.toml`, installs the skill under
-`.agents/skills`, and requires `OVERMIND_API_KEY` in the environment. Codex
-loads project configuration only for trusted repositories.
+`init` writes each vendor's own project-scoped MCP config, leaving any other
+configured servers untouched:
+
+| `--ide`                  | MCP config           | Skill install      |
+| ------------------------ | -------------------- | ------------------ |
+| `cursor`                 | `.cursor/mcp.json`   | `.cursor/skills`   |
+| `claude` / `claude_code` | `.mcp.json`          | `.claude/skills`   |
+| `opencode`               | `opencode.json`      | `.opencode/skills` |
+| `codex`                  | `.codex/config.toml` | `.agents/skills`   |
+
+Claude Code reads project MCP servers from a root-level `.mcp.json`; it does not
+read `.claude/mcp.json`. Because `.mcp.json` and `.codex/config.toml` are meant
+to be committed, a key taken from `OVERMIND_API_KEY` is written as a reference
+(`${OVERMIND_API_KEY}` and `env_http_headers` respectively) rather than in plain
+text — pass `--api-key` to write a literal value instead.
+
+Codex setup additionally requires `OVERMIND_API_KEY` in the environment, and
+Codex loads project configuration only for trusted repositories.
 
 | Skill      | What it does                                                                                        |
 | ---------- | --------------------------------------------------------------------------------------------------- |

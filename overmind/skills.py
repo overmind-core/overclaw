@@ -21,6 +21,9 @@ from overmind.skills_db import Skill, skills
 
 console = Console()
 
+# Claude Code accepts several spellings on --ide; they all resolve to `.claude`.
+CLAUDE_IDES = frozenset({"claude", "claude_code", "claude-code"})
+
 # Package dir (`.../site-packages/overmind` or `.../repo/overmind`). Skills live at
 # the repo-root `skills/` for agent installers; the wheel force-includes that
 # tree at `overmind/skills/` so sync still works from an installed package.
@@ -87,7 +90,7 @@ def get_destination_dir(ide: str):
     if ide == "cursor":
         return ".cursor"
 
-    if ide == "claude_code" or ide == "claude" or ide == "claude-code":
+    if ide in CLAUDE_IDES:
         return ".claude"
 
     if ide == "opencode":

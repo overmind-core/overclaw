@@ -28,7 +28,7 @@ try:
         configure_logging,
         run_optimizer,
     )
-    from overmind.skills import get_destination_dir, skills_app, sync_skills
+    from overmind.skills import CLAUDE_IDES, get_destination_dir, skills_app, sync_skills
 except ImportError as exc:
     raise ImportError(
         "The Overmind CLI requires the 'cli' extra. Install it with: pip install 'overmind[cli]'"
@@ -100,6 +100,19 @@ MCP_URLS = {
 }
 
 
+def _key_or_env_ref(api_key: str | None, env_ref: str | None) -> str | None:
+    """Substitute ``env_ref`` when the key merely came from ``OVERMIND_API_KEY``.
+
+    Config files like ``.mcp.json`` and ``.codex/config.toml`` are meant to be
+    committed, so prefer an indirect reference over a literal secret. An
+    explicit ``--api-key`` must always win, so only the env-var case is
+    replaced.
+    """
+    if api_key and api_key == os.environ.get("OVERMIND_API_KEY"):
+        return env_ref
+    return api_key
+
+
 def _write_codex_mcp(path: Path, url: str, api_key: str | None = None) -> None:
     auth = (
         'env_http_headers = { "X-Api-Key" = "OVERMIND_API_KEY" }'
@@ -139,10 +152,8 @@ def overmind_init(
         if not os.environ.get("OVERMIND_API_KEY") and not api_key:
             raise typer.BadParameter("set OVERMIND_API_KEY before running init", param_hint="OVERMIND_API_KEY")
         mcp_path = Path.cwd() / ".codex" / "config.toml"
-        # Only fall back to the env var when the key actually came from it; an
-        # explicit --api-key must always win.
-        _write_codex_mcp(mcp_path, url, None if api_key == os.environ.get("OVERMIND_API_KEY") else api_key)
-        console.print(f"overmind MCP server written to {mcp_path}")
+        _write_codex_mcp(mcp_path, url, _key_or_env_ref(api_key, None))
+        console.print(f"overmind MCP server written to {mcp_path.relative_to(Path.cwd())}")
         sync_skills(["overmind"], ide=ide)
         console.print(f"overmind skill installed to {dest}/skills/overmind")
         return
@@ -159,6 +170,18 @@ def overmind_init(
             "enabled": True,
             "headers": {"X-Api-Key": api_key},
         }
+    elif ide in CLAUDE_IDES:
+        # Claude Code reads project MCP servers from a root-level .mcp.json. It
+        # never looks inside .claude/, which holds settings and skills only.
+        mcp_path = Path.cwd() / ".mcp.json"
+        config = json.loads(mcp_path.read_text()) if mcp_path.exists() else {}
+        config.setdefault("mcpServers", {})["overmind"] = {
+            "type": "http",
+            "url": url,
+            # .mcp.json is meant to be committed, so keep the key out of it when
+            # it came from the environment; Claude Code expands ${VAR} at load.
+            "headers": {"X-Api-Key": _key_or_env_ref(api_key, "${OVERMIND_API_KEY}")},
+        }
     else:
         mcp_path = Path.cwd() / dest / "mcp.json"
         config = json.loads(mcp_path.read_text()) if mcp_path.exists() else {}
@@ -169,12 +192,10 @@ def overmind_init(
 
     mcp_path.parent.mkdir(parents=True, exist_ok=True)
     mcp_path.write_text(json.dumps(config, indent=2) + "\n")
-    console.print(f"overmind MCP server written to {mcp_path.name if ide == 'opencode' else f'{dest}/mcp.json'}")
+    console.print(f"overmind MCP server written to {mcp_path.relative_to(Path.cwd())}")
 
     sync_skills(["overmind"], ide=ide)
     console.print(f"overmind skill installed to {dest}/skills/overmind")
-
-    # claude mcp add --transport http corridor https://app.corridor.dev/api/mcp --header "Authorization: Bearer ..."
 
 
 app.command("init")(overmind_init)

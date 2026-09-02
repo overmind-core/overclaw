@@ -28,11 +28,48 @@ def test_init_writes_cursor_mcp_json(tmp_path, monkeypatch):
     assert (tmp_path / ".cursor" / "skills" / "overmind" / "SKILL.md").is_file()
 
 
-def test_init_claude_alias_and_opencode_json(tmp_path, monkeypatch):
+def test_init_claude_writes_project_root_mcp_json(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    _init(tmp_path, "claude")
-    assert (tmp_path / ".claude" / "mcp.json").is_file()
+    monkeypatch.delenv("OVERMIND_API_KEY", raising=False)
 
+    for alias in ("claude", "claude_code", "claude-code"):
+        _init(tmp_path, alias)
+
+        # Claude Code reads .mcp.json at the project root, never .claude/mcp.json.
+        cfg = json.loads((tmp_path / ".mcp.json").read_text())
+        assert cfg["mcpServers"]["overmind"] == {
+            "type": "http",
+            "url": "http://localhost:8000/api/mcp/",
+            "headers": {"X-Api-Key": "k"},
+        }
+        assert not (tmp_path / ".claude" / "mcp.json").exists()
+        assert (tmp_path / ".claude" / "skills" / "overmind" / "SKILL.md").is_file()
+
+
+def test_init_claude_preserves_other_servers(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".mcp.json").write_text(json.dumps({"mcpServers": {"other": {"command": "uvx", "args": ["other"]}}}))
+
+    _init(tmp_path, "claude")
+
+    cfg = json.loads((tmp_path / ".mcp.json").read_text())
+    assert cfg["mcpServers"]["other"] == {"command": "uvx", "args": ["other"]}
+    assert "overmind" in cfg["mcpServers"]
+
+
+def test_init_claude_keeps_env_key_out_of_committed_config(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OVERMIND_API_KEY", "secret")
+    result = runner.invoke(app, ["init", "--ide", "claude", "--env", "local"], catch_exceptions=False)
+
+    assert result.exit_code == 0, result.output
+    cfg = json.loads((tmp_path / ".mcp.json").read_text())
+    assert cfg["mcpServers"]["overmind"]["headers"] == {"X-Api-Key": "${OVERMIND_API_KEY}"}
+    assert "secret" not in (tmp_path / ".mcp.json").read_text()
+
+
+def test_init_opencode_json(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     _init(tmp_path, "opencode")
     cfg = json.loads((tmp_path / "opencode.json").read_text())
     assert cfg["mcp"]["overmind"] == {
