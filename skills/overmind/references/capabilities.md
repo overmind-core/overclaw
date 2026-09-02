@@ -3,6 +3,10 @@
 Resolve agents with `list_capabilities` / `get_capability`. Stamp the returned `id`
 into the SDK and inspect traces in [telemetry.md](telemetry.md).
 
+Overmind models work as **Agent > Capabilities > Tasks**. This file covers the
+capability. The tasks (behaviours) under it, and their scored executions, live
+in [behaviours.md](behaviours.md).
+
 All of this is Overmind MCP. Inspect each tool's schema for arguments.
 `update_capability` and the GitHub analyze tools are gated (they mutate).
 
@@ -13,8 +17,9 @@ All of this is Overmind MCP. Inspect each tool's schema for arguments.
 - [ ] 2. get_capability — card: id, active_model, source_repo, capped flow
 - [ ] 3. capability_prompts / capability_eval_spec when you need prompt text or the eval contract
 - [ ] 4. update_capability to retarget the live model (or patch description / display_name)
-- [ ] 5. If no agents / no repo: analyze_github_repo or analyze_github_repo_url
-- [ ] 6. assign_traces_to_capability for mis-attributed traces
+- [ ] 5. list_behaviours / behaviour_coverage for the agent's task map ([behaviours.md](behaviours.md))
+- [ ] 6. If no agents / no repo: analyze_github_repo or analyze_github_repo_url
+- [ ] 7. assign_traces_to_capability for mis-attributed traces
 ```
 
 ## Card
@@ -58,6 +63,11 @@ runs in the background — agents and prompts appear when it finishes.
   Overmind GitHub App granted on that repo.
 - Public URL (no connection): `analyze_github_repo_url(url, branch?)`.
   Private repos need the connected-account path.
+
+The scan also mints the capability's **behaviour registry** — the task
+contracts production units bind to. After it finishes, `list_behaviours`
+shows the task map ([behaviours.md](behaviours.md)); a missing task means the
+scan is stale, so re-run analyze rather than trying to create one.
 
 Returns `{queued, repo, branch, status}` — no job id. Wait by
 `list_capabilities` until rows appear. If you already have

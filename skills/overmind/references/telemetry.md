@@ -20,6 +20,7 @@ Conventions (names not ids, errors-as-values, mutations) live in
 - [ ] 1. capability_health — start here for "how is this agent doing"
 - [ ] 2. If nothing is landing: detect existing OTel, install the SDK, init, decorate (below)
 - [ ] 3. capability_failures if quality is down (do not copy ids into create_dataset_from_traces)
+- [ ] 3b. list_task_executions → get_task_execution — the scored unit layer ([behaviours.md](behaviours.md))
 - [ ] 4. list_traces → get_trace to drill in (use summary for totals, don't sum pages)
 - [ ] 5. list_sessions / get_session when the app is multi-turn
 - [ ] 6. graph_* when the question is lineage / similarity, not a simple list
@@ -57,13 +58,32 @@ When the user wants a dataset from those failures, jump to
 `create_dataset_from_failures` (see [datasets.md](datasets.md)) — do **not**
 copy trace ids from this result into `create_dataset_from_traces`.
 
+## Task executions (the scored unit layer)
+
+A trace is carved into task executions — one per run or turn — and each unit
+is bound to a scanned task contract and scored. Read units before spans:
+
+- `list_task_executions(capability_name_or_slug?, task?, trace_id?, conversation_id?, binding_source?, status?, limit?)`
+  — `status` (`completed` | `error` | `interrupted`), `binding_source`
+  (`anchor_join` | `declared` | `unbound`), `success_score`,
+  `session_score`, `terminal_kind`, `route_flags`.
+- `get_task_execution(task_execution_id)` — route, `step_results`,
+  `user_intent`, `session_rationale`, `unit_span_id`.
+
+`binding_source: "unbound"` means the unit never joined a contract, so its
+step judges never ran. That is an **instrumentation** gap — decorate the
+anchor or stamp `overmind.task(key)` (Step 5 / Step 6 below). Full tool
+reference: [behaviours.md](behaviours.md).
+
 ## Traces
 
 - `list_traces(capability?, search?, status?, model?, min_duration_ms?, max_duration_ms?, start_after?, start_before?, session?, all_spans?, ordering?, limit?, offset?)` — production spans. Default is **root-only**;
   `all_spans=true` includes children (adds `span_id` on rows). Compact
-  rows: `trace_id`, name, capability, status, duration, `total_tokens`,
-  `total_cost`, model, live `trace_scores`, `n_scored`, `any_failed`,
-  `graph_ref`. The `summary` object aggregates the **full** filtered set
+  rows: `trace_id`, name, capability, status, `trace_status`
+  (`completed` | `live` | `interrupted` — `live` is still in flight,
+  `interrupted` is rootless past the settle window; neither is a failure),
+  duration, `total_tokens`, `total_cost`, model, live `trace_scores`,
+  `n_scored`, `any_failed`, `graph_ref`. The `summary` object aggregates the **full** filtered set
   (counts, errors, sum/avg tokens and cost, duration stats) regardless of
   the page returned — answer totals/averages from `summary`; do not paginate
   or sum rows yourself. Paginate (`limit` + `offset`, `has_more`) only when
