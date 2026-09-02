@@ -93,7 +93,8 @@ app.add_typer(skills_app, name="skills")
 
 
 MCP_URLS = {
-    "staging": "https://staging.overmindlab.ai/api/mcp/",
+    "production": "https://api.overmindlab.ai/api/mcp/",
+    "staging": "https://api-staging.overmindlab.ai/api/mcp/",
     "development": "http://localhost:8000/api/mcp/",
     "local": "http://localhost:8000/api/mcp/",
     "dev": "http://localhost:8000/api/mcp/",
