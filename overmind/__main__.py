@@ -15,19 +15,24 @@ import re
 from pathlib import Path
 from typing import Annotated
 
-import typer
-from rich.console import Console
+try:
+    import typer
+    from rich.console import Console
 
-from overmind.optimizer import (
-    API_KEY,
-    API_URL,
-    HEARTBEAT_INTERVAL,
-    IDLE_INTERVAL,
-    WORK_DIR,
-    configure_logging,
-    run_optimizer,
-)
-from overmind.skills import get_destination_dir, skills_app, sync_skills
+    from overmind.optimizer import (
+        API_KEY,
+        API_URL,
+        HEARTBEAT_INTERVAL,
+        IDLE_INTERVAL,
+        WORK_DIR,
+        configure_logging,
+        run_optimizer,
+    )
+    from overmind.skills import get_destination_dir, skills_app, sync_skills
+except ImportError as exc:
+    raise ImportError(
+        "The Overmind CLI requires the 'cli' extra. Install it with: pip install 'overmind[cli]'"
+    ) from exc
 
 app = typer.Typer(
     name="overmind",
@@ -117,7 +122,7 @@ def _write_codex_mcp(path: Path, url: str, api_key: str | None = None) -> None:
 
 
 def overmind_init(
-    env: Annotated[str, typer.Option(help="production, staging or dev")] = "production",
+    env: Annotated[str, typer.Option(help="production, staging or local")] = "production",
     api_key: Annotated[str, typer.Option(envvar="OVERMIND_API_KEY", help="Overmind API key")] = API_KEY,
     ide: Annotated[str, typer.Option(..., help="cursor, claude, claude_code, opencode or codex")] = "cursor",
 ):
@@ -134,7 +139,9 @@ def overmind_init(
         if not os.environ.get("OVERMIND_API_KEY") and not api_key:
             raise typer.BadParameter("set OVERMIND_API_KEY before running init", param_hint="OVERMIND_API_KEY")
         mcp_path = Path.cwd() / ".codex" / "config.toml"
-        _write_codex_mcp(mcp_path, url, None if os.environ.get("OVERMIND_API_KEY") else api_key)
+        # Only fall back to the env var when the key actually came from it; an
+        # explicit --api-key must always win.
+        _write_codex_mcp(mcp_path, url, None if api_key == os.environ.get("OVERMIND_API_KEY") else api_key)
         console.print(f"overmind MCP server written to {mcp_path}")
         sync_skills(["overmind"], ide=ide)
         console.print(f"overmind skill installed to {dest}/skills/overmind")

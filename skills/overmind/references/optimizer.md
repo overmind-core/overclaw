@@ -40,7 +40,7 @@ optimize-mode only.
 1. `list_optimizer_experiments(agent?, limit?)` — what's already running or
    finished. `list_backtest_runs` covers model-replay jobs (alternative
    models, not prompt search).
-1. `optimizer_prerequisites(agent_name_or_slug)` — **ALWAYS** call first.
+1. `optimizer_prerequisites(capability_name_or_slug)` — **ALWAYS** call first.
    Returns usable **eval**-intent datasets, the agent's active eval set,
    `executioner_connected`, and (when disconnected)
    `executioner_start_command`.
@@ -49,7 +49,7 @@ optimize-mode only.
    Do not invent the command — use the one from prerequisites.
 1. Confirm the dataset is **eval** intent (`list_datasets`) and that the eval
    set you want is active (`list_eval_sets` / `activate_eval_set`).
-1. `create_optimizer_experiment(agent_name_or_slug, dataset_name, eval_set_name?, mode?, model_ids?, openrouter_key_source?, num_iterations? [2–5, default 5], num_candidates_per_iteration? [2–3, default 3], max_iterations_without_improvement? [default 3])` — eval set defaults to
+1. `create_optimizer_experiment(capability_name_or_slug, dataset_name, eval_set_name?, mode?, model_ids?, openrouter_key_source?, num_iterations? [2–5, default 5], num_candidates_per_iteration? [2–3, default 3], max_iterations_without_improvement? [default 3])` — eval set defaults to
    the agent's active set. Returns `experiment_id`. Default `mode` is
    `optimize`; comparison/hybrid need `model_ids`.
 1. Monitor: `job_status(kind="optimizer_experiment", id=experiment_id)` for
@@ -64,6 +64,6 @@ optimize-mode only.
    the winning diff. Requires a COMPLETED optimize-mode experiment whose
    best score beat the experiment's own baseline and a linked GitHub repo
    (`analyze_github_repo` / `analyze_github_repo_url` if none is linked —
-   [agents.md](agents.md)).
+   [capabilities.md](capabilities.md)).
    An experiment that never ran (no executioner) has nothing to ship; no
    executioner is needed just to open the PR once a winning diff exists.

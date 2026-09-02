@@ -110,23 +110,28 @@ def run(input_data: dict[str, Any]) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    # Trace this run to Overmind. Prefer ``agent_id`` (the Agent's UUID from the
-    # console) — it's a drift-proof direct lookup. ``agent_name`` also works and
-    # is slugified server-side, so keep it stable across runs.
+    # Trace this run to Overmind. ``capability_id`` (the capability's UUID from
+    # the Console) is the only key ingest binds by; ``capability`` is a display
+    # label. The ``run()`` bracket carries the intent, opens the scoring unit,
+    # and flushes on exit; ``deliver()`` marks the terminal deliverable.
     import overmind
 
     overmind.init(
-        agent_id=os.environ.get("OVERMIND_AGENT_ID"),  # e.g. "6f1c…"; omit to fall back to name
-        agent_name="Support Triage",
+        capability_id=os.environ.get("OVERMIND_CAPABILITY_ID"),  # e.g. "6f1c…"
+        capability="Support Triage",
         service_name="support-triage",
         environment=os.environ.get("ENVIRONMENT", "development"),
         providers=["anthropic"],  # auto-instrument the Anthropic SDK
     )
 
-    result = run({
+    ticket = {
         "customer_id": "cust_123",
         "subject": "Refund never arrived",
         "body": "I returned my order two weeks ago and still have not been refunded.",
-    })
+    }
+    with overmind.run(
+        "triage-ticket", intent=ticket["subject"], conversation_id=ticket["customer_id"]
+    ) as handle:
+        result = run(ticket)
+        handle.deliver(result)
     print(json.dumps(result, indent=2))
-    overmind.force_flush_traces()

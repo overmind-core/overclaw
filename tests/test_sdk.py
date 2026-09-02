@@ -27,12 +27,11 @@ def reset_sdk_state():
 
 @pytest.fixture
 def mock_opentelemetry():
-    """Mock all OpenTelemetry dependencies."""
-    mock_fastapi_class = MagicMock()
-    mock_openai_class = MagicMock()
-
+    """Mock only the process-global boundaries — the exporter (network), the
+    batch processor (threads), and the trace API (global provider slot). The
+    ``TracerProvider`` stays real so ``init()`` exercises the class the SDK
+    ships against."""
     with (
-        patch("overmind.tracing.TracerProvider") as mock_provider,
         patch("overmind.tracing.OTLPSpanExporter") as mock_exporter,
         patch("overmind.tracing.BatchSpanProcessor") as mock_processor,
         patch("overmind.tracing.trace") as mock_trace,
@@ -42,7 +41,6 @@ def mock_opentelemetry():
         mock_trace.get_tracer.return_value = mock_tracer
 
         yield {
-            "provider": mock_provider,
             "exporter": mock_exporter,
             "processor": mock_processor,
             "trace": mock_trace,
@@ -87,16 +85,80 @@ def test_sdk_init_only_once():
     from overmind import tracing
 
     with (
-        patch("overmind.tracing.TracerProvider"),
         patch("overmind.tracing.OTLPSpanExporter"),
         patch("overmind.tracing.BatchSpanProcessor"),
         patch("overmind.tracing.trace") as mock_trace,
     ):
-        tracing.init(overmind_api_key="test_key", overmind_base_url="http://localhost:4318")
-        tracing.init(overmind_api_key="test_key", overmind_base_url="http://localhost:4318")
+        assert tracing.init(overmind_api_key="test_key", overmind_base_url="http://localhost:4318") is True
+        assert tracing.init(overmind_api_key="test_key", overmind_base_url="http://localhost:4318") is True
 
         # Should only be called once
         assert mock_trace.set_tracer_provider.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Graceful absence — no API key means no-op tracing, never a crash
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def no_api_key(monkeypatch):
+    monkeypatch.delenv("OVERMIND_API_KEY", raising=False)
+    monkeypatch.delenv("OVERMIND_TRACE_FILE", raising=False)
+
+
+def test_init_without_key_returns_false(no_api_key):
+    from overmind import tracing
+
+    assert tracing.init() is False
+    assert tracing._initialized is False
+
+
+def test_init_without_key_logs_once_then_debug(no_api_key, caplog, monkeypatch):
+    """Libraries init() at their entry point, so a keyless user must see the
+    disabled line once per process, not on every call."""
+    import logging
+
+    from overmind import tracing
+
+    monkeypatch.setattr(tracing, "_keyless_logged", False)
+    with caplog.at_level(logging.DEBUG, logger="overmind.tracing"):
+        assert tracing.init() is False
+        assert tracing.init() is False
+    levels = [r.levelno for r in caplog.records if "tracing disabled" in r.getMessage()]
+    assert levels == [logging.INFO, logging.DEBUG]
+
+
+def test_init_without_key_raises_in_strict_mode(no_api_key, monkeypatch):
+    from overmind import tracing
+
+    monkeypatch.setattr(tracing, "_strict_mode", True)
+    with pytest.raises(RuntimeError, match="OVERMIND_API_KEY"):
+        tracing.init()
+
+
+def test_observe_calls_through_when_uninitialised(no_api_key):
+    from overmind import tracing
+
+    @tracing.observe()
+    def add(a, b):
+        return a + b
+
+    assert add(2, 3) == 5
+
+
+def test_start_span_yields_non_recording_span_when_uninitialised(no_api_key):
+    from overmind import tracing
+
+    with tracing.start_span("step", span_type="tool") as span:
+        span.set_attribute("inputs", "ignored")  # must not raise
+        assert not span.is_recording()
+
+
+def test_deliver_is_noop_when_uninitialised(no_api_key):
+    from overmind import tracing
+
+    tracing.deliver({"answer": 1})
 
 
 def test_sdk_init_handles_missing_deps():
@@ -104,7 +166,6 @@ def test_sdk_init_handles_missing_deps():
     from overmind import tracing
 
     with (
-        patch("overmind.tracing.TracerProvider"),
         patch("overmind.tracing.OTLPSpanExporter"),
         patch("overmind.tracing.BatchSpanProcessor"),
         patch("overmind.tracing.trace"),
@@ -181,7 +242,6 @@ def test_service_name_from_env():
     from overmind import tracing
 
     with (
-        patch("overmind.tracing.TracerProvider") as mock_provider,
         patch("overmind.tracing.OTLPSpanExporter"),
         patch("overmind.tracing.BatchSpanProcessor"),
         patch("overmind.tracing.trace"),

@@ -29,16 +29,22 @@ from overmind import attrs
 
 logger = logging.getLogger("overmind.genai")
 
+# Cost derivation needs litellm's pricing tables (the ``overmind[inference]``
+# extra). Missing is a supported configuration — hint once, never crash tracing.
+_litellm_missing_logged = False
+
 # Every attribute key that may carry a given token count, in priority order.
 # Covers: the canonical short form, the ``genai.usage.*`` alias, the OTel
-# semconv (``gen_ai.usage.prompt_tokens`` / ``…input_tokens``), and the
-# Traceloop ``llm.usage.*`` variant.
+# semconv (``gen_ai.usage.prompt_tokens`` / ``…input_tokens``), the Traceloop
+# ``llm.usage.*`` variant, and the OpenInference ``llm.token_count.*`` variant
+# (emitted by the ``providers=["langchain"]`` instrumentor).
 _PROMPT_TOKEN_KEYS: tuple[str, ...] = (
     attrs.LLM_PROMPT_TOKENS,
     attrs.LLM_USAGE_PROMPT_TOKENS,
     "gen_ai.usage.prompt_tokens",
     "gen_ai.usage.input_tokens",
     "llm.usage.prompt_tokens",
+    "llm.token_count.prompt",
 )
 _COMPLETION_TOKEN_KEYS: tuple[str, ...] = (
     attrs.LLM_COMPLETION_TOKENS,
@@ -46,12 +52,14 @@ _COMPLETION_TOKEN_KEYS: tuple[str, ...] = (
     "gen_ai.usage.completion_tokens",
     "gen_ai.usage.output_tokens",
     "llm.usage.completion_tokens",
+    "llm.token_count.completion",
 )
 _TOTAL_TOKEN_KEYS: tuple[str, ...] = (
     attrs.LLM_TOTAL_TOKENS,
     attrs.LLM_USAGE_TOTAL_TOKENS,
     "gen_ai.usage.total_tokens",
     "llm.usage.total_tokens",
+    "llm.token_count.total",
 )
 _MODEL_KEYS: tuple[str, ...] = (
     attrs.LLM_MODEL,
@@ -59,7 +67,10 @@ _MODEL_KEYS: tuple[str, ...] = (
     "gen_ai.request.model",
     "gen_ai.response.model",
     "gen_ai.model",
+    "llm.model_name",
 )
+
+_USAGE_SOURCE_KEYS = frozenset((*_PROMPT_TOKEN_KEYS, *_COMPLETION_TOKEN_KEYS, *_TOTAL_TOKEN_KEYS, *_MODEL_KEYS))
 
 
 def _first_int(attributes: Mapping[str, Any], keys: tuple[str, ...]) -> int | None:
@@ -96,7 +107,13 @@ def compute_cost(model: str | None, prompt_tokens: int | None, completion_tokens
         return None
     try:
         from litellm import cost_per_token
-
+    except ImportError:
+        global _litellm_missing_logged
+        if not _litellm_missing_logged:
+            _litellm_missing_logged = True
+            logger.info("genai.cost enrichment disabled: litellm is not installed (pip install 'overmind[inference]')")
+        return None
+    try:
         prompt_cost, completion_cost = cost_per_token(
             model=model,
             prompt_tokens=prompt_tokens or 0,
@@ -119,6 +136,9 @@ def canonical_usage_updates(attributes: Mapping[str, Any]) -> dict[str, Any]:
     the SDK's own LLM wrapper) always wins.
     """
     updates: dict[str, Any] = {}
+    # Most spans carry no usage keys at all; skip the alias probing for them.
+    if not _USAGE_SOURCE_KEYS.intersection(attributes):
+        return updates
 
     prompt_tokens = _first_int(attributes, _PROMPT_TOKEN_KEYS)
     completion_tokens = _first_int(attributes, _COMPLETION_TOKEN_KEYS)

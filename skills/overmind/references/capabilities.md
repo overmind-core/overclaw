@@ -1,49 +1,49 @@
 # Agents — identity, prompts, GitHub analyze
 
-Resolve agents with `list_agents` / `get_agent`. Stamp the returned `id`
+Resolve agents with `list_capabilities` / `get_capability`. Stamp the returned `id`
 into the SDK and inspect traces in [telemetry.md](telemetry.md).
 
 All of this is Overmind MCP. Inspect each tool's schema for arguments.
-`update_agent` and the GitHub analyze tools are gated (they mutate).
+`update_capability` and the GitHub analyze tools are gated (they mutate).
 
 ## Workflow
 
 ```
-- [ ] 1. list_agents — id (bare UUID), slug, model, active_model
-- [ ] 2. get_agent — card: id, active_model, source_repo, capped flow
-- [ ] 3. agent_prompts / agent_eval_spec when you need prompt text or the eval contract
-- [ ] 4. update_agent to retarget the live model (or patch description / display_name)
+- [ ] 1. list_capabilities — id (bare UUID), slug, model, active_model
+- [ ] 2. get_capability — card: id, active_model, source_repo, capped flow
+- [ ] 3. capability_prompts / capability_eval_spec when you need prompt text or the eval contract
+- [ ] 4. update_capability to retarget the live model (or patch description / display_name)
 - [ ] 5. If no agents / no repo: analyze_github_repo or analyze_github_repo_url
-- [ ] 6. assign_traces_to_agent for mis-attributed traces
+- [ ] 6. assign_traces_to_capability for mis-attributed traces
 ```
 
 ## Card
 
-`list_agents` and `get_agent` both return a top-level `id` (bare UUID) and
+`list_capabilities` and `get_capability` both return a top-level `id` (bare UUID) and
 `active_model` (`{id, model_id, status}` or null). Use slug or display name
 in later tool args — never paste ids to the user. Copy `id` verbatim into
-`overmind.init(agent_id=)` / `set_agent_id()` / `OVERMIND_AGENT_ID`.
+`overmind.init(capability_id=)` / a `capability(..., id=)` scope / `OVERMIND_CAPABILITY_ID`.
 
-`get_agent(agent_name_or_slug)` also returns:
+`get_capability(capability_name_or_slug)` also returns:
 
 - `source_repo` — linked GitHub repo (`name`, `repo_id`, branch, `head_sha`)
   or null
-- `flow` — capability card (`agent_path`, `modes[*].entrypoint_fn`, system
+- `flow` — capability card (`source_path`, `modes[*].entrypoint_fn`, system
   prompt, tools, schemas). Capped; `flow_truncated` is true when clipped.
   Use the paths you got — don't invent files that weren't in the card.
-- `agent_path`, `active_eval_set`, `alias_pr`, `status`, `model`,
+- `source_path`, `active_eval_set`, `alias_pr`, `status`, `model`,
   `description`
 
-`agent_prompts(agent_name_or_slug, limit?)` — versioned snapshots plus
+`capability_prompts(capability_name_or_slug, limit?)` — versioned snapshots plus
 flow-derived prompts; `system_prompt` is bounded (`truncated` when clipped).
-`agent_eval_spec(agent_name_or_slug)` — input schema, output fields, tool
+`capability_eval_spec(capability_name_or_slug)` — input schema, output fields, tool
 config, weights, consistency rules, optimizable / fixed elements.
 `agent_base_model_throughput` — tokens/sec from the agent's own traces
 ([finetuning.md](finetuning.md)).
 
 ## Update
 
-`update_agent(agent_name_or_slug, description?, display_name?, active_model?)`
+`update_capability(capability_name_or_slug, description?, name?, active_model?)`
 — at least one field. `active_model` is a **READY** deployed-model UUID
 from `list_deployed_models` (same project), or empty to clear. Refuse
 non-READY deployments.
@@ -60,8 +60,8 @@ runs in the background — agents and prompts appear when it finishes.
   Private repos need the connected-account path.
 
 Returns `{queued, repo, branch, status}` — no job id. Wait by
-`list_agents` until rows appear. If you already have
-`get_agent.source_repo.repo_id`, poll
+`list_capabilities` until rows appear. If you already have
+`get_capability.source_repo.repo_id`, poll
 `job_status(kind="agent_discovery", id=<repo_id>)` until `ready` / `error`.
 A second analyze call while in flight returns `queued: false`.
 
@@ -70,7 +70,7 @@ is linked.
 
 ## Traces
 
-`assign_traces_to_agent(agent_name_or_slug, trace_ids)` — re-attributes
+`assign_traces_to_capability(capability_name_or_slug, trace_ids)` — re-attributes
 every span of those traces onto the agent. `trace_ids` are bare OTel hex
 or `traces:<hex>` refs. Typical use: connector-imported traces that landed
 agentless.

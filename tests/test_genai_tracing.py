@@ -4,8 +4,8 @@ Covers the three anchor guarantees:
 
 (a) a span carrying provider ``gen_ai.*`` usage ends up with the canonical
     ``genai.*`` token counts + ``genai.cost`` (enrichment processor + wrapper);
-(b) ``init(agent_id=…, agent_name=…, project_id=…)`` results in
-    ``overmind.agent.id`` / ``overmind.agent.name`` / ``overmind.project.id`` on
+(b) ``init(capability_id=…, capability=…, project_id=…)`` results in
+    ``overmind.capability.id`` / ``overmind.capability.name`` / ``overmind.project.id`` on
     emitted spans;
 (c) finer-grained spans/attributes (tool metadata, streaming TTFT) are emitted
     with correct nesting.
@@ -16,7 +16,6 @@ Uses the repo's in-memory span exporter pattern (no network, no real LLMs).
 from __future__ import annotations
 
 import contextvars
-from unittest.mock import patch
 
 import pytest
 from opentelemetry.sdk.resources import Resource
@@ -28,10 +27,8 @@ from overmind import attrs
 from overmind.genai_usage import canonical_usage_updates, compute_cost
 from overmind.tracing import (
     _GenAiUsageSpanProcessor,
+    _seed_identity_context,
     _span_processor_on_start,
-    set_agent_id,
-    set_agent_name,
-    set_project_id,
 )
 
 
@@ -140,9 +137,7 @@ def test_identity_stamped_on_spans(inmem):
     provider, exporter = inmem
 
     def _run():
-        set_agent_id("agent-uuid-123")
-        set_agent_name("Lead Qualifier")
-        set_project_id("proj-uuid-9")
+        _seed_identity_context("agent-uuid-123", "Lead Qualifier", "proj-uuid-9")
         tracer = provider.get_tracer("overmind")
         with tracer.start_as_current_span("work"):
             pass
@@ -151,8 +146,8 @@ def test_identity_stamped_on_spans(inmem):
     provider.force_flush()
 
     span = exporter.get_finished_spans()[-1]
-    assert span.attributes[attrs.AGENT_ID] == "agent-uuid-123"
-    assert span.attributes[attrs.AGENT_NAME] == "Lead Qualifier"
+    assert span.attributes[attrs.CAPABILITY_ID] == "agent-uuid-123"
+    assert span.attributes[attrs.CAPABILITY_NAME] == "Lead Qualifier"
     assert span.attributes[attrs.PROJECT_ID] == "proj-uuid-9"
 
 
@@ -210,7 +205,7 @@ def test_nested_tool_under_workflow_keeps_parent(inmem):
     outer()
     provider.force_flush()
 
-    spans = {s.name: s for s in exporter.get_finished_spans()}
+    spans = {s.name.rsplit(".", 1)[-1]: s for s in exporter.get_finished_spans()}
     parent = spans["outer"]
     child = spans["inner_tool"]
     assert child.parent is not None

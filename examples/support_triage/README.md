@@ -14,24 +14,21 @@ drafts a first reply. Uses an internal KB, a customer lookup, and public docs.
 - Tone not calibrated to customer tier.
 - JSON output parsed with best-effort fallback.
 
-## Register
+## Connect
 
-```bash
-overmind agent register support-triage agent:run
-overmind agent validate support-triage --data data/seed.json
-overmind setup support-triage
-overmind optimise support-triage
-```
+Scan the repository from the Console (**Agent → Connect a repository**). The
+scan mints the capability and its tasks; copy the **capability id** from the
+capability page. `overmind optimise` runs optimisation experiments against it.
 
 ## Trace it
 
-Run the agent directly to stream a full trace (tokens, cost, tool calls) to
-Overmind. `agent_id` is a drift-proof direct lookup; `agent_name` is slugified
-server-side so keep it stable.
+Run the agent directly to stream a full trace (tokens, cost, tool calls, the
+run unit and its deliverable) to Overmind. `capability_id` is the only key
+ingest binds by; the `capability` label is display-only.
 
 ```bash
 export OVERMIND_API_KEY=ovr_...
-export OVERMIND_AGENT_ID=6f1c...   # optional; falls back to agent_name
+export OVERMIND_CAPABILITY_ID=6f1c...   # the capability UUID from the Console
 python agent.py
 ```
 
