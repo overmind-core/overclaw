@@ -1,6 +1,6 @@
 ---
 name: overmind
-description: Operate the Overmind platform through its MCP server — add tracing to a Python AI/LLM project, inspect telemetry (traces, sessions, agent health, failures, context graph), upload and clean datasets, author evaluators / eval sets / eval runs, fine-tune models, and launch optimizer experiments. Use when the user mentions Overmind, adding telemetry/observability/tracing, traces landing, finetuning or training a model, uploading datasets, eval runs, evaluators, dataset quality, prompt/agent optimization, or when Overmind MCP tools are available.
+description: Operate the Overmind platform through its MCP server — add tracing to a Python AI/LLM project, inspect telemetry (traces, sessions, task executions, agent health, failures, context graph), upload and clean datasets, author evaluators / eval sets / eval runs, fine-tune models, and launch optimizer experiments. Use when the user mentions Overmind, adding telemetry/observability/tracing, traces landing, finetuning or training a model, uploading datasets, eval runs, evaluators, dataset quality, prompt/agent optimization, or when Overmind MCP tools are available.
 ---
 
 # Overmind platform MCP
@@ -9,9 +9,13 @@ Overmind is an agent observability and optimization platform. It ingests traces
 from LLM agents, turns them into datasets, grades them with evaluators, and
 uses those datasets to fine-tune models and optimize agent prompts/code.
 
-This skill covers the common Overmind workflows: resolving agents,
-telemetry (instrument and inspect traces), datasets, evals, fine-tuning,
-and optimizer experiments.
+Overmind models production work as **Agent > Capabilities > Tasks**: a
+capability is one agent, a task (behaviour) is a scanned contract it
+performs, and a task execution is one carved, scored unit of a real trace.
+
+This skill covers the common Overmind workflows: resolving agents, tasks and
+task executions, telemetry (instrument and inspect traces), datasets, evals,
+fine-tuning, and optimizer experiments.
 
 ## Core principles
 
@@ -59,6 +63,8 @@ Follow these for ALL Overmind MCP work:
 
 - Resolving / updating agents, prompts, eval spec, and GitHub analyze:
   [references/capabilities.md](references/capabilities.md)
+- Tasks (behaviour registry, task executions, eval coverage):
+  [references/behaviours.md](references/behaviours.md)
 - Telemetry (add tracing, inspect traces / sessions / health, connectors):
   [references/telemetry.md](references/telemetry.md)
 - Uploading / building datasets (from traces, failures, or an attached file)
@@ -74,11 +80,12 @@ Follow these for ALL Overmind MCP work:
 
 ## Conventions (read before any workflow)
 
-- **List first.** `list_datasets`, `list_capabilities`, `list_eval_sets`,
-  `list_evaluators`, `list_eval_runs`, `list_finetune_jobs`,
-  `list_deployed_models`, `list_optimizer_experiments`, `list_traces`,
-  `list_sessions`. Then pass `dataset_name`, `eval_set_name`,
-  `evaluator_names`, `capability_name_or_slug`, `eval_run_name`.
+- **List first.** `list_datasets`, `list_capabilities`, `list_behaviours`,
+  `list_task_executions`, `list_eval_sets`, `list_evaluators`,
+  `list_eval_runs`, `list_finetune_jobs`, `list_deployed_models`,
+  `list_optimizer_experiments`, `list_traces`, `list_sessions`. Then pass
+  `dataset_name`, `eval_set_name`, `evaluator_names`,
+  `capability_name_or_slug`, `task`, `eval_run_name`.
   `list_capabilities` / `get_capability` return top-level `id` (bare UUID) and
   `active_model`; `get_capability` also `source_repo` and a capped `flow`
   (`flow_truncated` when clipped).
@@ -126,7 +133,11 @@ a running job is frozen until the job ends.
 Typical loop, always via MCP:
 
 1. **See what's happening** — [telemetry.md](references/telemetry.md)
-   (`capability_health` → `capability_failures` → `list_traces` / `get_trace`).
+   (`capability_health` → `capability_failures` → `list_task_executions` →
+   `list_traces` / `get_trace`). The task-execution layer
+   ([behaviours.md](references/behaviours.md)) sits between the agent and its
+   spans: check it before walking traces by hand, and treat
+   `binding_source: "unbound"` as an instrumentation gap, not a scoring one.
    Resolve / retarget agents via [capabilities.md](references/capabilities.md)
    (`list_capabilities` / `get_capability` / `update_capability`;
    `analyze_github_repo` if none exist). If nothing is landing, add tracing

@@ -19,6 +19,7 @@ arguments.
 - [ ] 1. list_datasets — confirm the dataset is eval intent
 - [ ] 2. list_evaluators / list_eval_sets — reuse before creating
          (Default set may already exist from the post-scan preload)
+- [ ] 2b. Task-scoped judge? behaviour_coverage → get_behaviour_authoring_context first
 - [ ] 3. Author: generate_evaluators (agent suite) OR create_judge_evaluator (one judge)
 - [ ] 4. create_eval_set → add_evaluators_to_eval_set → activate_eval_set
 - [ ] 5. create_eval_run (creates AND launches) — MCP is the launch path
@@ -45,6 +46,29 @@ arguments.
   `update_judge_evaluator(evaluator, evaluation_prompt, score_type, …)`.
 - Verify what a judge reads:
   `preview_evaluator_prompt(evaluator, trajectory?, structured?, expected?)`.
+
+### Task-scoped judges (outcome and step)
+
+A judge can bind to one task (behaviour) instead of the whole agent. Do this
+before you call `create_judge_evaluator`:
+
+1. `behaviour_coverage(capability_name_or_slug)` — per task, the outcome and
+   step judges that exist and the contract segments still uncovered. Author
+   against the gaps.
+1. `list_behaviour_evaluators(task, capability_name_or_slug?)` — the suite
+   already bound to that task. Reuse before adding another judge.
+1. `get_behaviour_authoring_context(task, capability_name_or_slug?)` —
+   **required** for a step judge. It returns the contract: `anchor_sequence`,
+   named `steps` with the anchor each step judge binds to, `tool_set`, and
+   `terminal`.
+
+Then pass `task=<behaviour key>`, `behaviour_role="outcome"` (grades the
+deliverable) or `"step"` (grades one segment), and — for `step` — an
+`anchor_segment` copied from the authoring context. Never guess an
+`anchor_segment`: a segment that is not in the contract silently never
+matches, and the judge skips every unit.
+
+Task keys and executions: [behaviours.md](behaviours.md).
 
 ## 2. Group into eval sets
 
